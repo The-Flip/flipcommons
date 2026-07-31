@@ -74,7 +74,7 @@ export function hasActiveFilters(f: FilterState): boolean {
 
 /**
  * URL ⇄ FilterState mapping. Param names are the **real backend field names**
- * (one vocabulary end to end — URL params == `TitleFilterQuery` fields), so
+ * (one vocabulary end to end — URL params == `GameFilterQuerySchema` fields), so
  * `queryFromUrl` in the /titles route is a near-passthrough. Multi-value
  * dimensions are **repeated** params (`theme=a&theme=b`), read natively by the
  * backend's `list[str]` — not comma-joined.

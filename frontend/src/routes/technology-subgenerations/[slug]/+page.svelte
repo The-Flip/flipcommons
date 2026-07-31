@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
-  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import PaginatedSection from '$lib/components/collections/grid/PaginatedSection.svelte';
   import { createPaginatedLoader, unwrapPage } from '$lib/paginated-loader.svelte';
 
@@ -30,7 +30,8 @@
   emptyMessage="No machines of this subgeneration."
 >
   {#snippet children(machine)}
-    <MachineCard
+    <GameCard
+      entityType="model"
       slug={machine.slug}
       name={machine.name}
       thumbnailUrl={machine.thumbnail_url}

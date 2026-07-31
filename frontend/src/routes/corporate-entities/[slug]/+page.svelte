@@ -2,7 +2,7 @@
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
   import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
-  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
 
   let { data } = $props();
   let ce = $derived(data.profile);
@@ -28,7 +28,8 @@
       entityName="title"
     >
       {#snippet children(title)}
-        <TitleCard
+        <GameCard
+          entityType="title"
           slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}

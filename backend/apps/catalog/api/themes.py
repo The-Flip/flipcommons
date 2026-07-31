@@ -29,7 +29,7 @@ from ..engine.query.constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PagePara
 from ..models import MachineModel, Theme
 from ._counts import bulk_title_counts_via_models
 from .edit_claims import plan_alias_claims, plan_parent_claims
-from .helpers import serialize_title_machine
+from .helpers import serialize_title_model
 from .images import fetch_model_media_map
 from .schemas import (
     EntityDetailSchema,
@@ -98,8 +98,8 @@ def _detail_qs() -> QuerySet[Theme]:
 
 def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
     min_rank = get_minimum_display_rank()
-    machines_list = list(theme.machine_models.all())
-    media_by_model = fetch_model_media_map(pm.pk for pm in machines_list)
+    models_list = list(theme.machine_models.all())
+    media_by_model = fetch_model_media_map(pm.pk for pm in models_list)
     return ThemeDetailSchema(
         name=theme.name,
         public_id=theme.public_id,
@@ -115,10 +115,8 @@ def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
             for t in theme.children.order_by("name")
         ],
         machines=[
-            serialize_title_machine(
-                pm, min_rank=min_rank, media_by_model=media_by_model
-            )
-            for pm in machines_list
+            serialize_title_model(pm, min_rank=min_rank, media_by_model=media_by_model)
+            for pm in models_list
         ],
     )
 

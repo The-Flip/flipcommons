@@ -48,11 +48,14 @@ const EDGE_PHRASES: Record<EdgeKind, Record<LicenseStatus, EdgePhrases>> = {
       inboundHeading: 'Copies',
       inboundNote: "Games that reproduce this game's design:",
     },
+    // "Authorized", not "licensed": in a pinball catalog "licensed" reads as
+    // theme licensing first (Godzilla is a licensed theme), and it pairs with
+    // the unlicensed cell's existing "unauthorized copy".
     licensed: {
-      lead: 'Licensed copy of',
-      note: 'This game is an officially licensed copy of:',
-      inboundHeading: 'Licensed Copies',
-      inboundNote: 'Officially licensed copies of this game:',
+      lead: 'Authorized copy of',
+      note: 'This game is an authorized copy of:',
+      inboundHeading: 'Authorized Copies',
+      inboundNote: 'Authorized copies of this game:',
     },
     unlicensed: {
       lead: 'Bootleg of',

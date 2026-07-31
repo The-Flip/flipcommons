@@ -272,7 +272,10 @@ describe('modelEdgeSections', () => {
       ],
     });
 
-    expect(modelEdgeSections(model).map((s) => s.heading)).toEqual(['Licensed copy of', 'Copy of']);
+    expect(modelEdgeSections(model).map((s) => s.heading)).toEqual([
+      'Authorized copy of',
+      'Copy of',
+    ]);
   });
 
   it('renders inbound edges under plural headings after the outbound sections', () => {

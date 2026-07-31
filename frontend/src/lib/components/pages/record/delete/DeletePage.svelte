@@ -130,7 +130,7 @@
       <p class="blocked-lead">{blocked.lead}</p>
       {#if blocked.kind === 'referrers'}
         <ul>
-          {#each blocked.referrers as ref (`${ref.entity_type}|${ref.slug ?? ''}|${ref.relation}`)}
+          {#each blocked.referrers as ref (`${ref.entity_type}|${ref.public_id}|${ref.relation}`)}
             {@const href = blocked.renderReferrerHref?.(ref) ?? null}
             <li>
               {#if href}

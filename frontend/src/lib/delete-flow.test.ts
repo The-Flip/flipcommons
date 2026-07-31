@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BlockingReferrer } from './delete-flow';
 
 const POST = vi.fn();
 
@@ -11,7 +12,7 @@ vi.mock('$lib/edit-citation', () => ({
 }));
 
 // Import after mocks so the module closes over the mocked client.
-const { createDeleteSubmitter } = await import('./delete-flow');
+const { createDeleteSubmitter, referrerHref } = await import('./delete-flow');
 
 function makeResponse(
   body: BodyInit | null,
@@ -81,11 +82,11 @@ describe('createDeleteSubmitter', () => {
       blocked_by: [
         {
           entity_type: 'model',
-          slug: 'other',
+          public_id: 'other',
           name: 'Other',
           relation: 'variant_of',
           blocked_target_type: 'model',
-          blocked_target_slug: 'target',
+          blocked_target_public_id: 'target',
         },
       ],
     };
@@ -98,7 +99,7 @@ describe('createDeleteSubmitter', () => {
     expect(out.kind).toBe('blocked');
     if (out.kind === 'blocked') {
       expect(out.blockedBy).toHaveLength(1);
-      expect(out.blockedBy[0].slug).toBe('other');
+      expect(out.blockedBy[0].public_id).toBe('other');
       expect(out.message).toContain('active references');
     }
   });
@@ -144,5 +145,36 @@ describe('createDeleteSubmitter', () => {
     });
     const out = await submit('abc');
     expect(out.kind).toBe('form_error');
+  });
+});
+
+describe('referrerHref', () => {
+  function referrer(overrides: Partial<BlockingReferrer> = {}): BlockingReferrer {
+    return {
+      entity_type: 'model',
+      public_id: 'medieval-madness-le',
+      name: 'Medieval Madness LE',
+      relation: 'title',
+      blocked_target_type: 'title',
+      blocked_target_public_id: 'medieval-madness',
+      ...overrides,
+    };
+  }
+
+  it('builds the href from the entity registry rather than the referrer type', () => {
+    expect(referrerHref(referrer())).toBe('/models/medieval-madness-le');
+    expect(
+      referrerHref(referrer({ entity_type: 'corporate-entity', public_id: 'gottlieb-co' })),
+    ).toBe('/corporate-entities/gottlieb-co');
+  });
+
+  it('addresses an entity by its public_id even when that is not a bare slug', () => {
+    expect(referrerHref(referrer({ entity_type: 'location', public_id: 'usa/tx/paris' }))).toBe(
+      '/locations/usa/tx/paris',
+    );
+  });
+
+  it('returns null for an entity_type outside the catalog vocabulary', () => {
+    expect(referrerHref(referrer({ entity_type: 'sandwich' }))).toBeNull();
   });
 });

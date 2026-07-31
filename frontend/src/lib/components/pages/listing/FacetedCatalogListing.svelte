@@ -80,8 +80,9 @@
 
   let meta = $derived(ENTITY_META[catalogKey]);
   let basePath = $derived(`/${meta.entity_type_plural}`);
-  let singularLabel = $derived(meta.label.toLowerCase());
-  let pluralLabel = $derived(meta.label_plural.toLowerCase());
+  // What one listing ROW is called (a "game" can be a Title or a Model); the
+  // create prompt keeps the entity label, because what it creates is a Title.
+  let entityLabel = $derived(meta.label.toLowerCase());
 
   // Resolve the streamed facet options into sticky reactive state. The sidebar
   // mounts once (disabled+empty on first/cold load), then hydrates options +
@@ -176,10 +177,10 @@
 <div class="faceted-page">
   <h1>{listingCopy.heading}</h1>
 
-  <SearchBox bind:value={queryInput} placeholder={`Search ${pluralLabel}...`} />
+  <SearchBox bind:value={queryInput} placeholder={`Search ${listingCopy.itemLabelPlural}...`} />
 
   <div class="layout">
-    <FilterDrawer label={`Filter ${pluralLabel}`}>
+    <FilterDrawer label={`Filter ${listingCopy.itemLabelPlural}`}>
       <!-- The sidebar renders once, immediately (disabled+empty until the streamed
            options arrive). On a facet-endpoint failure the controls stay disabled and
            this inline error/retry sits alongside them, rather than replacing the pane. -->
@@ -204,7 +205,7 @@
 
       <p class="count">
         {initial.count.toLocaleString()}
-        {initial.count === 1 ? singularLabel : pluralLabel}
+        {initial.count === 1 ? listingCopy.itemLabel : listingCopy.itemLabelPlural}
       </p>
 
       <!-- Remount (reseed the loader to page 1) only when the filters actually change. -->
@@ -219,7 +220,7 @@
           queryCount: count,
         })}
         {#if prompt.show}
-          <NoResultsCreatePrompt entityLabel={singularLabel} query={prompt.query} {createHref} />
+          <NoResultsCreatePrompt {entityLabel} query={prompt.query} {createHref} />
         {/if}
       {/await}
     </main>

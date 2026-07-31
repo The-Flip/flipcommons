@@ -3,7 +3,7 @@
   import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import YearRangeInput from '$lib/components/input/YearRangeInput.svelte';
   import { emptyFilterState, hasActiveFilters, type FilterState } from '$lib/facet-engine';
-  import type { FacetOptionSchema, FilterOptionsSchema } from '$lib/api/schema';
+  import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
 
   let {
     filterOptions,
@@ -16,7 +16,7 @@
      * `undefined` while the facet stream is in flight on first/cold load — the
      * controls render disabled and empty until it arrives (see `streamed`).
      */
-    filterOptions: FilterOptionsSchema | undefined;
+    filterOptions: GameFilterOptionsSchema | undefined;
     /** Disable every control (first/cold load, before any options have arrived). */
     disabled?: boolean;
     /** A refetch is in flight (sets `aria-busy` for screen readers; not visually disabled). */

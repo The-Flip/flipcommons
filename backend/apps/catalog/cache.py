@@ -8,9 +8,9 @@ deliberately small.
 
 What is cached, who reads it, and the cost it avoids:
 
-- Title facet options (``GET /api/pages/titles``) — the /titles browse-page
-  filter sidebar (every theme/year/tag you can filter by). Avoids re-aggregating
-  the option lists across the whole title corpus.
+- Game facet options (``GET /api/pages/games``) — the games listing's filter
+  sidebar (manufacturer, theme, feature, player count and the rest). Avoids
+  re-aggregating the option lists across the whole catalog.
 - Manufacturer facet options (``GET /api/pages/manufacturers``) — the
   /manufacturers filter sidebar.
 - Locations tree — the locations-page hierarchy.
@@ -54,18 +54,20 @@ from pydantic import TypeAdapter
 
 from apps.core.licensing import current_audience
 
-# Bump when a cached payload's JSON shape changes. FileBasedCache writes with
+# Bump when a code change alters a cached payload — its JSON shape *or* the
+# values it computes (a fixed aggregate is as stale as a renamed field).
+# FileBasedCache writes with
 # ``timeout=None`` and can survive a deploy (its dir is not always wiped), while
 # ``invalidate_response_cache()`` only runs on data mutation — never on deploy.
 # So a shape change without a bump can keep serving old-shaped JSON to the new
 # frontend until the next write; versioning the keys orphans the stale entries.
 # The version is shared across all bases, so a bump also harmlessly orphans
 # unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
-_CACHE_VERSION = "v6"
+_CACHE_VERSION = "v7"
 
-# No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
-# between catalog edits, so cached and cleared by invalidate_response_cache().
-_TITLES_FACETS_BASE = f"catalog:titles:facets:{_CACHE_VERSION}"
+# No-filter facet option lists for the games listing page (GET /api/pages/games).
+# Static between catalog edits, so cached and cleared by invalidate_response_cache().
+_GAMES_FACETS_BASE = f"catalog:games:facets:{_CACHE_VERSION}"
 # Same, for the /manufacturers page (GET /api/pages/manufacturers).
 _MANUFACTURERS_FACETS_BASE = f"catalog:manufacturers:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
@@ -94,7 +96,7 @@ def export_entity_types() -> tuple[str, ...]:
 
 
 _BASES: tuple[str, ...] = (
-    _TITLES_FACETS_BASE,
+    _GAMES_FACETS_BASE,
     _MANUFACTURERS_FACETS_BASE,
     _LOCATIONS_TREE_BASE,
 )
@@ -102,8 +104,8 @@ _BASES: tuple[str, ...] = (
 _AUDIENCES: tuple[str, ...] = ("default", "kiosk")
 
 
-def titles_facets_key() -> str:
-    return f"{_TITLES_FACETS_BASE}:{current_audience()}"
+def games_facets_key() -> str:
+    return f"{_GAMES_FACETS_BASE}:{current_audience()}"
 
 
 def manufacturers_facets_key() -> str:

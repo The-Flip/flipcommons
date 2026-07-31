@@ -53,6 +53,13 @@ from .franchises import (
 from .gameplay_features import GameplayFeatureDetailSchema
 from .gameplay_features import _detail_qs as _gf_detail_qs
 from .gameplay_features import _serialize_detail as _serialize_gf_detail
+from .games import (
+    GameFacetsPageSchema,
+    GameFilterQuerySchema,
+    GameSearchSectionSchema,
+    game_search_section,
+    games_facets_response,
+)
 from .machine_models import (
     ModelDetailSchema,
     _model_detail_qs,
@@ -95,15 +102,7 @@ from .taxonomy import (
 from .themes import ThemeDetailSchema
 from .themes import _detail_qs as _theme_detail_qs
 from .themes import _serialize_detail as _serialize_theme_detail
-from .titles import (
-    TitleDetailSchema,
-    TitleFacetsPageSchema,
-    TitleFilterQuerySchema,
-    TitleSearchSectionSchema,
-    _serialize_title_detail,
-    title_facets_response,
-    title_search_section,
-)
+from .titles import TitleDetailSchema, _serialize_title_detail
 from .titles import _detail_qs as _title_detail_qs
 
 pages_router = Router(tags=["private"])
@@ -115,12 +114,13 @@ _MIN_SEARCH_CHARS = 3
 
 
 class SearchResultsSchema(Schema):
-    """Global ``/search`` payload: three stacked entity sections in fixed render
-    order (Titles → Manufacturers → People). The frontend renders them in this
-    declaration order; there is no Models section (models only roll up into titles
-    elsewhere, and search doesn't surface them)."""
+    """Global ``/search`` payload: three stacked sections in fixed render order
+    (Games → Manufacturers → People). The frontend renders them in this
+    declaration order. The games section is heterogeneous — Title and Model
+    cards under the roll-up — rather than gaining a separate Models section: a
+    sectioned interface plus an absorption rule fights itself."""
 
-    titles: TitleSearchSectionSchema
+    games: GameSearchSectionSchema
     manufacturers: ManufacturerSearchSectionSchema
     people: PersonSearchSectionSchema
 
@@ -128,7 +128,7 @@ class SearchResultsSchema(Schema):
 def _empty_search_results() -> SearchResultsSchema:
     """All three sections empty — the ``q`` too short / no-work response."""
     return SearchResultsSchema(
-        titles=TitleSearchSectionSchema(items=[], has_more=False),
+        games=GameSearchSectionSchema(items=[], has_more=False),
         manufacturers=ManufacturerSearchSectionSchema(items=[], has_more=False),
         people=PersonSearchSectionSchema(items=[], has_more=False),
     )
@@ -136,8 +136,8 @@ def _empty_search_results() -> SearchResultsSchema:
 
 @pages_router.get("/search", response=SearchResultsSchema)
 def search_page(request: HttpRequest, q: str = "") -> SearchResultsSchema:
-    """Global search across Titles, Manufacturers and People for the ``/search`` SSR
-    page. Each section composes that entity's ordered listing queryset + card
+    """Global search across Games, Manufacturers and People for the ``/search`` SSR
+    page. Each section composes that entity's ordered listing rows + card
     serializer (so a section's top rows match its ``/…?q=`` listing) and caps at 10
     with a ``has_more`` flag. Trimmed ``q`` shorter than ``_MIN_SEARCH_CHARS`` returns
     empty sections without querying. Uncached — free-text ``q`` has a poor cache hit
@@ -145,22 +145,22 @@ def search_page(request: HttpRequest, q: str = "") -> SearchResultsSchema:
     q = q.strip()
     if len(q) < _MIN_SEARCH_CHARS:
         return _empty_search_results()
-    # One Constance lookup shared by the title + manufacturer thumbnail resolvers.
+    # One Constance lookup shared by the game + manufacturer thumbnail resolvers.
     min_rank = get_minimum_display_rank()
     return SearchResultsSchema(
-        titles=title_search_section(q, min_rank=min_rank),
+        games=game_search_section(q, min_rank=min_rank),
         manufacturers=manufacturer_search_section(q, min_rank=min_rank),
         people=person_search_section(q),
     )
 
 
-@pages_router.get("/titles", response=TitleFacetsPageSchema)
-def titles_page_facets(
-    request: HttpRequest, filters: Query[TitleFilterQuerySchema]
+@pages_router.get("/games", response=GameFacetsPageSchema)
+def games_page_facets(
+    request: HttpRequest, filters: Query[GameFilterQuerySchema]
 ) -> HttpResponse:
-    """Facet option lists for the /titles SSR page (streamed after the cards;
-    no-filter response cached). Cards come from ``GET /api/titles/``."""
-    return title_facets_response(filters.to_filters())
+    """Facet option lists for the games listing SSR page (streamed after the
+    cards; no-filter response cached). Cards come from ``GET /api/games/``."""
+    return games_facets_response(filters.to_filters())
 
 
 @pages_router.get("/manufacturers", response=ManufacturerFacetsPageSchema)

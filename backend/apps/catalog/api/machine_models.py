@@ -90,7 +90,7 @@ from .helpers import (
     _get_feature_descendant_slugs,
     displayed_model_abbreviations,
     serialize_credit,
-    serialize_title_machine,
+    serialize_title_model,
 )
 from .images import (
     extract_image_attribution,
@@ -598,9 +598,7 @@ def _serialize_title_models(
     siblings = [s for s in pm.title.machine_models.all() if s.variant_of_id is None]
     media_by_model = fetch_model_media_map(s.pk for s in siblings)
     return [
-        serialize_title_machine(
-            sibling, min_rank=min_rank, media_by_model=media_by_model
-        )
+        serialize_title_model(sibling, min_rank=min_rank, media_by_model=media_by_model)
         for sibling in siblings
     ]
 

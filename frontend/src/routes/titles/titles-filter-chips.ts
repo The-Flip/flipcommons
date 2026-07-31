@@ -1,5 +1,5 @@
 import type { FilterState } from '$lib/facet-engine';
-import type { FacetOptionSchema, FilterOptionsSchema } from '$lib/api/schema';
+import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
 import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
 
 /**
@@ -16,7 +16,7 @@ import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveF
  */
 export function titleFilterChips(
   filters: FilterState,
-  options: FilterOptionsSchema,
+  options: GameFilterOptionsSchema,
 ): FilterChipSpec[] {
   const chips: FilterChipSpec[] = [];
   const nameOf = (opts: FacetOptionSchema[], slug: string): string =>

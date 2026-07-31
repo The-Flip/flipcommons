@@ -15,7 +15,7 @@
   import { toast } from '$lib/toast/toast.svelte';
 
   const navItems = [
-    { href: '/titles' as const, label: 'Titles' },
+    { href: '/titles' as const, label: 'Games' },
     { href: '/manufacturers' as const, label: 'Manufacturers' },
     { href: '/people' as const, label: 'People' },
   ];

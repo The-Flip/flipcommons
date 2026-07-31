@@ -16,7 +16,7 @@ import Page from './+page@.svelte';
 type Preview = {
   name: string;
   changeset_count: number;
-  blocked_by?: { entity_type: string; name: string; slug: string | null; relation: string }[];
+  blocked_by?: { entity_type: string; name: string; public_id: string; relation: string }[];
   active_children_count?: number;
 };
 
@@ -69,15 +69,9 @@ describe('Location delete page', () => {
       active_children_count: 0,
       blocked_by: [
         {
-          entity_type: 'corporate_entity',
+          entity_type: 'corporate-entity',
           name: 'Williams Electronics',
-          slug: 'williams-electronics',
-          relation: 'corporate_entity_location',
-        },
-        {
-          entity_type: 'corporate_entity',
-          name: 'Anonymous CE',
-          slug: null,
+          public_id: 'williams-electronics',
           relation: 'corporate_entity_location',
         },
       ],
@@ -88,12 +82,8 @@ describe('Location delete page', () => {
         /This location can't be deleted because active corporate-entity locations still point at it/i,
       ),
     ).toBeInTheDocument();
-    // Linked referrer with a slug points at the corporate-entity detail page.
     const link = screen.getByRole('link', { name: 'Williams Electronics' });
     expect(link).toHaveAttribute('href', '/corporate-entities/williams-electronics');
-    // Slug-less referrers render their name as plain text (no link).
-    expect(screen.getByText('Anonymous CE')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Anonymous CE' })).toBeNull();
     // No primary delete button while blocked.
     expect(screen.queryByRole('button', { name: 'Delete Location' })).toBeNull();
   });

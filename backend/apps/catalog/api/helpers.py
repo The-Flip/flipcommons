@@ -258,13 +258,13 @@ def _get_feature_descendant_slugs(slug: str) -> set[str]:
     return result
 
 
-def serialize_title_machine(
+def serialize_title_model(
     pm: MachineModel,
     *,
     min_rank: int | None = None,
     media_by_model: dict[int, list[EntityMedia]] | None = None,
 ) -> TitleModelSchema:
-    """Serialize a MachineModel for use in title/theme/system machine lists."""
+    """Serialize a MachineModel for use in title/theme/system model lists."""
     if min_rank is None:
         min_rank = get_minimum_display_rank()
 

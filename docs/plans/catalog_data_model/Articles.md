@@ -100,16 +100,16 @@ An Article can present lists of entities.
 
 [ModelRelationships.md](ModelRelationships.md) has use cases for Article. We initially considered modeling its relationships as catalog entities so that they'd automatically get markdown description pages and wikilinks, but finally decided to instead use Articles for this. Its examples are all about rellationships — copies, conversions, rethemes. Curators want to gather those relationships into a list. Real lists we'd want to build from that material:
 
-- **Italian bootlegs** — every unlicensed copy made in Italy (the RMG machines and their kind).
+- **Italian bootlegs** — every unlicensed copy made in Italy (the RMG models and their kind).
 - **Bootlegs everywhere** — every unlicensed copy, full stop: Spain (Petaco, Maresa), Italy (RMG), Brazil (LTD do Brasil), all in one place.
-- **Licensed copies** — the opposite: machines built _with_ permission, like VIFICO's run under license from Gottlieb.
-- **Conversion kits** — every kit that turns one machine into another (Geiger, Good Year, Sky Warrior).
-- **Conversions** — every machine actually built out of a donor machine (the j-martina games).
-- **Rethemes** — every machine that reskins another one's gameplay with new art (Metallica reskins, Shrek).
+- **Licensed copies** — the opposite: models built _with_ permission, like VIFICO's run under license from Gottlieb.
+- **Conversion kits** — every kit that turns one model into another (Geiger, Good Year, Sky Warrior).
+- **Conversions** — every model actually built out of a donor model (the j-martina games).
+- **Rethemes** — every model that reskins another one's gameplay with new art (Metallica reskins, Shrek).
 - **All the variants of one game** — e.g. every variant of Godzilla, on the Godzilla-related Article.
-- **One manufacturer's whole output** — every machine RMG ever built.
+- **One manufacturer's whole output** — every model RMG ever built.
 
-These lists are dynamic; as new machines get catalogued, "Italian bootlegs" pick them up without re-editing the Article.
+These lists are dynamic; as new models get catalogued, "Italian bootlegs" pick them up without re-editing the Article.
 
 I imagine this would be some sort of stored filter over the real listing-filter vocabulary; `location=italy + relationship-type=copy + license-status=unlicensed` → "Italian bootlegs". The stored filter must validate against the actual listing-filter vocabulary. That vocabulary must express both scalar-FK relations (`variant_of is set`) and edge type/status predicates.
 

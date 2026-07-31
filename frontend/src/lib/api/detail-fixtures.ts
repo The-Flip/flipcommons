@@ -82,7 +82,7 @@ export function makeTitleDetail(overrides: Partial<TitleDetailSchema> = {}): Tit
     hero_image_url: null,
     franchise: null,
     series: null,
-    machines: [],
+    models: [],
     credits: [],
     agreed_specs: { themes: [], gameplay_features: [], reward_types: [], tags: [] },
     related_titles: [],

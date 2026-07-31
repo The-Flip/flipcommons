@@ -185,7 +185,7 @@ class TestDeleteBlocked:
         body = resp.json()
         blocked = body["blocked_by"]
         assert len(blocked) == 1
-        assert blocked[0]["slug"] == "other-variant"
+        assert blocked[0]["public_id"] == "other-variant"
         assert blocked[0]["relation"] == "variant_of"
 
         target.refresh_from_db()
@@ -254,7 +254,7 @@ class TestDeletePreview:
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["blocked_by"]) == 1
-        assert body["blocked_by"][0]["slug"] == "other-variant"
+        assert body["blocked_by"][0]["public_id"] == "other-variant"
 
 
 # ── Restore ─────────────────────────────────────────────────────────

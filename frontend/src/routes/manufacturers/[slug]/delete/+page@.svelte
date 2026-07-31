@@ -1,7 +1,7 @@
 <script lang="ts">
   import DeletePage from '$lib/components/pages/record/delete/DeletePage.svelte';
   import type { BlockedState } from '$lib/components/pages/record/delete/delete-page';
-  import type { BlockingReferrer } from '$lib/delete-flow';
+  import { referrerHref, type BlockingReferrer } from '$lib/delete-flow';
   import { pluralize } from '$lib/utils';
   import { submitDelete } from './manufacturer-delete';
 
@@ -9,20 +9,6 @@
   let { preview, public_id } = $derived(data);
 
   let blockedReferrers = $derived(preview.blocked_by ?? []);
-
-  function referrerHref(r: BlockingReferrer): string | null {
-    if (!r.slug) return null;
-    switch (r.entity_type) {
-      case 'corporate-entity':
-        return `/corporate-entities/${r.slug}`;
-      case 'system':
-        return `/systems/${r.slug}`;
-      case 'model':
-        return `/models/${r.slug}`;
-      default:
-        return null;
-    }
-  }
 
   let blocked = $derived<BlockedState | null>(
     blockedReferrers.length > 0

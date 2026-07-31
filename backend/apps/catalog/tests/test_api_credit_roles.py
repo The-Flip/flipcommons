@@ -228,7 +228,7 @@ class TestCreditRoleDeleteBlockedByMachineCredit:
         body = resp.json()
         assert len(body["blocked_by"]) == 1
         assert body["blocked_by"][0]["entity_type"] == "model"
-        assert body["blocked_by"][0]["slug"] == "alpha"
+        assert body["blocked_by"][0]["public_id"] == "alpha"
 
     def test_delete_blocked(self, client, user):
         role = CreditRole.objects.create(name="Design", slug="design", status="active")

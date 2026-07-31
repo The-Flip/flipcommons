@@ -6,7 +6,7 @@
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
-  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import { manufacturerEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
   import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
@@ -22,7 +22,7 @@
     formatActiveRange(mfr.year_of_first_model, mfr.year_of_last_model, mfr.operating_status),
   );
   let hasCompanyDetails = $derived(!!(yearsActive || mfr.entities.length > 0 || mfr.website));
-  let titlesHeading = $derived(`Titles (${mfr.titles.length})`);
+  let titlesHeading = $derived(`Games (${mfr.titles.length})`);
   let systemsHeading = $derived(`Systems (${mfr.systems.length})`);
   let peopleHeading = $derived(`People (${mfr.persons.length})`);
   let mediaHeading = $derived(`Media (${mfr.uploaded_media.length})`);
@@ -103,7 +103,8 @@
       entityName="title"
     >
       {#snippet children(title)}
-        <TitleCard
+        <GameCard
+          entityType="title"
           slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}

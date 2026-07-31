@@ -14,7 +14,7 @@ Remaining: the data patches themselves (the review buckets below), authored in f
 
 ## Problem statement
 
-Some pinball machine models are built specifically to serve a foreign market. They usually differ in `reward_type`: an add-a-ball or novelty edition of a replay/payout game, built for a jurisdiction that did not allow the original's reward type (Italy, France, Germany, Spain…).
+Some pinball models are built specifically to serve a foreign market. They usually differ in `reward_type`: an add-a-ball or novelty edition of a replay/payout game, built for a jurisdiction that did not allow the original's reward type (Italy, France, Germany, Spain…).
 
 Today the catalog data carries this information in inconsistent ways:
 

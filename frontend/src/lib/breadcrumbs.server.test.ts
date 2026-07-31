@@ -41,8 +41,8 @@ import { load as title } from '../routes/titles/[slug]/+layout.server';
  * scannable table below is also an executable assertion about what ships.
  */
 const CRUMBS = {
-  title: ['Home', 'Pinball Machines', 'Godzilla'],
-  model: ['Home', 'Pinball Machines', 'Godzilla', 'Godzilla Pro'],
+  title: ['Home', 'Games', 'Godzilla'],
+  model: ['Home', 'Games', 'Godzilla', 'Godzilla Pro'],
   manufacturer: ['Home', 'Pinball Manufacturers', 'Stern'],
   'corporate-entity': ['Home', 'Pinball Manufacturers', 'Stern', 'Stern, Inc.'],
   person: ['Home', 'Notable People', 'Pat Lawlor'],
@@ -80,7 +80,7 @@ const PARENTS: Partial<Record<CatalogEntityKey, Record<string, unknown>>> = {
       { name: 'Illinois', public_id: 'usa/il' },
     ],
   },
-  title: { machines: [], model_detail: null },
+  title: { models: [], model_detail: null },
   'display-subtype': { display_type: { name: 'Dot Matrix', public_id: 'dot-matrix' } },
   'technology-subgeneration': {
     technology_generation: { name: 'Solid State', public_id: 'solid-state' },

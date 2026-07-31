@@ -15,11 +15,11 @@ export const load: LayoutServerLoad = async (event) => {
 
   const graph: JsonLdNode[] = [buildSchemaOrgNode(profile, title, event.url)];
 
-  // Title.workExample → its Model(s): bespoke, since `machines` is a reverse
+  // Title.workExample → its Model(s): bespoke, since `models` is a reverse
   // relation (not in `_meta`, so the generic relationshipMap walk can't reach
   // it). The `@id`s are dereferenceable via /models/{public_id} even when the
   // Model node isn't embedded below (multi-Model titles).
-  const workExample = profile.machines.map((m) => ({
+  const workExample = profile.models.map((m) => ({
     '@id': absolutize(event.url, `/models/${m.public_id}`),
   }));
   if (workExample.length > 0) {

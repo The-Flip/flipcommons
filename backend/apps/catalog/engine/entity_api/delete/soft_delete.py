@@ -47,21 +47,21 @@ class BlockingReferrer:
     entity_type: str  # canonical hyphenated LinkableModel.entity_type, e.g. "model"
     pk: int
     name: str
-    slug: str | None
+    public_id: str
     relation: str  # field name on the referring model (e.g. "variant_of")
     blocked_target_type: str  # which entity in the cascade the referrer points at
-    blocked_target_slug: str | None
+    blocked_target_public_id: str
 
 
 def serialize_blocking_referrer(ref: BlockingReferrer) -> BlockingReferrerSchema:
     """Wire format for :class:`BlockingReferrer` used by delete API responses."""
     return BlockingReferrerSchema(
         entity_type=ref.entity_type,
-        slug=ref.slug,
+        public_id=ref.public_id,
         name=ref.name,
         relation=ref.relation,
         blocked_target_type=ref.blocked_target_type,
-        blocked_target_slug=ref.blocked_target_slug,
+        blocked_target_public_id=ref.blocked_target_public_id,
     )
 
 
@@ -110,7 +110,7 @@ def _to_blocking_referrer(blocker: CascadeBlocker) -> BlockingReferrer:
 
     Narrows both the referrer and the cascade member it pins to ``LinkableModel``
     (the same boundary assert the core walk defers to its callers) so the wire
-    format carries canonical ``entity_type`` / ``slug`` rather than Django's
+    format carries canonical ``entity_type`` / ``public_id`` rather than Django's
     concatenated ``_meta`` identity.
     """
     ref = require_linkable(blocker.referrer)
@@ -119,10 +119,10 @@ def _to_blocking_referrer(blocker: CascadeBlocker) -> BlockingReferrer:
         entity_type=ref.entity_type,
         pk=ref.pk,
         name=str(ref),
-        slug=getattr(ref, "slug", None),
+        public_id=ref.public_id,
         relation=blocker.relation,
         blocked_target_type=target.entity_type,
-        blocked_target_slug=getattr(target, "slug", None),
+        blocked_target_public_id=target.public_id,
     )
 
 

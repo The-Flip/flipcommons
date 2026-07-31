@@ -14,8 +14,19 @@ import { parseApiError } from '$lib/api/parse-api-error';
 import type { BlockingReferrerSchema, paths } from '$lib/api/schema';
 import type { EditCitationSelection } from '$lib/edit-citation';
 import { buildEditCitationsRequest } from '$lib/edit-citation';
+import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 export type BlockingReferrer = BlockingReferrerSchema;
+
+function isCatalogEntityKey(entityType: string): entityType is CatalogEntityKey {
+  return (CATALOG_ENTITY_KEYS as readonly string[]).includes(entityType);
+}
+
+/** The detail-page href for a blocking referrer, or `null` if its `entity_type` isn't a catalog entity. */
+export function referrerHref(r: BlockingReferrer): string | null {
+  if (!isCatalogEntityKey(r.entity_type)) return null;
+  return `/${ENTITY_META[r.entity_type].entity_type_plural}/${r.public_id}`;
+}
 
 export type DeleteOutcome<TResponse> =
   | { kind: 'ok'; data: TResponse }

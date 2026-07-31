@@ -27,7 +27,7 @@ import type { TitleDetailSchema } from '$lib/api/schema';
 import { makeModelDetail, makeTitleDetail } from '$lib/api/detail-fixtures';
 
 const MOCK_TITLE = makeTitleDetail({
-  machines: [
+  models: [
     {
       name: 'Medieval Madness',
       public_id: 'medieval-madness',
