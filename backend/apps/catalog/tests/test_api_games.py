@@ -260,6 +260,40 @@ class TestHiddenDimensionParams:
         assert [item["name"] for item in data["items"]] == ["Cocktail Alpha"]
 
 
+class TestEdgeParams:
+    """The repeatable ``edge`` param end to end — key, ``:in`` direction and
+    the unknown-key matches-nothing rule (roll-up semantics are pinned in
+    ``test_game_rows.py``)."""
+
+    @pytest.fixture
+    def copied(self, db):
+        from apps.catalog.models import LicenseStatus, RelationshipType
+        from apps.catalog.tests.game_builders import _edge, _model, _title
+
+        t = _title("Big Valley", "big-valley")
+        original = _model(t, "big-valley-bally", name="Big Valley")
+        rmg = _model(t, "big-valley-rmg", name="Big Valley (RMG)")
+        _edge(
+            rmg,
+            original,
+            RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+
+    def test_edge_filters_the_listing(self, client, copied):
+        data = client.get("/api/games/?edge=copy").json()
+        assert [item["name"] for item in data["items"]] == ["Big Valley (RMG)"]
+        assert data["count"] == 1
+
+    def test_edge_inbound_direction(self, client, copied):
+        data = client.get("/api/games/?edge=copy:in").json()
+        assert [item["name"] for item in data["items"]] == ["Big Valley"]
+
+    def test_unknown_edge_matches_nothing(self, client, copied):
+        data = client.get("/api/games/?edge=bogus").json()
+        assert data == {"items": [], "count": 0}
+
+
 class TestGamesFacetsPage:
     def test_payload_shape(self, client, db):
         data = client.get("/api/pages/games").json()

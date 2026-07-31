@@ -164,6 +164,18 @@ class GameFilterQuerySchema(Schema):
             "supplied slugs must match."
         ),
     )
+    edge: list[str] = Field(
+        [],
+        description=(
+            "Relationship key: `variant_of`, `remake_of`, `export_edition_of`, "
+            "`conversion`, `conversion_kit`, `copy`, `retheme`, `bootleg` "
+            "(unlicensed copy) or `licensed_build` (licensed copy). Append `:in` "
+            "to match the other end of the relationship (`edge=copy` finds "
+            "copies, `edge=copy:in` finds models that have been copied). "
+            "Repeatable; all supplied keys must match. Unknown keys match "
+            "nothing."
+        ),
+    )
     display_subtype: str | None = Field(
         None,
         description="Display-subtype slug (see `GET /api/display-subtypes/`).",
@@ -224,6 +236,7 @@ class GameFilterQuerySchema(Schema):
             themes=tuple(self.theme),
             features=tuple(self.feature),
             reward_types=tuple(self.reward_type),
+            edge=tuple(self.edge),
             display_subtype=self.display_subtype,
             tag=self.tag,
             technology_subgeneration=self.technology_subgeneration,

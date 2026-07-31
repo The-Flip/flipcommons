@@ -16,31 +16,13 @@ from apps.catalog.api._edge_vocabulary import (
 from apps.catalog.models import (
     LicenseStatus,
     MachineModel,
-    ModelRelationship,
     RelationshipType,
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
-from apps.catalog.tests.game_builders import _model, _title
+from apps.catalog.tests.game_builders import _edge, _model, _title
 
 pytestmark = pytest.mark.django_db
-
-
-def _edge(
-    subject: MachineModel,
-    target: MachineModel | None,
-    rel_type: RelationshipType,
-    *,
-    license_status: LicenseStatus = LicenseStatus.UNKNOWN,
-    target_label: str = "",
-) -> ModelRelationship:
-    return ModelRelationship.objects.create(
-        machine_model=subject,
-        target_machine=target,
-        target_label=target_label,
-        relationship_type=rel_type,
-        license_status=license_status,
-    )
 
 
 def _matches(value: str) -> set[str]:
