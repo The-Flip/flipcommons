@@ -23,12 +23,13 @@ import {
   classifyRoute,
   isSearchEngineIndexable,
   LISTED_INDEXABLE_ENTITY_SLUG_SOURCE,
+  listingPath,
 } from '$lib/route-metadata.server';
 import { isDeploymentSearchEngineIndexable } from '$lib/is-deployment-search-engine-indexable.server';
 import { STATIC_LASTMOD } from '$lib/static-lastmod';
 import { stripRouteGroups, routeIdToRegex } from '$lib/sitemap-helpers';
 import { createServerClient } from '$lib/api/server';
-import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
+import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 /**
  * Type guard for the `feed.kind` wire boundary. Django serializes
@@ -145,7 +146,7 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
     if (!isCatalogEntityKey(feed.kind)) continue;
 
     if (feed.max_lastmod) {
-      listingLastmodByUrl.set(`/${ENTITY_META[feed.kind].entity_type_plural}`, feed.max_lastmod);
+      listingLastmodByUrl.set(listingPath(feed.kind), feed.max_lastmod);
     }
 
     const direct = DIRECT_ROUTES_BY_ENTITY.get(feed.kind) ?? [];

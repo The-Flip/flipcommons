@@ -70,6 +70,31 @@ export const LISTED_INDEXABLE_ENTITY_SLUG_SOURCE = {
   '/manufacturers/[slug]/systems': 'manufacturer',
 } as const satisfies Partial<Record<RouteId, CatalogEntityKey>>;
 
+/**
+ * Listing routes that do NOT live at `/{entity_type_plural}`. Everything that
+ * derives a listing URL — `classifyRoute`, `listingCrumb`, the sitemap's
+ * listing-`lastmod` keying — consults `listingPath()`, so an entry here moves
+ * the listing everywhere at once. Detail routes are unaffected: they classify
+ * by the entity's plural segment regardless of where the listing lives.
+ */
+const LISTING_ROUTE_OVERRIDES = {} as const satisfies Partial<Record<CatalogEntityKey, RouteId>>;
+
+/**
+ * The URL path of an entity's listing page: its declared override, else the
+ * model-driven default `/{entity_type_plural}`.
+ */
+export function listingPath(entity: CatalogEntityKey): string {
+  const overrides: Partial<Record<CatalogEntityKey, RouteId>> = LISTING_ROUTE_OVERRIDES;
+  return overrides[entity] ?? `/${ENTITY_META[entity].entity_type_plural}`;
+}
+
+// LISTING_ROUTE_OVERRIDES inverted: overridden listing route ID → entity key.
+const OVERRIDE_LISTING_TO_KEY: ReadonlyMap<string, CatalogEntityKey> = new Map(
+  (Object.entries(LISTING_ROUTE_OVERRIDES) as [CatalogEntityKey, RouteId][]).map(
+    ([entity, routeId]) => [routeId, entity],
+  ),
+);
+
 /** Classification of a SvelteKit route for search engine indexing purposes. */
 export type RouteClass =
   | { kind: 'catalog-listing'; entity: CatalogEntityKey }
@@ -143,6 +168,9 @@ function buildAuthGatedPrefixes(): ReadonlySet<string> {
 }
 
 function classifyCatalog(id: string): RouteClass | null {
+  const overridden = OVERRIDE_LISTING_TO_KEY.get(id);
+  if (overridden) return { kind: 'catalog-listing', entity: overridden };
+
   // /(legal)/privacy → segments = ['(legal)', 'privacy'] — won't match any plural, returns null.
   const segments = id === '/' ? [] : id.slice(1).split('/');
   if (segments.length === 0) return null;
@@ -305,7 +333,7 @@ function listingCrumb(entity: CatalogEntityKey): Crumb | null {
   if (!ENTITIES_WITH_LISTING.has(entity)) return null;
   return {
     label: listingMeta(entity).breadcrumb,
-    href: `/${ENTITY_META[entity].entity_type_plural}`,
+    href: listingPath(entity),
   };
 }
 
