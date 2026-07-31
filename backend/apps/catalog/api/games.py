@@ -191,25 +191,28 @@ class GameFilterQuerySchema(Schema):
             "Matches models carrying the subgeneration directly or through their system."
         ),
     )
-    cabinet: str | None = Field(
-        None,
+    cabinet: list[str] = Field(
+        [],
         description=(
-            "Cabinet slug (see `GET /api/cabinets/`). Matches only explicitly "
+            "Cabinet slug (see `GET /api/cabinets/`). Repeatable; a model "
+            "matches any of the supplied slugs. Matches only explicitly "
             "classified models."
         ),
     )
-    game_format: str | None = Field(
-        None,
+    game_format: list[str] = Field(
+        [],
         description=(
-            "Game-format slug (see `GET /api/game-formats/`). Matches only "
-            "explicitly classified models."
+            "Game-format slug (see `GET /api/game-formats/`). Repeatable; a "
+            "model matches any of the supplied slugs. Matches only explicitly "
+            "classified models."
         ),
     )
-    production_status: str | None = Field(
-        None,
+    production_status: list[str] = Field(
+        [],
         description=(
             "Production-status slug (see `GET /api/production-statuses/`). "
-            "Matches only explicitly classified models."
+            "Repeatable; a model matches any of the supplied slugs. Matches "
+            "only explicitly classified models."
         ),
     )
     corporate_entity: str | None = Field(
@@ -240,9 +243,9 @@ class GameFilterQuerySchema(Schema):
             display_subtype=self.display_subtype,
             tag=self.tag,
             technology_subgeneration=self.technology_subgeneration,
-            cabinet=self.cabinet,
-            game_format=self.game_format,
-            production_status=self.production_status,
+            cabinet=tuple(self.cabinet),
+            game_format=tuple(self.game_format),
+            production_status=tuple(self.production_status),
             corporate_entity=self.corporate_entity,
         )
 

@@ -66,7 +66,13 @@ chore/ci-pipeline
 
 1. Run `git log main..HEAD` to see commits for this branch
 2. Run `git diff main...HEAD` to see all changes
-3. Summarize the changes in 1-2 sentences
+3. Summarize the changes in 1-2 sentences. Adhere to "title and body quality" below.
 4. Create a test plan with verification steps
 5. Apply appropriate labels
 6. Once submitted, give the user a CLICKABLE hyperlink to the PR
+
+## PR title and body quality
+
+**No references to plan docs**. Neither plans in `/docs/plans/` nor `~/.claude/plans/`. Future readers of PR history will not have access to these. Instead, describe the actual change or goal or idea.
+
+**No planning ephemera** — phase/step labels like "PRE3", "REF1", "POST2", "phase", "step N". These are scaffolding from plan docs, not durable facts about the code. Those labels mean nothing to a future reader of PR history; they age out the moment the plan is done. Instead, describe the actual change.

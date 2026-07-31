@@ -15,7 +15,7 @@
   </section>
 {/if}
 
-<GamesSection games={profile.games} q={data.q} pinned={{ cabinet: profile.slug }} />
+<GamesSection games={profile.games} q={data.q} pinned={{ cabinet: [profile.slug] }} />
 
 <style>
   .description {
