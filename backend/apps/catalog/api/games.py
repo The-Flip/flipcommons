@@ -356,8 +356,8 @@ def _person_roles(rows: Sequence[GameRow], person: str) -> _PersonRoles:
     """Two bulk Credit queries for the page's cards.
 
     Title cards keep the person page's historical role order — credit order,
-    newest Model first (the ``_PersonTitleAccum`` semantics), over **live**
-    Models only, matching what the roll-up counted. A Model card's roles are
+    newest Model first — over **live** Models only, matching what the roll-up
+    counted. A Model card's roles are
     its own, in the role vocabulary's display order."""
     by_title: dict[int, list[str]] = {}
     by_model: dict[int, list[str]] = {}

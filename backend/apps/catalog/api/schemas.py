@@ -252,24 +252,6 @@ class TitleModelSchema(Schema):
     variants: list[TitleModelVariantSchema] = []
 
 
-class RelatedTitleSchema(Schema):
-    """A title shown in a related-entity list context (manufacturer, system, etc.)."""
-
-    name: str
-    public_id: str
-    year: int | None = None
-    manufacturer_name: str | None = None
-    thumbnail_url: str | None = None
-
-
-class TitleRef(EntityRef):
-    abbreviations: list[str] = []
-    model_count: int = 0
-    manufacturer_name: str | None = None  # display-only, no paired slug
-    year: int | None = None
-    thumbnail_url: str | None = None
-
-
 class GameplayFeatureRef(EntityRef):
     count: int | None = None
 
