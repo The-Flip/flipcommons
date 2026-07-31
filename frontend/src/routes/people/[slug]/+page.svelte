@@ -1,3 +1,4 @@
+<!-- @component Person detail page: bio, details, media and the games listing pinned to the person with per-card roles. -->
 <script lang="ts">
   import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
@@ -5,8 +6,7 @@
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import { personEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
-  import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
-  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
+  import GamesSection from '$lib/components/pages/record/detail/GamesSection.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
 
   let { data } = $props();
@@ -30,7 +30,6 @@
   let deathDate = $derived(formatDate(person.death_year, person.death_month, person.death_day));
   let hasDetails = $derived(!!(birthDate || deathDate || person.birth_place || person.nationality));
   let mediaHeading = $derived(`Media (${person.uploaded_media.length})`);
-  let titlesHeading = $derived(`Credits (${person.titles.length})`);
 </script>
 
 {#if person.photo_url}
@@ -92,28 +91,7 @@
 
 <RichTextReferencesAccordion richText={person.description} state={richTextState} />
 
-{#if person.titles.length > 0}
-  <AccordionSection heading={titlesHeading} open>
-    <SearchableGrid
-      items={person.titles}
-      filterFields={(item) => [item.name]}
-      placeholder="Search titles..."
-      entityName="title"
-    >
-      {#snippet children(title)}
-        <GameCard
-          entityType="title"
-          publicId={title.public_id}
-          name={title.name}
-          year={title.year}
-          thumbnailUrl={title.thumbnail_url}
-          manufacturerName={title.manufacturer_name}
-          roles={title.roles}
-        />
-      {/snippet}
-    </SearchableGrid>
-  </AccordionSection>
-{/if}
+<GamesSection games={person.games} q={data.q} pinned={{ person: person.slug }} />
 
 <style>
   .photo {

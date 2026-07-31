@@ -1,10 +1,10 @@
-import type { CorporateEntityDetailSchema } from '$lib/api/schema';
+import type { CorporateEntityDetailPageSchema } from '$lib/api/schema';
 
 /**
  * Canonical corporate-entity page payload for SSR route tests. Typed with
  * `satisfies` so a new backend field is a compile-time error here rather than a
  * silent gap in every test that mocks the page endpoint. Tests spread-and-override
- * for their variations (e.g. `{ ...MOCK_CORPORATE_ENTITY, titles: [] }`).
+ * for their variations (e.g. `{ ...MOCK_CORPORATE_ENTITY, games: { items: [], count: 0 } }`).
  */
 export const MOCK_CORPORATE_ENTITY = {
   name: 'Williams Electronics',
@@ -17,14 +17,18 @@ export const MOCK_CORPORATE_ENTITY = {
   year_of_last_model: 1999,
   operating_status: 'unknown',
   aliases: [],
-  titles: [
-    {
-      name: 'Medieval Madness',
-      public_id: 'medieval-madness',
-      year: 1997,
-      manufacturer_name: 'Williams',
-      thumbnail_url: null,
-    },
-  ],
+  games: {
+    items: [
+      {
+        entity_type: 'title' as const,
+        name: 'Medieval Madness',
+        public_id: 'medieval-madness',
+        year: 1997,
+        manufacturer: { name: 'Williams', public_id: 'williams' },
+        thumbnail_url: null,
+      },
+    ],
+    count: 1,
+  },
   locations: [],
-} satisfies CorporateEntityDetailSchema;
+} satisfies CorporateEntityDetailPageSchema;

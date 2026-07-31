@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
-import type { FranchiseDetailSchema } from '$lib/api/schema';
+import type { FranchiseDetailPageSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Star Trek',
@@ -10,18 +10,20 @@ const MOCK_DATA = {
   last_modified: '2026-01-01T00:00:00Z',
   slug: 'star-trek',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
-  titles: [
-    {
-      name: 'Star Trek TNG',
-      public_id: 'star-trek-tng',
-      abbreviations: [],
-      model_count: 1,
-      manufacturer_name: 'Williams',
-      year: 1993,
-      thumbnail_url: null,
-    },
-  ],
-} satisfies FranchiseDetailSchema;
+  games: {
+    items: [
+      {
+        entity_type: 'title' as const,
+        name: 'Star Trek TNG',
+        public_id: 'star-trek-tng',
+        year: 1993,
+        manufacturer: { name: 'Williams', public_id: 'williams' },
+        thumbnail_url: null,
+      },
+    ],
+    count: 1,
+  },
+} satisfies FranchiseDetailPageSchema;
 
 describe('franchises detail SSR route', () => {
   it('loads from the page endpoint', async () => {
@@ -59,10 +61,10 @@ describe('franchises detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: MOCK_DATA, jsonLd: {} },
+        data: { profile: MOCK_DATA, q: '', jsonLd: {} },
       },
     });
 
-    expect(body).toContain('Titles (1)');
+    expect(body).toContain('Games (1)');
   });
 });

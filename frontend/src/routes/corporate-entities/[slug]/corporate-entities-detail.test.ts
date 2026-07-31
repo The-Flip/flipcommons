@@ -42,20 +42,20 @@ describe('corporate-entities detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: MOCK_DATA, jsonLd: {} },
+        data: { profile: MOCK_DATA, q: '', jsonLd: {} },
       },
     });
 
     expect(body).toContain('Medieval Madness');
   });
 
-  it('renders the empty-state message when there are no titles', () => {
+  it('renders the empty-state message when there are no games', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: { ...MOCK_DATA, titles: [] }, jsonLd: {} },
+        data: { profile: { ...MOCK_DATA, games: { items: [], count: 0 } }, q: '', jsonLd: {} },
       },
     });
 
-    expect(body).toContain('No titles listed for this corporate entity.');
+    expect(body).toContain('No games.');
   });
 });

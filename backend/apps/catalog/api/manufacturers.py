@@ -52,11 +52,8 @@ from ._manufacturer_facets import (
 )
 from ._search_sections import tiered_search_rows
 from ._typing import FacetOptionDict, HasModelCount
-from .helpers import (
-    collect_titles,
-    model_year_bounds,
-    serialize_locations,
-)
+from .games import GameListSchema
+from .helpers import model_year_bounds, serialize_locations
 from .images import (
     extract_image_urls,
     fetch_model_media_map,
@@ -67,7 +64,6 @@ from .schemas import (
     EntityDetailSchema,
     FacetOptionSchema,
     OwnMediaSchema,
-    RelatedTitleSchema,
     YearBoundsSchema,
 )
 
@@ -200,6 +196,9 @@ class ManufacturerPersonSchema(Schema):
 
 
 class ManufacturerDetailSchema(EntityDetailSchema, OwnMediaSchema):
+    """The manufacturer record — the response of the mutation endpoints. The
+    read-only detail page's payload is :class:`ManufacturerDetailPageSchema`."""
+
     slug: str
     year_of_first_model: int | None = None
     year_of_last_model: int | None = None
@@ -209,9 +208,17 @@ class ManufacturerDetailSchema(EntityDetailSchema, OwnMediaSchema):
     opdb_manufacturer_id: int | None = None
     wikidata_id: str | None = None
     entities: list[ManufacturerCorporateEntitySchema]
-    titles: list[RelatedTitleSchema]
     systems: list[ManufacturerSystemSchema]
     persons: list[ManufacturerPersonSchema] = []
+
+
+class ManufacturerDetailPageSchema(ManufacturerDetailSchema):
+    """The detail-page payload: the record plus page 1 of its games — the
+    listing pinned to ``manufacturer=<slug>``. Rolls *down* where the old
+    any-Model title list rolled up: VIFICO lists its 13 copy Models, not the
+    13 Gottlieb Titles they copy."""
+
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +280,6 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
     )
 
     all_models = [m for e in mfr.entities.all() for m in e.models.all()]
-    media_by_model = fetch_model_media_map(m.pk for m in all_models)
     mfr_bounds = model_year_bounds(all_models)
 
     return ManufacturerDetailSchema(
@@ -292,7 +298,6 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
         opdb_manufacturer_id=mfr.opdb_manufacturer_id,
         wikidata_id=mfr.wikidata_id,
         entities=[_serialize_mfr_entity(e) for e in mfr.entities.all()],
-        titles=collect_titles(all_models, media_by_model=media_by_model),
         systems=[
             ManufacturerSystemSchema(name=s.name, public_id=s.public_id)
             for s in mfr.systems.all()

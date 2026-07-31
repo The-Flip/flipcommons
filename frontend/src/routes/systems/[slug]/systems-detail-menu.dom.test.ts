@@ -25,7 +25,7 @@ vi.mock('$lib/components/pages/record/edit/SectionEditorHost.svelte', async () =
 });
 
 import Layout from './+layout.svelte';
-import type { SystemDetailSchema } from '$lib/api/schema';
+import type { SystemDetailPageSchema } from '$lib/api/schema';
 
 const SYSTEM = {
   name: 'WPC-95',
@@ -35,9 +35,9 @@ const SYSTEM = {
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   manufacturer: { name: 'Williams', public_id: 'williams' },
   technology_subgeneration: null,
-  titles: [],
+  games: { items: [], count: 0 },
   sibling_systems: [],
-} satisfies SystemDetailSchema;
+} satisfies SystemDetailPageSchema;
 
 function renderLayout() {
   render(Layout, {

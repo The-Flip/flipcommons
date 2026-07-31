@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from django.db.models import Count, F, Max, Min, Prefetch, Q, QuerySet
+from django.db.models import Count, Max, Min, Prefetch, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
@@ -38,11 +38,8 @@ from ..models import (
 )
 from ._typing import CorporateEntityListAnnotations
 from .edit_claims import plan_alias_claims
-from .helpers import (
-    collect_titles,
-    model_year_bounds,
-    serialize_locations,
-)
+from .games import GameListSchema
+from .helpers import model_year_bounds, serialize_locations
 from .manufacturers import manufacturers_router
 from .schemas import (
     CorporateEntityClaimPatchSchema,
@@ -50,7 +47,6 @@ from .schemas import (
     EntityCreateInputSchema,
     EntityDetailSchema,
     EntityRef,
-    RelatedTitleSchema,
 )
 
 # ---------------------------------------------------------------------------
@@ -93,6 +89,10 @@ class CorporateEntityListSchema(Schema):
 
 
 class CorporateEntityDetailSchema(EntityDetailSchema):
+    """The corporate-entity record — the response of the mutation endpoints.
+    The read-only detail page's payload is
+    :class:`CorporateEntityDetailPageSchema`."""
+
     slug: str
     manufacturer: EntityRef
     year_of_first_model: int | None = None
@@ -101,7 +101,15 @@ class CorporateEntityDetailSchema(EntityDetailSchema):
     ipdb_manufacturer_id: int | None = None
     aliases: list[str] = []
     locations: list[CorporateEntityLocationSchema] = []
-    titles: list[RelatedTitleSchema]
+
+
+class CorporateEntityDetailPageSchema(CorporateEntityDetailSchema):
+    """The detail-page payload: the record plus page 1 of its games — the
+    listing pinned to ``corporate_entity=<slug>``. Rolls *down* where the old
+    any-Model title list rolled up: a CE that only ever built copies now lists
+    its own Model cards rather than the copied Titles."""
+
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------
@@ -121,12 +129,11 @@ def _detail_qs() -> QuerySet[CorporateEntity]:
                     "location__parent__parent__parent"
                 ),
             ),
+            # The models prefetch feeds only the first/last-year bounds now —
+            # the title list it used to feed is the games embed.
             Prefetch(
                 "models",
-                queryset=MachineModel.objects.active()
-                .filter(variant_of__isnull=True)
-                .select_related("technology_generation", "title")
-                .order_by(F("year").desc(nulls_last=True), "name"),
+                queryset=MachineModel.objects.active().filter(variant_of__isnull=True),
             ),
             claims_prefetch(),
         )
@@ -150,7 +157,6 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
         ipdb_manufacturer_id=ce.ipdb_manufacturer_id,
         aliases=[a.value for a in ce.aliases.all()],
         locations=serialize_locations(ce),
-        titles=collect_titles(ce.models.all()),
     )
 
 

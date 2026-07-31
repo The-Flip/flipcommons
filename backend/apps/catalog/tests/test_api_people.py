@@ -33,10 +33,12 @@ class TestPeopleAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Pat Lawlor"
-        assert len(data["titles"]) == 1
-        assert data["titles"][0]["name"] == "Medieval Madness"
-        assert data["titles"][0]["roles"] == ["Design"]
-        assert data["titles"][0]["year"] == 1997
+        # The games embed carries the person's roles per card.
+        assert data["games"]["count"] == 1
+        card = data["games"]["items"][0]
+        assert card["name"] == "Medieval Madness"
+        assert card["roles"] == ["Design"]
+        assert card["year"] == 1997
 
     def test_get_person_detail_external_ids(self, client, person):
         person.wikidata_id = "Q98765"
@@ -60,7 +62,7 @@ class TestPeopleAPI:
         for m in (old, new, no_year):
             Credit.objects.create(model=m, person=person, role=role)
         resp = client.get(f"/api/pages/person/{person.slug}")
-        names = [t["name"] for t in resp.json()["titles"]]
+        names = [c["name"] for c in resp.json()["games"]["items"]]
         assert names == ["New Title", "Old Title", "No Year Title"]
 
 

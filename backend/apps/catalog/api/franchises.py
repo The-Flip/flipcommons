@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from django.db.models import Count, Prefetch, Q, QuerySet
+from django.db.models import Count, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
@@ -15,7 +15,6 @@ from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import execute_claims, plan_scalar_field_claims
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
-from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
@@ -25,11 +24,10 @@ from ..engine.entity_api.create import register_entity_create
 from ..engine.entity_api.delete import register_entity_delete_restore
 from ..engine.entity_api.listing import paginated_list_response
 from ..engine.query.constants import NameQuery, PageParam
-from ..models import Franchise, MachineModel, Title
+from ..models import Franchise
 from ._typing import HasTitleCount
-from .helpers import serialize_title_ref
-from .images import fetch_title_media_map
-from .schemas import ClaimPatchSchema, EntityDetailSchema, TitleRef
+from .games import GameListSchema
+from .schemas import ClaimPatchSchema, EntityDetailSchema
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -53,8 +51,18 @@ class FranchiseListSchema(Schema):
 
 
 class FranchiseDetailSchema(EntityDetailSchema):
+    """The franchise record — the response of the mutation endpoints. The
+    read-only detail page's payload is :class:`FranchiseDetailPageSchema`."""
+
     slug: str
-    titles: list[TitleRef]
+
+
+class FranchiseDetailPageSchema(FranchiseDetailSchema):
+    """The detail-page payload: the record plus page 1 of its games — the
+    listing pinned to ``franchise=<slug>`` (a Title-only dimension, so the
+    cards stay Titles) in the listing's defined order."""
+
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------
@@ -100,49 +108,17 @@ def list_franchises(
     return FranchiseListSchema(items=result.items, count=result.total)
 
 
-def _franchise_titles_qs() -> QuerySet[Title]:
-    return (
-        Title.objects.active()
-        .annotate(
-            model_count=Count(
-                "machine_models",
-                filter=Q(machine_models__variant_of__isnull=True)
-                & active_status_q("machine_models"),
-            )
-        )
-        .prefetch_related(
-            "abbreviations",
-            Prefetch(
-                "machine_models",
-                queryset=MachineModel.objects.active()
-                .filter(variant_of__isnull=True)
-                .select_related("corporate_entity__manufacturer")
-                .order_by("year", "name"),
-            ),
-        )
-    )
-
-
 def _franchise_detail_qs() -> QuerySet[Franchise]:
-    return Franchise.objects.active().prefetch_related(
-        Prefetch("titles", queryset=_franchise_titles_qs()), claims_prefetch()
-    )
+    return Franchise.objects.active().prefetch_related(claims_prefetch())
 
 
 def _serialize_franchise_detail(franchise: Franchise) -> FranchiseDetailSchema:
-    min_rank = get_minimum_display_rank()
-    titles_list = list(franchise.titles.all())
-    media_by_model = fetch_title_media_map(titles_list)
     return FranchiseDetailSchema(
         name=franchise.name,
         public_id=franchise.public_id,
         last_modified=franchise.last_modified,
         slug=franchise.slug,
         description=describe(franchise),
-        titles=[
-            serialize_title_ref(t, min_rank=min_rank, media_by_model=media_by_model)
-            for t in titles_list
-        ],
     )
 
 

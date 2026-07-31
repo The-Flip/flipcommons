@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './people-detail.test-harness.svelte';
 import { load } from './+layout.server';
-import type { PersonDetailSchema } from '$lib/api/schema';
+import type { PersonDetailPageSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Pat Lawlor',
@@ -25,18 +25,22 @@ const MOCK_DATA = {
   birth_place: null,
   nationality: 'American',
   photo_url: null,
-  titles: [
-    {
-      name: 'Medieval Madness',
-      public_id: 'medieval-madness',
-      year: 1997,
-      manufacturer_name: 'Williams',
-      thumbnail_url: null,
-      roles: ['Design'],
-    },
-  ],
+  games: {
+    items: [
+      {
+        entity_type: 'title' as const,
+        name: 'Medieval Madness',
+        public_id: 'medieval-madness',
+        year: 1997,
+        manufacturer: { name: 'Williams', public_id: 'williams' },
+        thumbnail_url: null,
+        roles: ['Design'],
+      },
+    ],
+    count: 1,
+  },
   uploaded_media: [],
-} satisfies PersonDetailSchema;
+} satisfies PersonDetailPageSchema;
 
 describe('people detail SSR route', () => {
   it('loads from the page endpoint', async () => {
@@ -74,12 +78,13 @@ describe('people detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: MOCK_DATA, jsonLd: {} },
+        data: { profile: MOCK_DATA, q: '', jsonLd: {} },
       },
     });
 
     expect(body).toContain('Bio');
     expect(body).toContain('Details');
-    expect(body).toContain('Credits (1)');
+    expect(body).toContain('Games (1)');
+    expect(body).toContain('Design');
   });
 });

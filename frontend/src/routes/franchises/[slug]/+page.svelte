@@ -1,7 +1,8 @@
+<!-- @component Franchise detail page: description and the games listing pinned to the franchise. -->
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
+  import GamesSection from '$lib/components/pages/record/detail/GamesSection.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
-  import TitleList from '$lib/components/collections/TitleList.svelte';
 
   let { data } = $props();
   let franchise = $derived(data.profile);
@@ -14,7 +15,7 @@
   </section>
 {/if}
 
-<TitleList titles={franchise.titles} emptyMessage="No titles in this franchise." />
+<GamesSection games={franchise.games} q={data.q} pinned={{ franchise: franchise.slug }} />
 
 <style>
   .description {

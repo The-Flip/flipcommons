@@ -35,8 +35,9 @@ class TestSeriesPageEndpoint:
         data = resp.json()
         assert data["name"] == "Eight Ball"
         assert data["slug"] == "eight-ball"
-        assert len(data["titles"]) == 1
-        assert data["titles"][0]["name"] == "Eight Ball Deluxe"
+        assert data["games"]["count"] == 1
+        assert data["games"]["items"][0]["name"] == "Eight Ball Deluxe"
+        assert data["games"]["items"][0]["entity_type"] == "title"
 
     def test_404(self, client, db):
         assert client.get("/api/pages/series/nonexistent").status_code == 404
@@ -77,7 +78,8 @@ class TestFranchisePageEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Star Trek"
-        assert len(data["titles"]) == 1
+        assert data["games"]["count"] == 1
+        assert data["games"]["items"][0]["entity_type"] == "title"
 
     def test_404(self, client, db):
         assert client.get("/api/pages/franchise/nonexistent").status_code == 404
@@ -288,7 +290,7 @@ class TestRewardTypePageEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Extra Ball"
-        assert "machines" in data
+        assert "games" in data
 
     def test_404(self, client, db):
         assert client.get("/api/pages/reward-type/nonexistent").status_code == 404
