@@ -1,3 +1,4 @@
+<!-- @component Global-search results: per-entity card sections with "see all" listing links. -->
 <script lang="ts">
   import { resolve } from '$app/paths';
   import CardGrid from '$lib/components/collections/grid/CardGrid.svelte';
@@ -11,7 +12,7 @@
   // A section caps at 10; when `has_more`, link to that entity's listing page,
   // which already does the same server-side `q` search with pagination. So a
   // capped section is a doorway to the full result set, not a dead end.
-  const titlesHref = $derived(`${resolve('/titles')}?q=${encodeURIComponent(q)}`);
+  const titlesHref = $derived(`${resolve('/games')}?q=${encodeURIComponent(q)}`);
   const manufacturersHref = $derived(`${resolve('/manufacturers')}?q=${encodeURIComponent(q)}`);
   const peopleHref = $derived(`${resolve('/people')}?q=${encodeURIComponent(q)}`);
 

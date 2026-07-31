@@ -1,5 +1,5 @@
 <script lang="ts">
-  import TitleFilterSidebar from './TitleFilterSidebar.svelte';
+  import GameFilterSidebar from './GameFilterSidebar.svelte';
   import { emptyFilterState } from '$lib/facet-engine';
 
   // Cold-load state: options still streaming, so `filterOptions` is undefined. Exercises
@@ -8,4 +8,4 @@
   let filters = $state(emptyFilterState());
 </script>
 
-<TitleFilterSidebar filterOptions={undefined} disabled bind:filters />
+<GameFilterSidebar filterOptions={undefined} disabled bind:filters />

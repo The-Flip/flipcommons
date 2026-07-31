@@ -1,3 +1,4 @@
+<!-- @component Site-wide top navigation bar. -->
 <script lang="ts">
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
@@ -15,7 +16,7 @@
   import { toast } from '$lib/toast/toast.svelte';
 
   const navItems = [
-    { href: '/titles' as const, label: 'Games' },
+    { href: '/games' as const, label: 'Games' },
     { href: '/manufacturers' as const, label: 'Manufacturers' },
     { href: '/people' as const, label: 'People' },
   ];

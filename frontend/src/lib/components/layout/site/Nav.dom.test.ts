@@ -204,7 +204,7 @@ describe('Nav', () => {
       render(Nav);
 
       await user.click(screen.getByRole('button', { name: 'Menu' }));
-      expect(screen.getByRole('menuitem', { name: 'Games' })).toHaveAttribute('href', '/titles');
+      expect(screen.getByRole('menuitem', { name: 'Games' })).toHaveAttribute('href', '/games');
       expect(screen.getByRole('menuitem', { name: 'Manufacturers' })).toBeInTheDocument();
       expect(screen.getByRole('menuitem', { name: 'People' })).toBeInTheDocument();
       expect(screen.getByRole('menuitem', { name: 'Changelog' })).toBeInTheDocument();

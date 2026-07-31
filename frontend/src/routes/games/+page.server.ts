@@ -1,10 +1,10 @@
 import { error } from '@sveltejs/kit';
 import { createServerClient } from '$lib/api/server';
-import { queryFromUrl } from './titles-query';
+import { queryFromUrl } from './games-query';
 import type { PageServerLoad } from './$types';
 
 /**
- * SSR load for /titles. The cards are **awaited** so page 1 lands in the server
+ * SSR load for /games. The cards are **awaited** so page 1 lands in the server
  * HTML, where a crawler can see it. The facet option lists cost several times
  * more to compute and are wanted by neither the crawler nor the first paint, so
  * they are returned as an **unawaited promise** — SvelteKit streams them down

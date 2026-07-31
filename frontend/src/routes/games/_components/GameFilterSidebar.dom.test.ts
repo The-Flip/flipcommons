@@ -1,13 +1,13 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import TitleFilterSidebarFixture from './TitleFilterSidebar.fixture.svelte';
+import GameFilterSidebarFixture from './GameFilterSidebar.fixture.svelte';
 
-describe('TitleFilterSidebar — cold load (no options)', () => {
+describe('GameFilterSidebar — cold load (no options)', () => {
   it('renders the filter chrome without crashing when options are undefined', () => {
     // Pins the guards on every `filterOptions`-reading derivation — notably
     // `playerCountChipOptions`, which bypasses `toOptions` and would otherwise
     // dereference `undefined.player_count` on a cold load.
-    render(TitleFilterSidebarFixture);
+    render(GameFilterSidebarFixture);
 
     expect(screen.getByRole('combobox', { name: /manufacturer/i })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: /relationship/i })).toBeDisabled();

@@ -1,3 +1,4 @@
+<!-- @component Filter sidebar for the /games listing: every surfaced facet control. -->
 <script lang="ts">
   import ChipGroup from '$lib/components/ui/ChipGroup.svelte';
   import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';

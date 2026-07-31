@@ -113,9 +113,12 @@ describe('GET /sitemap.xml', () => {
     });
     const response = await callGet();
     const xml = await response.text();
+    // The Title feed's max_lastmod keys to the games listing (the override),
+    // not /titles — which is a redirect endpoint, absent from the sitemap.
     expect(xml).toMatch(
-      /<loc>https:\/\/flipcommons\.org\/titles<\/loc>\s*<lastmod>2026-02-01T00:00:00Z<\/lastmod>/,
+      /<loc>https:\/\/flipcommons\.org\/games<\/loc>\s*<lastmod>2026-02-01T00:00:00Z<\/lastmod>/,
     );
+    expect(xml).not.toMatch(/<loc>https:\/\/flipcommons\.org\/titles<\/loc>/);
   });
 
   // Load-bearing test for the canonical-URL invariant: single-Model Title

@@ -8,7 +8,7 @@
  *     runaway caller can't wall the screen.
  *   - `persistUntilNav` marks a toast as surviving exactly one client
  *     navigation, then auto-clearing on the next — lets a delete page show
- *     an undo toast on `/titles` after `goto('/titles')`.
+ *     an undo toast on `/games` after `goto('/games')`.
  *   - Each push returns a handle so the caller can `update()` the text
  *     after an async action resolves ("Deleted X" → "Restored X").
  *

@@ -77,7 +77,13 @@ export const LISTED_INDEXABLE_ENTITY_SLUG_SOURCE = {
  * the listing everywhere at once. Detail routes are unaffected: they classify
  * by the entity's plural segment regardless of where the listing lives.
  */
-const LISTING_ROUTE_OVERRIDES = {} as const satisfies Partial<Record<CatalogEntityKey, RouteId>>;
+const LISTING_ROUTE_OVERRIDES = {
+  // The heterogeneous games listing: Title and Model cards under the roll-up,
+  // keyed under `title` because Titles are its unit of account (the page
+  // passes `catalogKey="title"`, and `listingMeta('title')` carries the
+  // "Games" copy). `/titles` itself is a 301 to `/games`.
+  title: '/games',
+} as const satisfies Partial<Record<CatalogEntityKey, RouteId>>;
 
 /**
  * The URL path of an entity's listing page: its declared override, else the

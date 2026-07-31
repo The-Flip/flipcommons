@@ -40,7 +40,7 @@ describe('noindexHandle', () => {
     ['/', false],
     ['/about', false],
     ['/titles/[slug]', false],
-    ['/titles', false], // catalog listing — indexable since the SSR conversion
+    ['/games', false], // the games listing — catalog-listing via the route override
     // Listed non-indexable.
     ['/login', true],
     ['/search', true],

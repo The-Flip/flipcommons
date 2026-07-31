@@ -1,3 +1,4 @@
+<!-- @component The Title delete confirmation page. -->
 <script lang="ts">
   import DeletePage from '$lib/components/pages/record/delete/DeletePage.svelte';
   import type { BlockedState } from '$lib/components/pages/record/delete/delete-page';
@@ -41,7 +42,7 @@
   {public_id}
   submit={submitDelete}
   cancelHref={`/titles/${public_id}`}
-  redirectAfterDelete="/titles"
+  redirectAfterDelete="/games"
   editHistoryHref={`/titles/${public_id}/edit-history`}
   {blocked}
   {impact}

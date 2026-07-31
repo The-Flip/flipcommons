@@ -1,5 +1,5 @@
 /**
- * URL → backend query mapping for the SSR /titles page.
+ * URL → backend query mapping for the SSR /games page.
  *
  * Kept local to the route (not in a generic harness): people is search-only and
  * manufacturers differ, so we apply the rule of three before extracting. Because
@@ -10,7 +10,7 @@
  */
 
 /** The `/api/games/` query object (every filter dimension; `page` added by the caller). */
-export interface TitlesQuery {
+export interface GamesQuery {
   q?: string;
   manufacturer?: string;
   person?: string;
@@ -31,7 +31,7 @@ export interface TitlesQuery {
   cabinet?: string[];
 }
 
-export function queryFromUrl(url: URL): TitlesQuery {
+export function queryFromUrl(url: URL): GamesQuery {
   const sp = url.searchParams;
   const str = (p: string): string | undefined => sp.get(p) || undefined;
   const num = (p: string): number | undefined => {

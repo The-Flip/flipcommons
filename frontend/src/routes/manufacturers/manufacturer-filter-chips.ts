@@ -9,7 +9,7 @@ import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveF
  * name; the chips' `remove` closures mutate the passed `filters` object (the page's
  * bindable `$state`), so clicking a chip clears that filter reactively. Pure and
  * component-free so the chip set can be unit-tested directly. Mirrors
- * `titles-filter-chips`; all manufacturer facets are single-select plus a year range.
+ * `games-filter-chips`; all manufacturer facets are single-select plus a year range.
  */
 export function manufacturerFilterChips(
   filters: MfrFilterState,

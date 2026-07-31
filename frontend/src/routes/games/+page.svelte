@@ -1,11 +1,12 @@
+<!-- @component The /games listing page: heterogeneous Title/Model cards with faceted filtering. -->
 <script lang="ts">
   import client from '$lib/api/client';
   import { unwrapPage } from '$lib/paginated-loader.svelte';
   import FacetedCatalogListing from '$lib/components/pages/listing/FacetedCatalogListing.svelte';
-  import TitleFilterSidebar from './_components/TitleFilterSidebar.svelte';
+  import GameFilterSidebar from './_components/GameFilterSidebar.svelte';
   import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import { filtersFromParams, filtersToParams } from '$lib/facet-engine';
-  import { titleFilterChips } from './titles-filter-chips';
+  import { gameFilterChips } from './games-filter-chips';
 
   let { data } = $props();
 
@@ -25,8 +26,8 @@
 <FacetedCatalogListing
   catalogKey="title"
   {engine}
-  Sidebar={TitleFilterSidebar}
-  chips={titleFilterChips}
+  Sidebar={GameFilterSidebar}
+  chips={gameFilterChips}
   filterOptions={data.filter_options}
   queryCount={data.query_count}
   query={data.query}

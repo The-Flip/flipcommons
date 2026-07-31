@@ -1,7 +1,7 @@
 /**
  * URL → backend query mapping for the SSR /manufacturers page.
  *
- * Kept local to the route (mirrors `titles-query.ts`). Because the URL params already
+ * Kept local to the route (mirrors `games-query.ts`). Because the URL params already
  * use the real `ManufacturerFilterQuery` field names (one vocabulary end to end — see
  * `PARAM_MAP` in `manufacturer-facet-engine`), this is a near passthrough: read each
  * param, coerce numbers. All facets are single-value (no repeated multi-value params).

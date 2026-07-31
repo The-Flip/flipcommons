@@ -1,3 +1,4 @@
+<!-- @component The home page: search box plus explore links into the catalog. -->
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
@@ -72,7 +73,7 @@
   </form>
 
   <nav class="explore-links">
-    <a href={resolve('/titles')} class="explore-card">
+    <a href={resolve('/games')} class="explore-card">
       <span class="explore-label">Games</span>
       <span class="explore-desc"
         >{titleCount !== null ? fmt(titleCount) : 'Thousands of'} pinball machines from the 1930s to today</span
