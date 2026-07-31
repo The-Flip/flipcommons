@@ -22,6 +22,8 @@ Use Svelte's built-in doc mechanisms so the docs surface on hover in consumers' 
 - **Component-level**: a top-level `<!-- @component -->` HTML comment (outside `<script>`). The Svelte Language Server shows it when hovering the component tag in another file. Markdown and fenced code blocks are supported.
 - **Per-prop**: a `/** */` JSDoc comment on each `$props()` field (or on the `Props` interface members). Shows on hover at the prop.
 
+Also ensure the comment says the right things, as mandated in [CodeComments.md](CodeComments.md).
+
 ```svelte
 <!--
 @component
