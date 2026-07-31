@@ -4,6 +4,7 @@
 
 import type { RouteId } from '$app/types';
 import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
+import { LISTING_ROUTE_OVERRIDES, listingPath } from '$lib/entities/listing-path';
 import { listingMeta } from '$lib/entities/schema-org';
 import type { Crumb } from '$lib/components/layout/page/head/jsonld';
 
@@ -69,30 +70,6 @@ export const SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS = [
 export const LISTED_INDEXABLE_ENTITY_SLUG_SOURCE = {
   '/manufacturers/[slug]/systems': 'manufacturer',
 } as const satisfies Partial<Record<RouteId, CatalogEntityKey>>;
-
-/**
- * Listing routes that do NOT live at `/{entity_type_plural}`. Everything that
- * derives a listing URL — `classifyRoute`, `listingCrumb`, the sitemap's
- * listing-`lastmod` keying — consults `listingPath()`, so an entry here moves
- * the listing everywhere at once. Detail routes are unaffected: they classify
- * by the entity's plural segment regardless of where the listing lives.
- */
-const LISTING_ROUTE_OVERRIDES = {
-  // The heterogeneous games listing: Title and Model cards under the roll-up,
-  // keyed under `title` because Titles are its unit of account (the page
-  // passes `catalogKey="title"`, and `listingMeta('title')` carries the
-  // "Games" copy). `/titles` itself is a 301 to `/games`.
-  title: '/games',
-} as const satisfies Partial<Record<CatalogEntityKey, RouteId>>;
-
-/**
- * The URL path of an entity's listing page: its declared override, else the
- * model-driven default `/{entity_type_plural}`.
- */
-export function listingPath(entity: CatalogEntityKey): string {
-  const overrides: Partial<Record<CatalogEntityKey, RouteId>> = LISTING_ROUTE_OVERRIDES;
-  return overrides[entity] ?? `/${ENTITY_META[entity].entity_type_plural}`;
-}
 
 // LISTING_ROUTE_OVERRIDES inverted: overridden listing route ID → entity key.
 const OVERRIDE_LISTING_TO_KEY: ReadonlyMap<string, CatalogEntityKey> = new Map(

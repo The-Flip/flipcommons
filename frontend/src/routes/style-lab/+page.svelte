@@ -63,7 +63,7 @@
         <Button>Search</Button>
       </div>
       <p>
-        Match results across <a href="/titles">titles</a>, manufacturers, people, systems, and
+        Match results across <a href="/games">games</a>, manufacturers, people, systems, and
         gameplay features.
       </p>
     </div>

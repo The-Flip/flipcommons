@@ -23,8 +23,8 @@ import {
   classifyRoute,
   isSearchEngineIndexable,
   LISTED_INDEXABLE_ENTITY_SLUG_SOURCE,
-  listingPath,
 } from '$lib/route-metadata.server';
+import { listingPath } from '$lib/entities/listing-path';
 import { isDeploymentSearchEngineIndexable } from '$lib/is-deployment-search-engine-indexable.server';
 import { STATIC_LASTMOD } from '$lib/static-lastmod';
 import { stripRouteGroups, routeIdToRegex } from '$lib/sitemap-helpers';
@@ -75,7 +75,7 @@ const EXCLUDE_ROUTE_PATTERNS: readonly RegExp[] = allRoutes()
 
 // catalog-* detail/edit-history/sources route IDs, grouped by entity.
 // `safeIsIndexable` filters to the indexable catalog kinds; the `catalog-listing`
-// exclusion drops the param-less listing routes (`/cabinets`, `/titles`, …) —
+// exclusion drops the param-less listing routes (`/cabinets`, `/games`, …) —
 // they carry no `[slug]`, so they belong in super-sitemap's static-route
 // auto-discovery, not `paramValues`. (super-sitemap@2 throws on a `paramValues`
 // key for a route that expects no params; v1 silently ignored it.) Listing
@@ -136,7 +136,7 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
   // excluded from discovery below, rather than seeded with an empty array.
   const paramValues: sitemap.ParamValues = {};
 
-  // Catalog listing pages (`/titles`, `/manufacturers`, …) are static routes,
+  // Catalog listing pages (`/games`, `/manufacturers`, …) are static routes,
   // so super-sitemap auto-discovers them but can't know their freshness. Key
   // each listing URL to its entity feed's `max_lastmod` (the newest member's
   // lastmod) and attach it in `processPaths` below, alongside STATIC_LASTMOD.

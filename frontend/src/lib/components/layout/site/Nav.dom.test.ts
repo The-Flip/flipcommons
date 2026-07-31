@@ -224,4 +224,27 @@ describe('Nav', () => {
     expect(screen.queryByRole('menuitem', { name: 'People' })).not.toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Changelog' })).toBeInTheDocument();
   });
+
+  // Games is the one item whose listing (/games) and detail pages (/titles/…)
+  // live under different segments, so its active state needs both prefixes.
+  describe('Games active state', () => {
+    it.each([
+      ['/games', true],
+      ['/games?manufacturer=stern', true],
+      ['/titles/godzilla', true],
+      ['/titles/godzilla/edit-history', true],
+      ['/manufacturers/stern', false],
+    ] as const)('%s → active=%s', (path, active) => {
+      setAuth({});
+      pageState.url = new URL(`http://localhost:5173${path}`);
+      render(Nav);
+
+      const link = screen.getByRole('link', { name: 'Games' });
+      if (active) {
+        expect(link).toHaveClass('active');
+      } else {
+        expect(link).not.toHaveClass('active');
+      }
+    });
+  });
 });

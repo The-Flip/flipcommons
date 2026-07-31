@@ -7,11 +7,11 @@ import {
   isSearchEngineIndexable,
   allRoutes,
   LISTED_INDEXABLE_ENTITY_SLUG_SOURCE,
-  listingPath,
   SEARCH_ENGINE_INDEXABLE_ROUTE_IDS,
   SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS,
   type RouteClass,
 } from './route-metadata.server';
+import { listingPath } from '$lib/entities/listing-path';
 import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 // SvelteKit's ssr resolution rule: walk leaf-to-root through the

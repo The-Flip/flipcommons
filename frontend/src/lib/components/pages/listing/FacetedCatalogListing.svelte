@@ -19,11 +19,12 @@
     type ListingJsonLdItem,
   } from '$lib/entities/schema-org';
   import { decideCreatePrompt } from '$lib/create-prompt';
+  import { listingPath } from '$lib/entities/listing-path';
   import { streamed } from '$lib/streamed.svelte';
   import { resolveHref } from '$lib/utils';
 
   /**
-   * Shared shell for the faceted catalog listing pages (`/titles`,
+   * Shared shell for the faceted catalog listing pages (`/games`,
    * `/manufacturers`). The faceted superset of `CatalogListing`/`PaginatedListPage`:
    * it owns the URL⇄filter-state loop (seed from the request URL, popstate resync,
    * debounced search, `goto` on any filter change), the streamed-facet sidebar
@@ -80,7 +81,11 @@
   } = $props();
 
   let meta = $derived(ENTITY_META[catalogKey]);
-  let basePath = $derived(`/${meta.entity_type_plural}`);
+  // Two distinct paths: filter navigation goes to the listing (which may be
+  // overridden — `/games`), while creation lives under the entity's own
+  // segment (`/titles/new`), because what the listing creates is the entity.
+  let navPath = $derived(listingPath(catalogKey));
+  let createBasePath = $derived(`/${meta.entity_type_plural}`);
   // What one listing ROW is called (a "game" can be a Title or a Model); the
   // create prompt keeps the entity label, because what it creates is a Title.
   let entityLabel = $derived(meta.label.toLowerCase());
@@ -145,7 +150,7 @@
     const search = canonical(filters);
     if (search === lastSyncedSearch) return;
     lastSyncedSearch = search;
-    void goto(`${resolveHref(basePath)}${search ? `?${search}` : ''}`, {
+    void goto(`${resolveHref(navPath)}${search ? `?${search}` : ''}`, {
       keepFocus: true,
       noScroll: true,
     });
@@ -154,7 +159,7 @@
   // The "create?" prompt keys on the committed query (`query.q`, which the
   // streamed `query_count` was computed for) — not the mid-debounce `queryInput`.
   let createHref = $derived(
-    `${resolveHref(`${basePath}/new`)}?name=${encodeURIComponent((query.q ?? '').trim())}`,
+    `${resolveHref(`${createBasePath}/new`)}?name=${encodeURIComponent((query.q ?? '').trim())}`,
   );
 
   $effect(() => {

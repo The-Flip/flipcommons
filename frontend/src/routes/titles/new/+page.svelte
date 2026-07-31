@@ -10,5 +10,5 @@
   initialName={data.initialName}
   submit={(body) => client.POST('/api/titles/', { body })}
   detailHref={(slug) => `/titles/${slug}`}
-  cancelHref="/titles"
+  cancelHref="/games"
 />
