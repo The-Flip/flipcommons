@@ -259,6 +259,21 @@ class TestGameFormatPageEndpoint:
         data = client.get("/api/pages/game-format/bingo-pinball").json()
         assert [c["name"] for c in data["games"]["items"]] == ["Bingo"]
 
+    def test_pin_carries_the_widened_preset(self, client, db):
+        """The embed's filters travel in the payload as ``games.pin`` so the
+        client fetches pages 2+ from the same query. The preset widening is
+        why: a client re-deriving the pin from the slug sent the bare value,
+        and pages 2+ came from a different (97-item) set than page 1's
+        bucket."""
+        GameFormat.objects.create(name="Pinball", slug="pinball")
+        data = client.get("/api/pages/game-format/pinball").json()
+        assert data["games"]["pin"]["game_format"] == ["pinball", "unclassified"]
+
+    def test_pin_stays_exact_for_a_minority_value(self, client, db):
+        GameFormat.objects.create(name="Bingo Pinball", slug="bingo-pinball")
+        data = client.get("/api/pages/game-format/bingo-pinball").json()
+        assert data["games"]["pin"]["game_format"] == ["bingo-pinball"]
+
 
 # ---------------------------------------------------------------------------
 # Production Statuses

@@ -19,6 +19,7 @@ from django.test.utils import CaptureQueriesContext
 from apps.catalog.api._game_facets import GameFacetOptions
 from apps.catalog.api._game_rows import GameFilters
 from apps.catalog.api.games import (
+    GameDimensionQuerySchema,
     GameFilterOptionsSchema,
     GameFilterQuerySchema,
     _filter_options_payload,
@@ -128,6 +129,17 @@ class TestGamesList:
 
     def test_whitespace_q_is_no_filter(self, client, title):
         assert client.get("/api/games/?q=%20%20").json()["count"] == 1
+
+    def test_response_carries_the_query_pin(self, client, title):
+        """Every list response echoes the dimension filters it was computed
+        under as ``pin``. Detail pages fetch pages 2+ by spreading it back
+        into ``GET /api/games/``, so the paginated set can never diverge from
+        the embedded page 1. ``q`` is not a dimension and never rides along —
+        it round-trips separately through the page URL."""
+        data = client.get("/api/games/?theme=medieval&q=mad").json()
+        assert data["pin"]["theme"] == ["medieval"]
+        assert data["pin"]["manufacturer"] is None
+        assert "q" not in data["pin"]
 
     def test_q_diacritic_is_backend_specific(self, client, db):
         """Name `q` folds diacritics on Postgres only — the documented dev/prod
@@ -339,7 +351,8 @@ class TestEdgeParams:
 
     def test_unknown_edge_matches_nothing(self, client, copied):
         data = client.get("/api/games/?edge=bogus").json()
-        assert data == {"items": [], "count": 0}
+        assert data["items"] == []
+        assert data["count"] == 0
 
 
 class TestGamesFacetsPage:
@@ -450,6 +463,18 @@ class TestWireVocabularyCompleteness:
             assert changed, f"param {name!r} narrows nothing"
             covered |= changed
         assert covered == {fl.name for fl in fields(GameFilters)}
+
+    def test_pin_round_trips_through_the_wire(self):
+        """``from_filters`` must invert ``to_filters`` with every dimension
+        active at once — the ``pin`` a page payload carries is exactly the
+        filter set its embed ran, or pages 2+ silently paginate a different
+        set."""
+        params = {
+            name: self._sentinel(info.annotation)
+            for name, info in GameDimensionQuerySchema.model_fields.items()
+        }
+        f = GameDimensionQuerySchema.model_validate(params).to_filters()
+        assert GameDimensionQuerySchema.from_filters(f).to_filters() == f
 
     def test_facet_payload_spellings_agree(self):
         """The facet trio — ``GameFacetOptions`` (engine),

@@ -50,7 +50,7 @@
   </AccordionSection>
 {/if}
 
-<GamesSection games={profile.games} q={data.q} pinned={{ gameplay_feature: [profile.slug] }} />
+<GamesSection games={profile.games} q={data.q} />
 
 <style>
   .description {

@@ -15,12 +15,7 @@
   </div>
 {/if}
 
-<GamesSection
-  games={ce.games}
-  q={data.q}
-  pinned={{ corporate_entity: ce.slug }}
-  showManufacturer={false}
-/>
+<GamesSection games={ce.games} q={data.q} showManufacturer={false} />
 
 <style>
   .description {

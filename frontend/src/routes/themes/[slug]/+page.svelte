@@ -33,7 +33,7 @@
   headingSize="var(--font-size-3)"
 />
 
-<GamesSection games={theme.games} q={data.q} pinned={{ theme: [theme.slug] }} />
+<GamesSection games={theme.games} q={data.q} />
 
 <style>
   .description {

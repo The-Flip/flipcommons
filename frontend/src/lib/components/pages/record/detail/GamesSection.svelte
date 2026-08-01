@@ -1,42 +1,50 @@
 <!-- @component
 Detail-page games section: the /games listing pinned to one dimension value.
 SSR-seeded page 1 + count from the page payload's `games` embed, pages 2+
-from `GET /api/games/` with the pin (and any active search) applied, and a
-threshold-gated search box that mirrors typing into a debounced `goto ?q=` —
-the listing page's own mechanism, so the server load re-runs and reseeds. -->
+from `GET /api/games/` with the embed's own `pin` (and any active search)
+applied — the pin travels in the payload precisely so this component can
+never paginate a different set than page 1 — and a threshold-gated search
+box that mirrors typing into a debounced `goto ?q=` — the listing page's
+own mechanism, so the server load re-runs and reseeds. -->
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import client from '$lib/api/client';
-  import type { GameCardSchema, paths } from '$lib/api/schema';
+  import type { GameListSchema, paths } from '$lib/api/schema';
   import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import { SEARCH_THRESHOLD } from '$lib/components/collections/grid/search-threshold';
   import PaginatedCardLoader from '$lib/components/pages/listing/PaginatedCardLoader.svelte';
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import { unwrapPage } from '$lib/paginated-loader.svelte';
 
-  /** The listing query params that pin the section to its dimension value. */
+  /** The listing query params for pages 2+. */
   type GamesQuery = NonNullable<paths['/api/games/']['get']['parameters']['query']>;
 
   let {
     games,
     q,
-    pinned,
     showManufacturer = true,
   }: {
-    /** SSR page 1 + total count for the committed `q` — the page payload's embed. */
-    games: { items: GameCardSchema[]; count: number };
+    /** SSR page 1 + count + pin for the committed `q` — the page payload's embed. */
+    games: GameListSchema;
     /** Committed search term from the SSR load (URL-derived); '' when unfiltered. */
     q: string;
-    /** The pinned dimension params, e.g. `{ theme: [slug] }`. */
-    pinned: GamesQuery;
     /** False on pages whose subject is the maker (manufacturer, corporate entity). */
     showManufacturer?: boolean;
   } = $props();
 
+  /** The embed's pin as query params: unset dimensions (nulls, empty lists)
+   * stripped so they don't serialize. The pin's field names are the listing's
+   * own param vocabulary, so the assertion narrows, not remaps. */
+  function pinQuery(pin: GameListSchema['pin']): GamesQuery {
+    return Object.fromEntries(
+      Object.entries(pin).filter(([, v]) => v != null && (!Array.isArray(v) || v.length > 0)),
+    ) as GamesQuery;
+  }
+
   const fetchPage = async (pageNum: number) => {
     const { data } = await client.GET('/api/games/', {
-      params: { query: { ...pinned, ...(q ? { q } : {}), page: pageNum } },
+      params: { query: { ...pinQuery(games.pin), ...(q ? { q } : {}), page: pageNum } },
     });
     return unwrapPage(data);
   };

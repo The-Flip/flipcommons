@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import Page from './people-detail.test-harness.svelte';
 import { load } from './+layout.server';
 import type { PersonDetailPageSchema } from '$lib/api/schema';
+import { emptyPin } from '$lib/api/detail-fixtures';
 
 const MOCK_DATA = {
   name: 'Pat Lawlor',
@@ -26,6 +27,7 @@ const MOCK_DATA = {
   nationality: 'American',
   photo_url: null,
   games: {
+    pin: emptyPin(),
     items: [
       {
         entity_type: 'title' as const,

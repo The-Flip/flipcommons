@@ -91,7 +91,7 @@
 
 <RichTextReferencesAccordion richText={person.description} state={richTextState} />
 
-<GamesSection games={person.games} q={data.q} pinned={{ person: person.slug }} />
+<GamesSection games={person.games} q={data.q} />
 
 <style>
   .photo {

@@ -347,8 +347,9 @@ PREEXISTING_FACETED = frozenset({"games", "manufacturers"})
 
 
 def _mounts_paginated_list_root(router: object) -> bool:
-    """True iff *router* mounts a ``GET /`` whose 200 response is an ``{items, count}``
-    page wrapper — the shape ``createPaginatedLoader`` consumes."""
+    """True iff *router* mounts a ``GET /`` whose 200 response carries the
+    ``{items, count}`` page wrapper — the fields ``createPaginatedLoader``
+    consumes. Superset, not exact: the games list also carries ``pin``."""
     path_op = getattr(router, "path_operations", {}).get("/")
     if path_op is None:
         return False
@@ -359,7 +360,7 @@ def _mounts_paginated_list_root(router: object) -> bool:
         if wrapper is None:
             continue
         inner = wrapper.model_fields["response"].annotation
-        if set(getattr(inner, "model_fields", {})) == {"items", "count"}:
+        if {"items", "count"} <= set(getattr(inner, "model_fields", {})):
             return True
     return False
 

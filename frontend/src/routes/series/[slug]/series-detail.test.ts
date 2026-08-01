@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
 import type { SeriesDetailPageSchema } from '$lib/api/schema';
+import { emptyPin } from '$lib/api/detail-fixtures';
 
 const MOCK_DATA = {
   name: 'Eight Ball',
@@ -11,6 +12,7 @@ const MOCK_DATA = {
   slug: 'eight-ball',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
   games: {
+    pin: emptyPin(),
     items: [
       {
         entity_type: 'title' as const,

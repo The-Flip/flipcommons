@@ -18,7 +18,7 @@
 
 <CreditsList credits={series.credits} />
 
-<GamesSection games={series.games} q={data.q} pinned={{ series: series.slug }} />
+<GamesSection games={series.games} q={data.q} />
 
 <style>
   .description {

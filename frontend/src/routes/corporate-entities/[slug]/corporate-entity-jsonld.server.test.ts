@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
 import type { CorporateEntityDetailPageSchema } from '$lib/api/schema';
 import { MOCK_CORPORATE_ENTITY } from './corporate-entity.fixtures';
+import { makeGamesList } from '$lib/api/detail-fixtures';
 
 const ORIGIN = 'http://localhost:5173';
 
@@ -13,7 +14,7 @@ const CE = {
   public_id: 'bally',
   slug: 'bally',
   manufacturer: { name: 'Bally', public_id: 'bally-mfr' },
-  games: { items: [], count: 0 },
+  games: makeGamesList(),
 } satisfies CorporateEntityDetailPageSchema;
 
 function event(profile: CorporateEntityDetailPageSchema, slug = profile.slug) {
