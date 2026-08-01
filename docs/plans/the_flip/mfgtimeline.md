@@ -7,22 +7,24 @@ The Flip museum built a manufacturer timeline poster off the public Flipcommons 
 
 Since then, Flipcommons has shipped some things that would make making a new version of the manufacturer timeline poster more accurate and easier to implement.
 
-## API shape
+## Public API
 
-Flipcommons has entirely overhauled its public API.
+The public API has been overhauled.
 
 The mfgtimeline was implemented against `/api/models/all/` and `/api/manufacturers/all/`. These
-forced per-model detail fetches for the richer fields and a name→slug join. Flipcommons has since retired those endpoints and is offering two different options on how to work with the data: the [bulk export API](#bulk-export-api) or an [analytics package](#analytics-package).
+forced per-model detail fetches for the richer fields and a name→slug join. Flipcommons has since retired those endpoints and is offering two different options on how to work with the data: a bulk-oriented public API, or just-for-The-Flip [analytics package](#analytics-package).
 
-### Bulk export API
-
-Flipcommons has published **bulk export endpoints** that dump every record with all fields in one call. Also, the API docs are much more detailed. Also, there's now rate limiting, so save a copy of each response and use it locally. Rate limits are 120 requests/hour per IP shared across all export endpoints ≈ 6 full exports/hour.
+The public API has moved to `/api/public/` and is now oriented around **bulk export**: it dumps every record with all fields in one call. It now rate limits, so save a copy of each response and use it locally. Rate limits are 120 requests/hour per IP shared across all export endpoints ≈ 6 full exports/hour. Also, the API docs have improved.
 
 Some key endpoints:
 
-- `GET /api/export/models/`
-- `GET /api/export/manufacturers/`
-- `GET /api/export/corporate-entities/`
+- `GET /api/public/export/models/` ⬅️ download all info about all models.
+- `GET /api/public/export/manufacturers/` ⬅️ download all info about all manufacturers.
+- `GET /api/public/filter/models/` ⬅️ find models. Takes the same filter vocabulary as the site's `/games` listing page and returns the slug of every matching model. You join those ids against your saved copy of `GET /api/public/export/models/`. Rate limits on this endpoint are higher; feel free to use this to explore the live system. Queries this timeline needs, each one call:
+  - **Actually-produced models** (item 7's "null OR produced"): `?production_status=produced&production_status=unclassified` — the reserved `unclassified` value means "not classified", so the pair is exactly your workaround.
+  - **Pinball machines** (item 10's "null OR pinball"): `?game_format=pinball&game_format=unclassified`.
+  - **Conversion kits** to subtract (item 8): `?edge=conversion_kit`.
+  - **Re-themes** (item 9): `?edge=retheme`, though the production-status filter already excludes nearly all of them.
 
 ### Analytics package
 
@@ -38,7 +40,7 @@ This is not public; it's for inside-the-Flip only. For more details see [Package
 
 ### 1. Manufacturers consolidated, keyed by slug, no integer IDs: DONE
 
-`/api/export/models/` now exposes not only the granular `corporate_entity` slug but also the `manufacturer` slug, so consumers no longer have to do the corporate_entity → manufacturer join themselves. Also the [analytics package](#analytics-package) auto-joins them.
+`/api/public/export/models/` now exposes not only the granular `corporate_entity` slug but also the `manufacturer` slug, so consumers no longer have to do the corporate_entity → manufacturer join themselves. Also the [analytics package](#analytics-package) auto-joins them.
 
 There's still no integer ID and won't be. It's not needed.
 
@@ -62,7 +64,7 @@ So Flipcommons _removed_ the physical corporate year fields. Instead, there's no
 - `operating_status` — enum `ongoing` / `ended` / `unknown`. A manufacturer that is `unknown` and has not produced a machine in 6 years is treated as
   ended in the UI (an `unknown` manufacturer with a recent machine is still rendered open-ended). API clients like mfgtimeline should do the same.
 
-These are included on `/api/export/corporate-entities/` and `/api/export/manufacturers/`, where
+These are included on `/api/public/export/corporate-entities/` and `/api/public/export/manufacturers/`, where
 `operating_status` rolls up across a brand's entities (precedence ongoing > unknown > ended).
 Within-brand transition years are still derivable — each entity's production span is its own —
 without trusting corporate paperwork dates.
@@ -104,7 +106,7 @@ This exposed a real hole in the Flipcommons (and IPDB) data. To solve it, Flipco
 - `one-off` — manufacturer-built single unit, never meant for sale (gifts, props, test pieces).
 - `aftermarket` — modified by someone other than the manufacturer (fan re-themes, modders).
 
-Like `game_format` below, it's a controlled vocabulary rather than a fixed enum, so a model row carries the slug and `GET /api/export/production-statuses/` is the list, with a written description of each value.
+Like `game_format` below, it's a controlled vocabulary rather than a fixed enum, so a model row carries the slug and `GET /api/public/export/production-statuses/` is the list, with a written description of each value.
 
 A good chunk of the world's non-`produced` models have now been marked as such. All five of The Flip's named prototypes — Mazatron, Pinball Circus, King Kong, Big Bang Bar, Kingpin — are set `unreleased`.
 
@@ -112,11 +114,9 @@ We have NOT set `produced` on any models yet because we're still finding more no
 
 ### 8. Conversion kits counted as machines: WONTFIX
 
-The `conversion-kit` tag has been retired. Models returned by `/api/export/models/` now carry a `model_relationships` array; a conversion kit has an edge whose `relationship_type` is `conversion_kit`. This keeps kit-ness separate from `production_status`: an official kit can be `produced`, while an unofficial one can be `aftermarket`.
+The `conversion-kit` tag has been retired. Models returned by `/api/public/export/models/` now carry a `model_relationships` array; a conversion kit has an edge whose `relationship_type` is `conversion_kit`. This keeps kit-ness separate from `production_status`: an official kit can be `produced`, while an unofficial one can be `aftermarket`.
 
 **Workaround**: filter out models with any `model_relationships` entry whose `relationship_type` is `conversion_kit`.
-
-**To discuss**: it's a hassle to do this filtering: you must first spend quite a lot of time understanding the relationships, THEN design the filtering. We're considering having a public filter/search API. It would return model and title slugs, and consumers would get the details of each record from their cached copy of the Export API results.
 
 ### 9. Aftermarket re-themes attributed to the original manufacturer: DONE
 
@@ -144,7 +144,7 @@ Flipcommons has now classified over 500 non-pinball models. The `game_format` vo
 
 `bingo-pinball` is much the largest of these, at over 300 models — bingos are pinball's gambling cousin, and a timeline that means "pinball machines" almost certainly wants them out. It's the single biggest thing this classification buys you.
 
-Same vocabulary story as `production_status`: expect the list to keep growing, and read it from `GET /api/export/game-formats/`, where each entry carries a written description of what the format actually is — worth reading for `miscellaneous` in particular, which is deliberately a catch-all.
+Same vocabulary story as `production_status`: expect the list to keep growing, and read it from `GET /api/public/export/game-formats/`, where each entry carries a written description of what the format actually is — worth reading for `miscellaneous` in particular, which is deliberately a catch-all.
 
 A good chunk of the non-pinball games have now been marked as such. Most models remain unclassified because we keep finding more non-pinballs, so `game_format` = `null` OR `pinball` is still a good approximation of pinball machines.
 
@@ -190,11 +190,3 @@ Places to see this:
 <https://flipcommons.org/changesets> is the global feed of every change to the catalog, every change's citations and quotes.
 
 Each record also has its own Sources page, like <https://flipcommons.org/models/cactus-canyon-continued/sources>. It lists every field on the record, the distinct values that have been asserted for it, who backs each one and the citations behind them, with the values that lost the conflict shown de-emphasized beneath the winner. That last part is the bit worth looking at: it's not just what Flipcommons says, it's what the alternatives were and why this one won.
-
-## Potential new issues
-
-### Can't filter from public API
-
-The publicly documented API no longer includes the APIs The Flip was using to filter, such as `/api/models/?game_format=`. They still exist at the same location and you can still hit them, but they're not in the API docs. This was done to prevent 3rd parties from building real-time integrations to Flipcommons. Export data infrequently good, constantly hit system bad. For The Flip, using the [analytics package](#analytics-package) would solve this comprehensively. LMK if you think omitting them from the public API is a questionable call.
-
-I don't mind The Flip hitting the unpublished APIs, though.

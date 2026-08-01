@@ -145,22 +145,24 @@ class GameDimensionQuerySchema(Schema):
     theme: list[str] = Field(
         [],
         description=(
-            "Theme slug (see `GET /api/themes/`). Repeat to require several "
-            "(`theme=a&theme=b`); a parent theme also matches its sub-themes."
+            "Theme slug (see `GET /api/themes/`). Repeatable, ANDed: "
+            "`theme=a&theme=b` requires both. A parent theme also matches "
+            "its sub-themes."
         ),
     )
     feature: list[str] = Field(
         [],
         description=(
-            "Gameplay-feature slug (see `GET /api/gameplay-features/`). Repeatable; "
-            "a parent feature also matches its sub-features."
+            "Gameplay-feature slug (see `GET /api/gameplay-features/`). "
+            "Repeatable, ANDed: all supplied features are required. A parent "
+            "feature also matches its sub-features."
         ),
     )
     reward_type: list[str] = Field(
         [],
         description=(
-            "Reward-type slug (see `GET /api/reward-types/`). Repeatable; all "
-            "supplied slugs must match."
+            "Reward-type slug (see `GET /api/reward-types/`). Repeatable, "
+            "ANDed: all supplied reward types are required."
         ),
     )
     edge: list[str] = Field(
@@ -171,8 +173,7 @@ class GameDimensionQuerySchema(Schema):
             "(unlicensed copy) or `licensed_build` (licensed copy). Append `:in` "
             "to match the other end of the relationship (`edge=copy` finds "
             "copies, `edge=copy:in` finds models that have been copied). "
-            "Repeatable; all supplied keys must match. Unknown keys match "
-            "nothing."
+            "Repeatable, ANDed: all supplied keys are required."
         ),
     )
     display_subtype: str | None = Field(
@@ -193,41 +194,30 @@ class GameDimensionQuerySchema(Schema):
     cabinet: list[str] = Field(
         [],
         description=(
-            "Cabinet slug (see `GET /api/cabinets/`), or the reserved value "
-            "`unclassified` to match models with no cabinet recorded. "
-            "Repeatable; a model matches any of the supplied values. A bare "
-            "slug matches only explicitly classified models; the sidebar's "
-            "Floor selection sends `cabinet=floor&cabinet=unclassified`."
+            "Cabinet style slug (see `GET /api/cabinets/`) or "
+            "`unclassified` to match models with no recorded cabinet style. "
+            "Repeatable, ORed: a model matches any of the supplied values."
         ),
     )
     game_format: list[str] = Field(
         [],
         description=(
-            "Game-format slug (see `GET /api/game-formats/`), or the reserved "
-            "value `unclassified` to match models with no format recorded. "
-            "Repeatable; a model matches any of the supplied values. A bare "
-            "slug matches only explicitly classified models; the sidebar's "
-            "Pinball selection sends "
-            "`game_format=pinball&game_format=unclassified`."
+            "Game-format slug (see `GET /api/game-formats/`) or "
+            "`unclassified` to match models with no recorded game format. "
+            "Repeatable, ORed: a model matches any of the supplied values."
         ),
     )
     production_status: list[str] = Field(
         [],
         description=(
-            "Production-status slug (see `GET /api/production-statuses/`), or "
-            "the reserved value `unclassified` to match models with no status "
-            "recorded. Repeatable; a model matches any of the supplied "
-            "values. A bare slug matches only explicitly classified models; "
-            "the sidebar's Produced selection sends "
-            "`production_status=produced&production_status=unclassified`."
+            "Production-status slug (see `GET /api/production-statuses/`) or "
+            "`unclassified` to match models with no recorded status. "
+            "Repeatable, ORed: a model matches any of the supplied values."
         ),
     )
     corporate_entity: str | None = Field(
         None,
-        description=(
-            "Corporate-entity slug (see `GET /api/corporate-entities/`). Narrower "
-            "than `manufacturer`: matches records built by this specific entity."
-        ),
+        description=("Corporate-entity slug (see `GET /api/corporate-entities/`)."),
     )
 
     def to_filters(self) -> GameFilters:

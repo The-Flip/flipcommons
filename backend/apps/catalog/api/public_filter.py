@@ -73,10 +73,9 @@ class FilterModelsSchema(Schema):
     count: int = Field(description="Number of matching models.")
     public_ids: list[str] = Field(
         description=(
-            "The stable public identifier of every matching model, ascending. "
-            "Join against your saved copy of `GET /export/models/`, whose rows "
-            "carry every field (including the parent `title`) keyed by "
-            "`public_id`."
+            "The `slug` (aka `public_id`) of every matching model, ascending. "
+            "Join against your saved copy of `GET /export/models/` to get the "
+            "rest of the fields on the model."
         )
     )
 
@@ -121,13 +120,13 @@ def _reject_unknown_edge_values(values: list[str]) -> None:
     },
     summary="Filter models",
     description=(
-        "The `public_id` of every model matching the given filters, "
-        "unpaginated. Combine any number of filters; repeatable parameters "
-        "AND (`edge`, `theme`, `feature`, `reward_type`) or OR (`cabinet`, "
-        "`game_format`, `production_status`) as their descriptions state. "
-        "Unknown parameter names and unknown `edge` keys are errors; an "
-        "unknown vocabulary slug matches nothing, which is a valid empty "
-        "answer."
+        "Returns unpaginated list of every model matching all the specified "
+        "filters.\n\n"
+        "Repeat a parameter to give it several values — each parameter's "
+        "description says whether repeating it means AND or OR. A mistyped "
+        "parameter name or edge value is an error. A filter value that "
+        "doesn't exist in the catalog (say, a manufacturer slug that isn't "
+        "there) is not an error: it simply matches no models."
     ),
 )
 def filter_models(
