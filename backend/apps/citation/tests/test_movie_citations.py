@@ -1,7 +1,7 @@
 """Movies as parentless-citable video works — the seed proof.
 
 A movie is a ``video`` source with no ``identifier_key`` and no canonical URL:
-reached by search, cited with a timestamp locator (see ``MovieCitations.md``).
+reached by search, cited with a timestamp locator.
 These tests drive the real seed path (``ensure_source``) and the shared
 locator chokepoint (``normalized_locator``) to prove the video citation type
 supports movies with no new machinery — the abstractness relaxation is all it

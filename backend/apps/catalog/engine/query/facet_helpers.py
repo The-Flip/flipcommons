@@ -1,20 +1,23 @@
 """Domain-free leaf helpers shared by the catalog listing pages' faceted search.
 
 These are the genuinely reusable *leaves* — the count/search/hierarchy SQL whose
-subtlety was tuned once on titles and must not be re-derived per entity. They name
+subtlety must not be re-derived per entity. They name
 **no domain noun**: every model, relation and guard is a call argument, so an
 SQL/perf fix here lands on every page at once.
 
-What stays per-entity (and is **not** here): the N-1 exclude loop, the per-dimension
-predicates, and the ``facet_counts`` assembly that wires these leaves together. See
-``_title_facets.py`` for titles' assembly; manufacturers gets its own.
+What stays per-entity (and is **not** here): the exclude loop, the per-dimension
+predicates and the ``facet_counts`` assembly that wires these leaves together. Whether
+a dimension is excluded from its own count at all is part of what varies —
+manufacturers excludes uniformly (N-1), the games fan-out keeps its accumulating
+dimensions applied. See ``_game_facets.py`` for the games listing's assembly;
+manufacturers gets its own.
 
-Deliberately **not** extracted yet: the composite diacritic-fold *match* (the
-``q``-branch Q-assembly). Only the primitive :class:`_Unaccent` lives here (the
-Python accent-strip ``fold`` now lives in ``apps.core.search``, which the
-``q``-branch callers import directly); the match itself requires an annotation
-step and its real shape is driven by manufacturers' multi-branch OR, which
-doesn't exist until that page is built.
+The composite diacritic-fold *match* (the ``q``-branch Q-assembly) also stays
+per-entity: it requires an annotation step, and its shape is driven by the caller's
+branch structure — manufacturers' multi-branch OR looks nothing like a single-field
+match. Only the primitive :class:`_Unaccent` lives here; the Python accent-strip
+``fold`` lives in ``apps.core.search``, which the ``q``-branch callers import
+directly.
 """
 
 from __future__ import annotations
@@ -87,7 +90,7 @@ def _fold_exists[M: Model](
 
     Postgres: ``LOWER(UNACCENT(field))`` contains the folded term, so ``q=pokemon``
     matches ``Pokémon``. SQLite (dev/CI): plain ``icontains`` — no diacritic folding,
-    a documented dev/prod difference (mirrors titles). Returning the ``Exists`` (rather
+    a documented dev/prod difference. Returning the ``Exists`` (rather
     than the queryset) keeps the fold and any active guard already on *inner_qs* in one
     subquery ``WHERE``, on the same row — the separate-join leak the count leaves
     avoid."""

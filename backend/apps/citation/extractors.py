@@ -343,9 +343,8 @@ type UrlVerdict = (
 def classify_url(url: str) -> UrlVerdict:
     """Classify a pasted URL into the verdict every interactive surface obeys.
 
-    The design spine of CitationSourceMisclassification.md: one exhaustive
-    sum type instead of per-endpoint pre-checks, so a surface *cannot* skip a
-    verb. Ordering is load-bearing:
+    The design's spine: one exhaustive sum type instead of per-endpoint pre-checks,
+    so a surface *cannot* skip a verb. Ordering is load-bearing:
 
     1. **Deliverer first, before any recognition** — prod data may already
        hold a misclassified deliverer root (an interactively-minted

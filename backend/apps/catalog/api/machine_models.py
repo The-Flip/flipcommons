@@ -157,7 +157,7 @@ class ModelRelationshipSchema(Schema):
 
 
 class ModelExportMarketSchema(Schema):
-    """One export-market row on a model (see Exports.md).
+    """One export-market row on a model.
 
     ``target_location`` is set when the market is a seeded country (renders as
     a link to its location page); ``target_label`` is the free-text region

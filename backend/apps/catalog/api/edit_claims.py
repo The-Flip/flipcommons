@@ -690,7 +690,7 @@ def plan_export_market_claims(
     claim key, superseding in place), and a tombstone for each row whose
     target disappeared from the list.
 
-    Enforces the Exports.md shape rule — a null-location row (a label or the
+    Enforces the shape rule — a null-location row (a label or the
     unknown-market row) must be the model's **only** row — and the
     country-only restriction on location targets, via the spec's
     ``COUNTRY_TARGET_FILTER``.
@@ -748,7 +748,7 @@ def plan_export_market_claims(
             continue
         seen.add(target)
         rows.append((target, label))
-    # The Exports.md shape rule: a null-location row must be the only row.
+    # The shape rule: a null-location row must be the only row.
     if None in seen and len(seen) > 1:
         errors.add_field(
             "export_markets.(unknown)",

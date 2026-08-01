@@ -8,7 +8,7 @@ Iterates every concrete ``LinkableModel`` (cross-app, via
   FK / M2M fields to their ``{entity_target_type, many}`` shape, and ``media_categories``
   (``[]`` for entities without media). Consumed by polymorphic frontend code
   that needs a typed registry of entities (e.g. the global changes feed, the
-  JSON-LD assembler — see docs/plans/seo/JsonLdAndFriends.md).
+  JSON-LD assembler).
 - EntityKey / CatalogEntityKey / MediaSupportedEntityKey: explicit literal unions
   (the full set, the catalog subset, and the media-bearing subset).
 - CATALOG_ENTITY_KEYS: a runtime array of the catalog subset, for code that must

@@ -9,7 +9,7 @@ Two typed helpers behind every in-scope ``GET /api/{entity}/`` list handler:
   ``{Entity}ListSchema``.
 - :func:`_apply_list_q` — the model-driven ``q`` fold: name (+ aliases where the
   entity has an ``AliasModel``), diacritic-insensitive on Postgres, ``icontains`` on
-  SQLite (the documented dev/CI gap, same as titles/manufacturers).
+  SQLite (the documented dev/CI gap).
 
 No per-entity branching and nothing on the model: each handler stays a thin, fully
 typed call into these two functions.
@@ -62,7 +62,7 @@ def _apply_list_q[ModelT: Model](qs: QuerySet[ModelT], q: str) -> QuerySet[Model
 
     Postgres folds diacritics — ``LOWER(UNACCENT(name))`` contains the folded term, so
     ``q=pokemon`` matches ``Pokémon``. SQLite (dev/CI) uses plain ``icontains`` — no
-    folding, the documented backend gap (mirrors titles/manufacturers). The fold is
+    folding, the documented backend gap. The fold is
     punctuation-sensitive, also by design. Empty/whitespace *q* is a no-op.
 
     Alias matching reuses the manufacturers' ``Exists``-fold shape so the alias join

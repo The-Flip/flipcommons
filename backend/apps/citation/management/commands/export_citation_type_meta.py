@@ -1,7 +1,6 @@
 """Generate frontend/src/lib/citation-types/citation-type-meta.ts.
 
-The declarative half of the citation-type plugin channel (see
-``docs/plans/citations/VideoCitations.md``): per-type facts the frontend
+The declarative half of the citation-type plugin channel: per-type facts the frontend
 locator UX reads — label, locator kind, placeholder, invalid message,
 child-skips flag, and slug-addressed flag — exported from the backend registry
 so the two sides can't drift. Behavior (the client-side grammar mirror, UX-only)

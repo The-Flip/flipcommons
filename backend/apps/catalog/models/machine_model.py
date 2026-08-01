@@ -177,7 +177,7 @@ class MachineModel(
         blank=True,
         help_text="Original model if this is a remake.",
     )
-    # Singular by design (Exports.md): a model is the export edition of at
+    # Singular by design: a model is the export edition of at
     # most one other model, and licensing doesn't apply (an unauthorized
     # "export" is a copy) — so this is a scalar lineage FK like variant_of /
     # remake_of, not a ModelRelationship edge type. When the domestic

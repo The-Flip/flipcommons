@@ -540,7 +540,7 @@ class TestRewardTypeDeleteBlockedByActiveMachineModel:
 
 @pytest.mark.django_db
 class TestRewardTypeCreateAliasCollision:
-    """Per RecordCreateDelete.md, aliases must count as results for duplicate
+    """Aliases must count as results for duplicate
     prevention — the API must reject a create whose name collides with an
     existing alias, not just with another entity's canonical name."""
 

@@ -1,8 +1,7 @@
 """ModelRelationship: typed, claim-controlled edges between machine models.
 
-The edge table behind copies, conversions and conversion kits — see
-docs/plans/catalog_data_model/ModelRelationships.md. Each row relates a subject
-MachineModel to a target at one of two resolutions: a seeded machine
+The edge table behind copies, conversions and conversion kits. Each row relates a
+subject MachineModel to a target at one of two resolutions: a seeded machine
 (``target_machine``) or a free-text descriptor (``target_label``, e.g.
 "several Gottlieb EM models") when the donor isn't seeded. Licensing status is
 an orthogonal payload axis, so "bootleg" is ``(copy, unlicensed)`` rather than

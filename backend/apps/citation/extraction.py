@@ -1,7 +1,7 @@
 """ISBN classification and Open Library extraction.
 
-Separate from ``extractors.py`` (URL recognition) per the two-tier
-architecture described in CitationAutogenerationDesign.md.
+Separate from ``extractors.py`` (URL recognition) — the two tiers of the
+extraction architecture.
 """
 
 from __future__ import annotations

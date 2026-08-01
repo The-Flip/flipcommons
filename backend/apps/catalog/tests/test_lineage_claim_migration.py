@@ -14,8 +14,7 @@ run post-drop; the transform itself is frozen migration history. What remains
 verified here is the one live coupling — the inlined claim_key format must
 match the live builder's canonical output, because post-deploy supersedes and
 removals match migration-written claims by key. End-to-end verification of
-the 0021+0022 deploy path is the rebuild loop (ModelRelationships.md step 9 /
-ClaimIdentityNarrowing.md stage 4): restore ``db.pre-0039.sqlite3``, migrate,
+the 0021+0022 deploy path is the rebuild loop: restore ``db.pre-0039.sqlite3``, migrate,
 replay the patches and assert convergence.
 """
 

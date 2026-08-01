@@ -4,8 +4,7 @@ A **deliverer** hosts copies of works whose identity lives elsewhere: an
 ``amazon.com/dp/…`` URL is the copy consulted (a future access URL), not the
 identity of a work, so recognizing it as a web page would *fabricate
 identity* — minting an "Amazon page" child when the evidence is the book or
-movie the URL merely delivers. Plan and per-entry survey:
-``docs/plans/citations/CitationSourceMisclassification.md``.
+movie the URL merely delivers.
 
 This is the fourth recognizer's host table arriving early: a separate
 declared table, sibling to the scheme registry and ``CitationSourceRootDomain``

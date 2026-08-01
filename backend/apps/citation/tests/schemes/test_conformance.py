@@ -10,7 +10,7 @@ round-trip proof. Scheme-specific behavior (a platform's real URL shapes)
 still belongs in that scheme's own example tables; this harness checks only
 the invariants shared code relies on.
 
-Pure — no database. See ``docs/plans/citations/CitationPluginSystem.md``.
+Pure — no database.
 """
 
 import dataclasses

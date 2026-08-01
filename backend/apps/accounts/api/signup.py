@@ -186,7 +186,8 @@ def signup_submit(
     - `workos_user_id` race (two tabs of the same signup): re-query the
       winner by `workos_user_id` and log the loser's session in as the
       winner. The loser's typed handle is silently dropped — acceptable
-      per Usernames.md §Race. Logging in on the loser side (rather than
+      because the winning tab's handle is one the same user chose seconds
+      earlier. Logging in on the loser side (rather than
       returning 409 and trusting the winner's cookie) is deterministic:
       Django's `login()` rotates `session_key` via `cycle_key()`, so the
       losing tab's in-flight submit may not pick up the rotated cookie
