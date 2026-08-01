@@ -7,28 +7,51 @@ gets the case that distinguishes it — hierarchy ancestor roll-up, player
 buckets, and the Title-only vacuity branch including empty Titles — and the
 badge == result-count invariant runs across every dimension, which is what
 pins all of them to the rows engine at once.
+
+That invariant is a finite oracle over one hand-built fixture, so
+``TestFixtureShapes`` guards its strength: walking the dimension registry, it
+pins that the fixture *contains* each roll-up shape per counted dimension,
+structurally, so a dimension can't be counted against a fixture that never
+distinguishes the branches.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import fields, replace
+from typing import Final, assert_never, get_args
 
+import pytest
 from django.db import connection
+from django.db.models import Count
 from django.test.utils import CaptureQueriesContext
 
 from apps.catalog.api._game_facets import GameFacetOptions, game_facet_counts
 from apps.catalog.api._game_rows import (
     ACCUMULATING_DIMENSIONS,
     MODEL_DIMENSION_SPECS,
+    PLAYER_BUCKETS,
     UNCLASSIFIED,
+    BucketFacet,
+    EdgeFacet,
+    FilterDimension,
     GameFilters,
     ModelDimension,
+    PathFacet,
+    SparseFacet,
+    TaxonomyFacet,
+    TitleDimension,
     game_rows_merged,
     preset_values,
 )
 from apps.catalog.engine.query.facet_helpers import FacetOption
-from apps.catalog.models import LicenseStatus, RelationshipType
+from apps.catalog.models import (
+    LicenseStatus,
+    MachineModel,
+    ModelRelationship,
+    RelationshipType,
+    Title,
+)
 from apps.catalog.tests.game_builders import (
     _edge,
     _franchise,
@@ -37,6 +60,7 @@ from apps.catalog.tests.game_builders import (
     _theme,
     _title,
 )
+from apps.core.models import active_status_q
 
 
 def _mfr_counts(f: GameFilters) -> dict[str, int]:
@@ -371,8 +395,9 @@ def _build_catalog() -> None:
     """A small catalog exercising every shape at once: a shattering Title, a
     Variant, a single-Model Title in a Series, an empty Title in a Franchise,
     a theme hierarchy. ``test_fixture_exercises_every_facet`` pins that every
-    dimension gets at least one option out of this — extend it there when a
-    dimension is added."""
+    dimension gets at least one option out of this, and ``TestFixtureShapes``
+    pins that every counted dimension gets each roll-up shape — extend the
+    fixture when either guard demands it for a new dimension."""
     liquid = _theme("liquid")
     _theme("water", parents=(liquid,))
     fr = _franchise("alpha-verse")
@@ -407,18 +432,56 @@ def _build_catalog() -> None:
         reward_types=("extra-ball",),
         game_format="bingo-pinball",
     )
+    # Beta shatters every dimension around an absorbing parent: the Variant
+    # agrees with its parent throughout, and a third Model dissents throughout,
+    # so each dimension has a value whose matching set is exactly the
+    # parent/Variant pair — a shatter whose card count depends on absorption.
     t2 = _title("Beta", "beta")
     parent = _model(
         t2,
         "beta-m",
         manufacturer="stern",
+        technology_generation="ss",
+        display_type="dmd",
+        system="wpc",
+        player_count=4,
         themes=("water",),
         features=("multiball", "ramps"),
         reward_types=("replay", "extra-ball"),
+        persons=("lawlor",),
         # Explicit default beside a null: both land in the floor bucket.
         cabinet="floor",
     )
-    _model(t2, "beta-le", manufacturer="stern", themes=("water",), variant_of=parent)
+    beta_le = _model(
+        t2,
+        "beta-le",
+        manufacturer="stern",
+        technology_generation="ss",
+        display_type="dmd",
+        system="wpc",
+        player_count=4,
+        themes=("water",),
+        features=("multiball",),
+        reward_types=("replay",),
+        persons=("lawlor",),
+        variant_of=parent,
+    )
+    _model(
+        t2,
+        "beta-odd",
+        name="Beta Odd",
+        manufacturer="gottlieb",
+        technology_generation="em",
+        display_type="alphanumeric",
+        system="sys11",
+        player_count=2,
+        themes=("space",),
+        features=("ramps",),
+        reward_types=("extra-ball",),
+        cabinet="cocktail",
+        game_format="bingo-pinball",
+        production_status="announced",
+    )
     t3 = _title("Gamma", "gamma", series=_series("gamma-saga"))
     gamma = _model(
         t3,
@@ -441,7 +504,35 @@ def _build_catalog() -> None:
         license_status=LicenseStatus.UNLICENSED,
     )
     _edge(gamma, alpha_bally, RelationshipType.CONVERSION)
+    # Delta agrees with itself on every dimension, which is what makes a value
+    # unanimous over a multi-Model Title (a lone Model cards either way, so it
+    # decides nothing about rung 1's unanimity clause).
+    saga = _series("gamma-saga")
+    t4 = _title("Delta", "delta", series=saga)
+    for slug, name in (("delta-a", "Delta"), ("delta-b", "Delta Two")):
+        twin = _model(
+            t4,
+            slug,
+            name=name,
+            manufacturer="williams",
+            year=1979,
+            technology_generation="em",
+            display_type="alphanumeric",
+            system="sys11",
+            player_count=2,
+            themes=("space",),
+            features=("ramps",),
+            reward_types=("replay",),
+            persons=("trudeau",),
+        )
+        _edge(twin, alpha_stern, RelationshipType.COPY)
+    # Beta's parent and its Variant carry the same edge key, so absorption
+    # decides the edge facet's card count the way it does the FK dimensions.
+    for absorbing in (parent, beta_le):
+        _edge(absorbing, gamma, RelationshipType.CONVERSION)
     _title("Empty", "empty", franchise=fr)
+    # The vacuity branch needs an empty Title per Title-only dimension.
+    _title("Empty Saga", "empty-saga", series=saga)
 
 
 class TestBadgeEqualsResultCount:
@@ -563,6 +654,216 @@ class TestBadgeEqualsResultCount:
             for p in opts.player_count:
                 got = len(game_rows_merged(replace(f, player_count=p.value)))
                 assert p.count == got, ("player_count", p.value, f)
+
+
+# ---------------------------------------------------------------------------
+# The fixture shape checklist — the invariant loop's oracle strength
+# ---------------------------------------------------------------------------
+
+# A facet option value: vocabulary/edge slugs, or a player bucket.
+FacetValue = str | int
+
+_ROLLUP_SHAPES: Final = frozenset({"unanimous", "shattered", "absorbed"})
+
+
+def _live_models_by_title() -> dict[int, list[MachineModel]]:
+    """Live Models (Variants included) under live Titles, grouped by Title —
+    the grain the roll-up decides over."""
+    by_title: dict[int, list[MachineModel]] = {}
+    for m in MachineModel.objects.active().filter(active_status_q("title")):
+        by_title.setdefault(m.title_id, []).append(m)
+    return by_title
+
+
+def _path_values(pks: list[int], slug_path: str) -> dict[int, set[FacetValue]]:
+    values: dict[int, set[FacetValue]] = {pk: set() for pk in pks}
+    for pk, slug in MachineModel.objects.filter(pk__in=pks).values_list(
+        "pk", slug_path
+    ):
+        if slug is not None:
+            values[pk].add(slug)
+    return values
+
+
+def _taxonomy_values(
+    pks: list[int], facet: TaxonomyFacet
+) -> dict[int, set[FacetValue]]:
+    """Direct tags plus every ancestor: filtering by a parent value matches
+    child-tagged Models, so a child tag makes its Model a member of each
+    ancestor value too."""
+    parent_map: dict[str, set[str]] = {}
+    for child, parent in facet.taxonomy.objects.values_list("slug", "parents__slug"):
+        if parent is not None:
+            parent_map.setdefault(child, set()).add(parent)
+    values: dict[int, set[FacetValue]] = {pk: set() for pk in pks}
+    for pk, slug in MachineModel.objects.filter(pk__in=pks).values_list(
+        "pk", f"{facet.path}__slug"
+    ):
+        stack = [slug] if slug is not None else []
+        while stack:
+            current = stack.pop()
+            if current in values[pk]:
+                continue
+            values[pk].add(current)
+            stack.extend(parent_map.get(current, ()))
+    return values
+
+
+def _bucket_values(pks: list[int]) -> dict[int, set[FacetValue]]:
+    values: dict[int, set[FacetValue]] = {}
+    for pk, pc in MachineModel.objects.filter(pk__in=pks).values_list(
+        "pk", "player_count"
+    ):
+        if pc is None:
+            values[pk] = set()
+        else:
+            values[pk] = {b for b in PLAYER_BUCKETS if (pc >= 6 if b >= 6 else pc == b)}
+    return values
+
+
+def _edge_values(pks: list[int]) -> dict[int, set[FacetValue]]:
+    """Membership per relationship key and direction, from the raw edge rows
+    and the lineage self-FKs. Outbound is bare existence; inbound requires a
+    live far end under a live Title — *pks* is exactly that set, so same-set
+    membership is the liveness test. The composite keys (bootleg,
+    licensed_build) are licensing slices of ``copy``; a shape witnessed for
+    the base key covers the branch, so they demand none of their own."""
+    live = set(pks)
+    values: dict[int, set[FacetValue]] = {pk: set() for pk in pks}
+    for subject, target, rel_type in ModelRelationship.objects.values_list(
+        "machine_model_id", "target_machine_id", "relationship_type"
+    ):
+        if subject in live:
+            values[subject].add(rel_type)
+        if target in live and subject in live:
+            values[target].add(f"{rel_type}:in")
+    lineage = tuple(
+        f.name
+        for f in MachineModel._meta.fields
+        if f.is_relation and f.related_model is MachineModel
+    )
+    for field in lineage:
+        for subject, target in MachineModel.objects.filter(
+            pk__in=pks, **{f"{field}__isnull": False}
+        ).values_list("pk", field):
+            values[subject].add(field)
+            if target in live:
+                values[target].add(f"{field}:in")
+    return values
+
+
+def _sparse_values(
+    pks: list[int], facet: SparseFacet, default_slug: str
+) -> dict[int, set[FacetValue]]:
+    """The null fold: an unset FK is a member of the designated default."""
+    return {
+        pk: {slug if slug is not None else default_slug}
+        for pk, slug in MachineModel.objects.filter(pk__in=pks).values_list(
+            "pk", f"{facet.path}__slug"
+        )
+    }
+
+
+def _matched_values(
+    spec: FilterDimension, pks: list[int]
+) -> dict[int, set[FacetValue]]:
+    """Each live Model's set of matched values for *spec*'s dimension,
+    re-derived from the registry's declarative bindings with plain ORM reads —
+    never from the engine's querysets or counts, which are what the shapes
+    exist to test."""
+    facet = spec.facet
+    match facet:
+        case PathFacet(slug_path=slug_path):
+            return _path_values(pks, slug_path)
+        case TaxonomyFacet():
+            return _taxonomy_values(pks, facet)
+        case BucketFacet():
+            return _bucket_values(pks)
+        case EdgeFacet():
+            return _edge_values(pks)
+        case SparseFacet():
+            assert spec.default_slug is not None  # the registry pins the pairing
+            return _sparse_values(pks, facet, spec.default_slug)
+        case None:
+            raise AssertionError(f"{spec.key} declares no facet to check")
+        case _:
+            assert_never(facet)
+
+
+def _shapes_witnessed(
+    by_title: dict[int, list[MachineModel]], values: dict[int, set[FacetValue]]
+) -> set[str]:
+    """Which roll-up shapes some (Title, value) pair of the fixture realizes.
+
+    ``absorbed`` demands the shatter too: while every live Model matches, the
+    Title cards at rung 1 and its Models never reach the absorption exclusion,
+    so a parent/Variant pair alone leaves rung 3 undecided."""
+    found: set[str] = set()
+    for models in by_title.values():
+        title_values: set[FacetValue] = set()
+        for m in models:
+            title_values |= values[m.pk]
+        for v in title_values:
+            matching = {m.pk for m in models if v in values[m.pk]}
+            if len(matching) == len(models) >= 2:
+                found.add("unanimous")
+            if len(matching) < len(models):
+                found.add("shattered")
+                for m in models:
+                    if m.pk in matching and m.variant_of_id in matching:
+                        found.add("absorbed")
+    return found
+
+
+_SHAPE_CHECKED: Final = tuple(
+    key for key, spec in MODEL_DIMENSION_SPECS.items() if spec.facet is not None
+)
+
+
+class TestFixtureShapes:
+    """The badge == click loop is a finite oracle: a roll-up branch whose
+    distinguishing case the fixture lacks passes vacuously (how ``series``
+    shipped wired-but-unexercised). This checklist pins that ``_build_catalog``
+    *contains* the shapes the roll-up branches on — per counted dimension, off
+    the registry, so a new dimension demands its coverage by existing.
+
+    Exemptions:
+    - ``facet=None`` dimensions (``year`` and the hidden ones) publish no
+      options, so the invariant loop has no badge of theirs to verify —
+      nothing a shape could strengthen.
+    - The Title-only dimensions bind every Model of their Title by
+      construction, so unanimous/shattered/absorbed cannot vary within a
+      Title; their distinguishing branch is rung 1's vacuity, witnessed by
+      the empty-Title check below (the cross-dimension shatter is exercised
+      by ``FILTERS``).
+    """
+
+    @pytest.mark.parametrize("key", _SHAPE_CHECKED)
+    def test_fixture_contains_every_rollup_shape(self, db, key: ModelDimension):
+        _build_catalog()
+        by_title = _live_models_by_title()
+        pks = [m.pk for models in by_title.values() for m in models]
+        values = _matched_values(MODEL_DIMENSION_SPECS[key], pks)
+        missing = _ROLLUP_SHAPES - _shapes_witnessed(by_title, values)
+        assert not missing, (key, sorted(missing))
+
+    @pytest.mark.parametrize("dim", get_args(TitleDimension))
+    def test_fixture_contains_an_empty_title_per_title_dimension(
+        self, db, dim: TitleDimension
+    ):
+        """Rung 1's vacuity branch: with no Model-only dimension active, an
+        active Title with zero live Models still cards — each Title-only
+        dimension needs a value carried by such a Title."""
+        _build_catalog()
+        empty = (
+            Title.objects.active()
+            .filter(**{f"{dim}__isnull": False})
+            .annotate(
+                n_live=Count("machine_models", filter=active_status_q("machine_models"))
+            )
+            .filter(n_live=0)
+        )
+        assert empty.exists(), dim
 
 
 class TestFanoutSql:
