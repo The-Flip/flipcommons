@@ -106,6 +106,25 @@ describe('FacetedCatalogListing', () => {
     expect(goto).not.toHaveBeenCalled();
   });
 
+  it('re-seeds filters when a link navigation lands on a different URL', async () => {
+    // Top-nav "Games"/"Manufacturers" while filtered: SvelteKit keeps the
+    // component instance (same route id), so only the URL changes.
+    pageState.url = new URL('http://localhost/manufacturers?foo=bar');
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+    expect(await screen.findByTestId('sb-foo')).toHaveTextContent('bar');
+    expect(await screen.findByText('Foo: bar')).toBeInTheDocument();
+
+    pageState.url = new URL('http://localhost/manufacturers');
+    afterNavigateCb.current?.({ type: 'link' });
+
+    await waitFor(() => expect(screen.getByTestId('sb-foo')).toHaveTextContent('none'));
+    expect(screen.queryByText('Foo: bar')).not.toBeInTheDocument();
+    // Adopting the URL must not bounce a navigation back out.
+    expect(goto).not.toHaveBeenCalled();
+  });
+
   it('renders the sidebar disabled while the facet stream is pending, enabled once it lands', async () => {
     let resolve: (v: { foo: { public_id: string; name: string; count: number }[] }) => void;
     const pending = new Promise<{ foo: { public_id: string; name: string; count: number }[] }>(
