@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "PRODUCED_SLUG",
+    "UNCLASSIFIED_SLUG",
     "Cabinet",
     "CreditRole",
     "DisplaySubtype",
@@ -196,6 +197,29 @@ class DisplaySubtype(
         return self.name
 
 
+# Cabinet, GameFormat and ProductionStatus are the *sparse* filter dimensions:
+# a MachineModel's FK to each is nullable, and the games filtering API spells
+# "this field is unset" on the wire as the slug below, translating it to an
+# IS NULL predicate before any slug comparison. A vocabulary row carrying that
+# slug would be shadowed — unreachable by filter, and the wire value ambiguous
+# between "unset" and "that row" — so the three models reserve it in the
+# database. ``apps.catalog.api._game_rows.UNCLASSIFIED`` is this constant.
+UNCLASSIFIED_SLUG = "unclassified"
+
+
+def _slug_not_unclassified() -> models.CheckConstraint:
+    """CHECK constraint: slug != the reserved ``unclassified`` wire value.
+
+    A database constraint rather than a model validator because the bulk
+    patch-ingest path creates vocabulary rows without running validation;
+    ``bulk_create`` cannot bypass a CHECK.
+    """
+    return models.CheckConstraint(
+        condition=~models.Q(slug=UNCLASSIFIED_SLUG),
+        name="%(app_label)s_%(class)s_slug_not_unclassified",
+    )
+
+
 class Cabinet(
     CatalogModel,
     SluggedModel,
@@ -216,6 +240,7 @@ class Cabinet(
         constraints = [
             slug_not_blank(),
             slug_lowercase(),
+            _slug_not_unclassified(),
             status_valid(),
             field_not_blank("name"),
             unique_ci("name"),
@@ -244,6 +269,7 @@ class GameFormat(
         constraints = [
             slug_not_blank(),
             slug_lowercase(),
+            _slug_not_unclassified(),
             status_valid(),
             field_not_blank("name"),
             unique_ci("name"),
@@ -276,6 +302,7 @@ class ProductionStatus(
         constraints = [
             slug_not_blank(),
             slug_lowercase(),
+            _slug_not_unclassified(),
             status_valid(),
             field_not_blank("name"),
             unique_ci("name"),

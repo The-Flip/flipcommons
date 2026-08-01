@@ -10,12 +10,15 @@ from django.db import IntegrityError, connection
 from django.db.models import ProtectedError
 
 from apps.catalog.models import (
+    UNCLASSIFIED_SLUG,
+    Cabinet,
     CorporateEntity,
     Credit,
     CreditRole,
     DisplaySubtype,
     DisplayType,
     Franchise,
+    GameFormat,
     Location,
     MachineModel,
     Manufacturer,
@@ -23,6 +26,7 @@ from apps.catalog.models import (
     ModelRelationship,
     Person,
     PersonAlias,
+    ProductionStatus,
     RelationshipType,
     Series,
     TechnologyGeneration,
@@ -326,6 +330,42 @@ class TestNullableIdConstraints:
         mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
         with pytest.raises(IntegrityError):
             _raw_update(Manufacturer, mfr.pk, wikidata_id="")
+
+
+# ---------------------------------------------------------------------------
+# Reserved slug on the sparse vocabularies
+# ---------------------------------------------------------------------------
+
+
+SPARSE_VOCABULARIES = [Cabinet, GameFormat, ProductionStatus]
+
+
+@pytest.mark.parametrize(
+    "model", SPARSE_VOCABULARIES, ids=[m.__name__ for m in SPARSE_VOCABULARIES]
+)
+class TestReservedUnclassifiedSlug:
+    """The filtering API reads ``unclassified`` as "this field is unset", so a
+    vocabulary row carrying that slug would be unreachable by filter."""
+
+    def test_reserved_slug_rejected(self, db, model):
+        with pytest.raises(IntegrityError):
+            model.objects.create(name="Unclassified", slug=UNCLASSIFIED_SLUG)
+
+    def test_reserved_slug_rejected_in_bulk_create(self, db, model):
+        """The bulk patch-ingest path never runs model validation, so the
+        constraint has to hold for a write that skips ``save()`` entirely."""
+        with pytest.raises(IntegrityError):
+            model.objects.bulk_create(
+                [
+                    model(name="Real Row", slug="real-row"),
+                    model(name="Unclassified", slug=UNCLASSIFIED_SLUG),
+                ]
+            )
+
+    def test_slug_containing_the_reserved_word_accepted(self, db, model):
+        """Only the exact slug is reserved — nothing shadows a longer one."""
+        row = model.objects.create(name="Unclassified Other", slug="unclassified-other")
+        assert row.pk is not None
 
 
 # ---------------------------------------------------------------------------
