@@ -73,9 +73,11 @@ class FilterModelsSchema(Schema):
     count: int = Field(description="Number of matching models.")
     public_ids: list[str] = Field(
         description=(
-            "The `slug` (aka `public_id`) of every matching model, ascending. "
-            "Join against your saved copy of `GET /api/public/export/models/` "
-            "to get the rest of the fields on the model."
+            "The `slug` (aka `public_id`) of every matching model, sorted by "
+            "slug (the database's text ordering, so byte-level tie order is "
+            "not part of the contract). Join against your saved copy of "
+            "`GET /api/public/export/models/` to get the rest of the fields "
+            "on the model."
         )
     )
 
