@@ -1,3 +1,4 @@
+<!-- @component The /search page: a debounced search box over the cross-entity results of `?q=`. -->
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { navigating } from '$app/state';
@@ -8,21 +9,38 @@
 
   let { data } = $props();
 
-  // Writable `$derived`: re-adopts `data.q` whenever the load re-runs (a debounce
-  // landing, back/forward), but stays locally writable so it can bind the input.
-  let queryInput = $derived(data.q);
+  // SearchBox binds here. The draft is its own state, not a mirror of `data.q`:
+  // the committed value changes exactly when a debounced navigation lands,
+  // which is exactly when a still-typing user has a longer draft in the box.
+  // svelte-ignore state_referenced_locally
+  let queryInput = $state(data.q);
+
+  /** The scheduled commit of the current draft; `undefined` when the draft has
+   * nothing left to commit, i.e. the user is not ahead of the committed `q`. */
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  // Adopt the committed value, but only when the user isn't ahead of it, so a
+  // navigation landing mid-word leaves the draft alone. Back/forward and other
+  // outside changes have no commit scheduled, so the box follows the URL.
+  // Ordered before the debounce below, which re-arms on a committed change and
+  // would otherwise make every such change look like the user typing.
+  $effect(() => {
+    const committed = data.q;
+    if (timer !== undefined) return;
+    queryInput = committed;
+  });
 
   // Debounce typing → one `goto ?q=` per pause, which re-runs the SSR load.
   // `replaceState` so typing a multi-character query leaves a single history
   // entry, not one per keystroke-pause. Skipped when the input already matches
-  // the committed `q` (seed / popstate / our own goto's landing, each of which
-  // resets `queryInput` via the `$derived` above) so there's no echo loop.
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  // the committed `q` (the seed, or the landing of our own goto) so there's no
+  // echo loop.
   $effect(() => {
     const next = queryInput.trim();
     if (next === data.q) return;
     clearTimeout(timer);
     timer = setTimeout(() => {
+      timer = undefined;
       const search = next ? `?q=${encodeURIComponent(next)}` : '';
       void goto(`${resolve('/search')}${search}`, {
         keepFocus: true,
@@ -30,7 +48,10 @@
         noScroll: true,
       });
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      timer = undefined;
+    };
   });
 
   // A real (≥ MIN) query whose SSR load is in flight. Keyed off `queryInput` (the

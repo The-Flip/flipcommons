@@ -20,6 +20,7 @@ import Page from './+page.svelte';
 
 beforeEach(() => {
   navigating.to = null;
+  goto.mockReset();
 });
 
 function section<T>(items: T[], hasMore = false) {
@@ -151,6 +152,35 @@ describe('/search page', () => {
   it('seeds the search box from the committed q', () => {
     render(Page, { props: { data: { q: 'medieval', results: results() } } });
     expect(screen.getByRole('searchbox')).toHaveValue('medieval');
+  });
+
+  it('keeps a draft typed ahead of a landing navigation', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(Page, { props: { data: { q: '', results: null } } });
+    const box = screen.getByRole('searchbox');
+
+    // Type, pause: the debounce commits `?q=god` and the navigation starts.
+    await user.type(box, 'god');
+    await waitFor(() => expect(goto).toHaveBeenCalledTimes(1));
+    expect(goto.mock.calls[0][0]).toBe('/search?q=god');
+
+    // The user types on while that navigation is still in flight, then it
+    // lands and the SSR load reseeds the committed `q`.
+    await user.type(box, 'zi');
+    await rerender({ data: { q: 'god', results: results() } });
+
+    expect(box).toHaveValue('godzi');
+  });
+
+  it('adopts a committed q that changes with nothing pending', async () => {
+    const { rerender } = render(Page, { props: { data: { q: 'medieval', results: results() } } });
+    expect(screen.getByRole('searchbox')).toHaveValue('medieval');
+
+    // Back/forward: the committed value changes from outside the box, and the
+    // user has no draft in flight — the box follows the URL.
+    await rerender({ data: { q: 'gorgar', results: results() } });
+
+    expect(screen.getByRole('searchbox')).toHaveValue('gorgar');
   });
 
   it('shows a "Searching…" affordance for the first query, before any results exist', () => {
