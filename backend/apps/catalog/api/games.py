@@ -107,34 +107,34 @@ class GameDimensionQuerySchema(Schema):
 
     manufacturer: str | None = Field(
         None,
-        description="Manufacturer slug (see `GET /api/manufacturers/`).",
+        description="Manufacturer slug (see `GET /api/public/export/manufacturers/`).",
     )
     person: str | None = Field(
         None,
         description=(
-            "Person slug (see `GET /api/people/`). Matches records this person "
+            "Person slug (see `GET /api/public/export/people/`). Matches records this person "
             "is credited on."
         ),
     )
     technology_generation: str | None = Field(
         None,
-        description="Technology-generation slug (see `GET /api/technology-generations/`).",
+        description="Technology-generation slug (see `GET /api/public/export/technology-generations/`).",
     )
     display_type: str | None = Field(
         None,
-        description="Display-type slug (see `GET /api/display-types/`).",
+        description="Display-type slug (see `GET /api/public/export/display-types/`).",
     )
     system: str | None = Field(
         None,
-        description="System slug (see `GET /api/systems/`).",
+        description="System slug (see `GET /api/public/export/systems/`).",
     )
     franchise: str | None = Field(
         None,
-        description="Franchise slug (see `GET /api/franchises/`).",
+        description="Franchise slug (see `GET /api/public/export/franchises/`).",
     )
     series: str | None = Field(
         None,
-        description="Series slug (see `GET /api/series/`).",
+        description="Series slug (see `GET /api/public/export/series/`).",
     )
     player_count: int | None = Field(
         None,
@@ -145,7 +145,7 @@ class GameDimensionQuerySchema(Schema):
     theme: list[str] = Field(
         [],
         description=(
-            "Theme slug (see `GET /api/themes/`). Repeatable, ANDed: "
+            "Theme slug (see `GET /api/public/export/themes/`). Repeatable, ANDed: "
             "`theme=a&theme=b` requires both. A parent theme also matches "
             "its sub-themes."
         ),
@@ -153,7 +153,7 @@ class GameDimensionQuerySchema(Schema):
     gameplay_feature: list[str] = Field(
         [],
         description=(
-            "Gameplay-feature slug (see `GET /api/gameplay-features/`). "
+            "Gameplay-feature slug (see `GET /api/public/export/gameplay-features/`). "
             "Repeatable, ANDed: all supplied features are required. A parent "
             "feature also matches its sub-features."
         ),
@@ -161,7 +161,7 @@ class GameDimensionQuerySchema(Schema):
     reward_type: list[str] = Field(
         [],
         description=(
-            "Reward-type slug (see `GET /api/reward-types/`). Repeatable, "
+            "Reward-type slug (see `GET /api/public/export/reward-types/`). Repeatable, "
             "ANDed: all supplied reward types are required."
         ),
     )
@@ -178,23 +178,23 @@ class GameDimensionQuerySchema(Schema):
     )
     display_subtype: str | None = Field(
         None,
-        description="Display-subtype slug (see `GET /api/display-subtypes/`).",
+        description="Display-subtype slug (see `GET /api/public/export/display-subtypes/`).",
     )
     tag: str | None = Field(
         None,
-        description="Tag slug (see `GET /api/tags/`).",
+        description="Tag slug (see `GET /api/public/export/tags/`).",
     )
     technology_subgeneration: str | None = Field(
         None,
         description=(
-            "Technology-subgeneration slug (see `GET /api/technology-subgenerations/`). "
+            "Technology-subgeneration slug (see `GET /api/public/export/technology-subgenerations/`). "
             "Matches models carrying the subgeneration directly or through their system."
         ),
     )
     cabinet: list[str] = Field(
         [],
         description=(
-            "Cabinet style slug (see `GET /api/cabinets/`) or "
+            "Cabinet style slug (see `GET /api/public/export/cabinets/`) or "
             "`unclassified` to match models with no recorded cabinet style. "
             "Repeatable, ORed: a model matches any of the supplied values."
         ),
@@ -202,7 +202,7 @@ class GameDimensionQuerySchema(Schema):
     game_format: list[str] = Field(
         [],
         description=(
-            "Game-format slug (see `GET /api/game-formats/`) or "
+            "Game-format slug (see `GET /api/public/export/game-formats/`) or "
             "`unclassified` to match models with no recorded game format. "
             "Repeatable, ORed: a model matches any of the supplied values."
         ),
@@ -210,14 +210,16 @@ class GameDimensionQuerySchema(Schema):
     production_status: list[str] = Field(
         [],
         description=(
-            "Production-status slug (see `GET /api/production-statuses/`) or "
+            "Production-status slug (see `GET /api/public/export/production-statuses/`) or "
             "`unclassified` to match models with no recorded status. "
             "Repeatable, ORed: a model matches any of the supplied values."
         ),
     )
     corporate_entity: str | None = Field(
         None,
-        description=("Corporate-entity slug (see `GET /api/corporate-entities/`)."),
+        description=(
+            "Corporate-entity slug (see `GET /api/public/export/corporate-entities/`)."
+        ),
     )
 
     def to_filters(self) -> GameFilters:

@@ -187,8 +187,8 @@ Answering "there are surely other consumers than the following, we need to do an
 | `GET /api/pages/manufacturer/<slug>`, corporate entities    | `collect_titles` with any-Model semantics                                                     | PR.DETAIL                                                                                                                          |
 | the other 15 dimension detail routes                        | four card schemas, two list mechanisms, no shared path                                        | PR.DETAIL                                                                                                                          |
 | `GET /api/pages/manufacturers`                              | `MfrFilters`, already carries `location`                                                      | unchanged                                                                                                                          |
-| `GET /api/models/` (the list route)                         | internal API, **eight** detail-route consumers, one blessed external consumer                 | freed by PR.DETAIL, then **deleted** — [the public filtering API](#public-filtering-api) publishes the listing's predicate instead |
-| `GET /api/public/export/models/`                            | the documented public API. Ships every edge unfiltered, rate-limited per IP                   | **unchanged** in shape. A bulk export is not a filter surface; PR.PUB moved its mount from `/api/export/` to `/api/public/export/` |
+| `GET /api/models/` (the list route)                         | internal API, **eight** detail-route consumers, one blessed external consumer                 | freed by PR.DETAIL, then **deleted** — [the public filtering API](#pr-api) publishes the listing's predicate instead               |
+| `GET /api/public/export/models/`                            | the documented public API. Ships every edge unfiltered, rate-limited per IP                   | **unchanged** in shape. A bulk export is not a filter surface; PR.API moved its mount from `/api/export/` to `/api/public/export/` |
 | [Articles](../catalog_data_model/Articles.md) dynamic lists | unbuilt                                                                                       | a stored filter over the same key space                                                                                            |
 
 The export API stays out of it deliberately. It already carries `model_relationships[]` and `export_markets[]` in full, so nothing here is missing from it — what The Flip lacks is not data but a way to ask a question, which is the filtering API's job and not the export's.
@@ -548,7 +548,7 @@ Everything else the rename used to carry — the API path, the card schema, the 
 
 **The non-mechanical part is `route-metadata.server.ts`, which assumes a listing lives at `/{entity_type_plural}`.** `/games` is deliberately not an entity plural, so unhandled it classifies as `unclassified` — silently noindexed by the hook, excluded from the sitemap, and `title` drops out of `ENTITIES_WITH_LISTING`, so every Title and Model detail page loses the "Games" crumb from its JSON-LD breadcrumb trail; the sitemap's listing-`lastmod` wiring (keyed by `/${entity_type_plural}`) also silently stops matching. **Decided: a declared listing-route override** — one map (`{ title: '/games' }`) consulted by `classifyCatalog` (so `/games` classifies as `catalog-listing, entity: 'title'`), by `listingCrumb`'s href, and by the sitemap's listing-lastmod key. This matches the seam that already exists: the listing page passes `catalogKey="title"` to `FacetedCatalogListing`, and `listingMeta('title')` already carries the "Games" copy. **Rejected: adding `/games` to `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`** — that classifies it `listed-indexable`, which forces a hand-maintained `STATIC_LASTMOD` entry (the completeness test demands one) onto a page whose freshness is feed-driven, and still loses the breadcrumb and the feed-keyed `lastmod`.
 
-## ✅ DONE: <a id="public-filtering-api"></a>PR.PUB — public filtering API
+## ✅ DONE: <a id="pr-api"></a>PR.API — public filtering API
 
 The follow-up from [Consumers → Public API](ModelFiltering.md#public-api) and the "To discuss" item The Flip left at [mfgtimeline.md item 8](../the_flip/mfgtimeline.md): a consumer shouldn't have to understand the catalog's relationships before they can filter by them. Not a repurposing of `GET /api/models/` — a published route over the listing's own predicate, with the old list route deleted.
 
@@ -656,8 +656,6 @@ Forty rows against thirty-nine examples: "all the variants of one game" splits, 
 **The one row still genuinely undecided** is the widest original-to-copy gap. If the year delta annotates onto the edge it is an ordinary sort key; if it cannot, the question wants a row per _pair_ and lands with the manufacturer pairings as a won't-do.
 
 ## <a id="deferred"></a>Deferred
-
-Work this program leaves for later. Every **Deferred** row in the [coverage ledger](#coverage-ledger) is covered by an item here.
 
 ### <a id="edge-exclusion"></a>Exclusion on relationship keys
 

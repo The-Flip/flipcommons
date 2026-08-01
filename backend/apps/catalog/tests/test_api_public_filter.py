@@ -141,6 +141,17 @@ class TestStrictness:
     def test_known_edge_key_with_direction_is_not_an_error(self, client, db):
         assert client.get(f"{URL}?edge=copy:in").status_code == 200
 
+    def test_malformed_typed_param_gets_the_structured_shape(self, client, db):
+        """A pydantic binding failure must produce the same documented
+        ValidationErrorSchema object as the route's own validation errors —
+        not Ninja's default error array (the handler is registered on
+        ``public_api`` for exactly this)."""
+        resp = client.get(f"{URL}?year_min=nope")
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert detail["kind"] == "validation_error"
+        assert "year_min" in detail["field_errors"]
+
 
 class TestRateLimit:
     def test_own_bucket_separate_from_the_exports(self, client, db, settings):

@@ -142,13 +142,11 @@ Flipcommons has now classified over 500 non-pinball models. The `game_format` vo
 - `rolldown` (new)
 - `miscellaneous` (new)
 
-`bingo-pinball` is much the largest of these, at over 300 models — bingos are pinball's gambling cousin, and a timeline that means "pinball machines" almost certainly wants them out. It's the single biggest thing this classification buys you.
+`bingo-pinball` is the largest of these, at over 300 models.
 
 Same vocabulary story as `production_status`: expect the list to keep growing, and read it from `GET /api/public/export/game-formats/`, where each entry carries a written description of what the format actually is — worth reading for `miscellaneous` in particular, which is deliberately a catch-all.
 
-A good chunk of the non-pinball games have now been marked as such. Most models remain unclassified because we keep finding more non-pinballs, so `game_format` = `null` OR `pinball` is still a good approximation of pinball machines.
-
-I'm considering this done enough for now.
+A good chunk of the non-pinball games have now been marked as such, so `game_format` = `null` OR `pinball` is a good approximation of pinball machines.
 
 ### 11. Join + null quirks: PARTIAL
 

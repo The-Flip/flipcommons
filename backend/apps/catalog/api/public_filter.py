@@ -74,8 +74,8 @@ class FilterModelsSchema(Schema):
     public_ids: list[str] = Field(
         description=(
             "The `slug` (aka `public_id`) of every matching model, ascending. "
-            "Join against your saved copy of `GET /export/models/` to get the "
-            "rest of the fields on the model."
+            "Join against your saved copy of `GET /api/public/export/models/` "
+            "to get the rest of the fields on the model."
         )
     )
 

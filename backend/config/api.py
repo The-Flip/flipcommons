@@ -208,7 +208,12 @@ def _handle_structured_api_error(
 _REQUEST_SOURCES = frozenset({"body", "query", "path", "header", "cookie", "form"})
 
 
+# Registered on both APIs, like the structured handler above: the public
+# filter route documents ValidationErrorSchema for its 422s, so a pydantic
+# binding failure (`year_min=nope`) must produce the same structured object
+# as the route's own validation errors, not Ninja's default error array.
 @api.exception_handler(ValidationError)
+@public_api.exception_handler(ValidationError)
 def _handle_pydantic_validation_error(
     request: HttpRequest, exc: ValidationError
 ) -> JsonResponse:
