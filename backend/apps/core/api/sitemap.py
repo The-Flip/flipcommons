@@ -22,7 +22,7 @@ from apps.core.api.sitemap_schemas import (
 )
 from apps.core.sitemap import all_sitemap_feeds
 
-sitemap_router = Router(tags=["private"])
+sitemap_router = Router()
 
 SITEMAP_CACHE_KEY = "core:sitemap:feeds"
 SITEMAP_CACHE_TTL = 3600  # seconds

@@ -21,7 +21,7 @@ from apps.core.authz.types import Activity
 from apps.media.models import MediaAsset
 from apps.provenance.models import ChangeSet
 
-admin_pages_router = Router(tags=["private"], auth=django_auth)
+admin_pages_router = Router(auth=django_auth)
 
 
 class AdminMetricSchema(Schema):

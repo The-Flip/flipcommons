@@ -426,7 +426,6 @@ def register_taxonomy_router(  # noqa: UP047
             422: ValidationErrorSchema,
             429: RateLimitErrorSchema,
         },
-        tags=["private"],
     )(_patch)
 
     _register_create(router, model_cls)
@@ -437,7 +436,7 @@ def register_taxonomy_router(  # noqa: UP047
 # Technology Generations router
 # ---------------------------------------------------------------------------
 
-technology_generations_router = Router(tags=["technology-generations"])
+technology_generations_router = Router()
 
 
 @technology_generations_router.get(
@@ -522,7 +521,6 @@ def _bulk_title_counts_for_subgenerations(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -536,7 +534,7 @@ def patch_technology_generation(
 # Display Types router
 # ---------------------------------------------------------------------------
 
-display_types_router = Router(tags=["display-types"])
+display_types_router = Router()
 
 
 @display_types_router.get("/", response=list[DisplayTypeListItemSchema])
@@ -583,7 +581,6 @@ def list_display_types(request: HttpRequest) -> list[DisplayTypeListItemSchema]:
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -597,7 +594,7 @@ def patch_display_type(
 # Technology Subgenerations router
 # ---------------------------------------------------------------------------
 
-technology_subgenerations_router = Router(tags=["technology-subgenerations"])
+technology_subgenerations_router = Router()
 
 
 @technology_subgenerations_router.patch(
@@ -608,7 +605,6 @@ technology_subgenerations_router = Router(tags=["technology-subgenerations"])
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -622,7 +618,7 @@ def patch_technology_subgeneration(
 # Display Subtypes router
 # ---------------------------------------------------------------------------
 
-display_subtypes_router = Router(tags=["display-subtypes"])
+display_subtypes_router = Router()
 
 
 @display_subtypes_router.patch(
@@ -633,7 +629,6 @@ display_subtypes_router = Router(tags=["display-subtypes"])
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -647,7 +642,7 @@ def patch_display_subtype(
 # Cabinets router
 # ---------------------------------------------------------------------------
 
-cabinets_router = Router(tags=["cabinets"])
+cabinets_router = Router()
 
 
 class CabinetListSchema(_TaxonomyListPage):
@@ -669,7 +664,7 @@ register_taxonomy_router(
 # Game Formats router
 # ---------------------------------------------------------------------------
 
-game_formats_router = Router(tags=["game-formats"])
+game_formats_router = Router()
 
 
 class GameFormatListSchema(_TaxonomyListPage):
@@ -691,7 +686,7 @@ register_taxonomy_router(
 # Production Statuses router
 # ---------------------------------------------------------------------------
 
-production_statuses_router = Router(tags=["production-statuses"])
+production_statuses_router = Router()
 
 
 class ProductionStatusListSchema(_TaxonomyListPage):
@@ -723,7 +718,7 @@ class RewardTypeDetailPageSchema(RewardTypeDetailSchema):
     games: GameListSchema
 
 
-reward_types_router = Router(tags=["reward-types"])
+reward_types_router = Router()
 
 
 def _reward_type_detail_qs() -> QuerySet[RewardType]:
@@ -777,7 +772,6 @@ def list_reward_types(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -808,7 +802,7 @@ def patch_reward_type(
 # Tags router
 # ---------------------------------------------------------------------------
 
-tags_router = Router(tags=["tags"])
+tags_router = Router()
 
 
 class TagListSchema(_TaxonomyListPage):
@@ -838,7 +832,7 @@ class CreditRoleDetailSchema(TaxonomySchema):
     )
 
 
-credit_roles_router = Router(tags=["credit-roles"])
+credit_roles_router = Router()
 
 
 def _credit_role_people(cr: CreditRole) -> list[PersonCardSchema]:
@@ -990,7 +984,6 @@ def list_credit_roles(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)

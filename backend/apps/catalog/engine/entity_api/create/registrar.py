@@ -291,7 +291,6 @@ def register_entity_create[ModelT: LinkableLifecycleClaimModel, SchemaT: Schema]
                 422: ValidationErrorSchema,
                 429: RateLimitErrorSchema,
             },
-            tags=["private"],
         )(_create_parented)
     else:
 
@@ -313,5 +312,4 @@ def register_entity_create[ModelT: LinkableLifecycleClaimModel, SchemaT: Schema]
                 422: ValidationErrorSchema,
                 429: RateLimitErrorSchema,
             },
-            tags=["private"],
         )(_create_unparented)

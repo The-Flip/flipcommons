@@ -18,7 +18,7 @@ from apps.core.schemas import (
     EntityAutocompleteResultSchema,
 )
 
-entity_autocomplete_router = Router(tags=["private"])
+entity_autocomplete_router = Router()
 
 
 @entity_autocomplete_router.get("/", response=EntityAutocompleteListSchema)

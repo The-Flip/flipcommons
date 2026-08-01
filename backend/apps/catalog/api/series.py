@@ -113,7 +113,7 @@ def _serialize_series_detail(series: Series) -> SeriesDetailSchema:
 # Router
 # ---------------------------------------------------------------------------
 
-series_router = Router(tags=["series"])
+series_router = Router()
 
 
 def _series_list_qs() -> QuerySet[Series]:
@@ -198,7 +198,6 @@ def list_series(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)

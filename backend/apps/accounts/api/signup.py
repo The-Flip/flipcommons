@@ -46,7 +46,7 @@ from apps.core.schemas import RateLimitErrorSchema
 
 log = logging.getLogger(__name__)
 
-signup_router = Router(tags=["auth", "private"])
+signup_router = Router()
 
 
 # Rate-limit specs are built per-request from settings, NOT cached at

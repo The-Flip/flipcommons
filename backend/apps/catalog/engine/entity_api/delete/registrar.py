@@ -128,7 +128,6 @@ def register_entity_delete_restore[
         "/{path:public_id}/delete-preview/",
         auth=django_auth,
         response=EntityDeletePreviewSchema,
-        tags=["private"],
     )(_delete_preview)
 
     def _delete(
@@ -197,7 +196,6 @@ def register_entity_delete_restore[
             422: SoftDeleteBlockedSchema | AlreadyDeletedSchema,
             429: RateLimitErrorSchema,
         },
-        tags=["private"],
     )(_delete)
 
     def _restore(
@@ -247,5 +245,4 @@ def register_entity_delete_restore[
             404: ErrorDetailSchema,
             429: RateLimitErrorSchema,
         },
-        tags=["private"],
     )(_restore)

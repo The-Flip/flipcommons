@@ -151,7 +151,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
 # Router
 # ---------------------------------------------------------------------------
 
-systems_router = Router(tags=["systems"])
+systems_router = Router()
 
 
 def _system_list_qs() -> QuerySet[System]:
@@ -230,7 +230,6 @@ def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -271,7 +270,6 @@ def patch_system_claims(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
 @rate_limited(CREATE_RATE_LIMIT_SPEC)

@@ -120,7 +120,7 @@ def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
 # Router
 # ---------------------------------------------------------------------------
 
-themes_router = Router(tags=["themes"])
+themes_router = Router()
 
 
 def _serialize_theme_row(theme: Theme, title_count: int) -> ThemeListItemSchema:
@@ -201,7 +201,6 @@ def list_themes(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)

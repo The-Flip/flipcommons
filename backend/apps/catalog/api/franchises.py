@@ -69,7 +69,7 @@ class FranchiseDetailPageSchema(FranchiseDetailSchema):
 # Router
 # ---------------------------------------------------------------------------
 
-franchises_router = Router(tags=["franchises"])
+franchises_router = Router()
 
 
 def _franchise_list_qs() -> QuerySet[Franchise]:
@@ -130,7 +130,6 @@ def _serialize_franchise_detail(franchise: Franchise) -> FranchiseDetailSchema:
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)

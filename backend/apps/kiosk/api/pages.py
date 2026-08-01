@@ -16,7 +16,7 @@ from apps.kiosk.api.schemas import (
 )
 from apps.kiosk.models import KioskConfig
 
-kiosk_pages_router = Router(tags=["private"])
+kiosk_pages_router = Router()
 
 
 @kiosk_pages_router.get("{config_id}/", response=KioskPageSchema)

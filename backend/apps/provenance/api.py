@@ -37,7 +37,7 @@ from .schemas import (
     UndoResultSchema,
 )
 
-sources_router = Router(tags=["sources", "private"])
+sources_router = Router()
 
 
 @sources_router.get("/", response=list[CitationSourceSchema])
@@ -49,8 +49,8 @@ def list_sources(request: HttpRequest) -> list[Source]:
 # ── Claim and ChangeSet mutations (revert, undo) ───────────────────
 
 
-claims_router = Router(tags=["claims", "private"])
-changesets_router = Router(tags=["changesets", "private"])
+claims_router = Router()
+changesets_router = Router()
 
 
 @claims_router.post(
@@ -144,7 +144,7 @@ def undo_changeset(
     return UndoResultSchema(changeset_id=new_cs.pk)
 
 
-citation_instances_router = Router(tags=["citation-instances", "private"])
+citation_instances_router = Router()
 
 
 @citation_instances_router.get(

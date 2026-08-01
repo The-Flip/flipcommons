@@ -34,7 +34,7 @@ from apps.kiosk.api.schemas import (
 )
 from apps.kiosk.models import IDLE_SECONDS_MIN, KioskConfig, KioskConfigItem
 
-kiosk_configs_router = Router(tags=["kiosk", "private"])
+kiosk_configs_router = Router()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

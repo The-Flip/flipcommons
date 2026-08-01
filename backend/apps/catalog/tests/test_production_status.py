@@ -169,7 +169,7 @@ class TestProductionStatusExport:
         produced = ProductionStatus.objects.create(name="Produced", slug="produced")
         model = make_machine_model(name="Shipped Game", production_status=produced)
 
-        resp = client.get("/api/export/models/")
+        resp = client.get("/api/public/export/models/")
         assert resp.status_code == 200
         row = next(r for r in resp.json() if r["public_id"] == model.slug)
         assert row["production_status"] == "produced"

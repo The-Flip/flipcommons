@@ -76,7 +76,7 @@ from .url_extraction import extract_url
 # Routers
 # ---------------------------------------------------------------------------
 
-citation_sources_router = Router(tags=["citation-sources", "private"])
+citation_sources_router = Router()
 
 routers = [
     ("/citation-sources/", citation_sources_router),

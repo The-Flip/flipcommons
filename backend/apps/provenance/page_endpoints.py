@@ -109,7 +109,7 @@ def _parse_aware_datetime(value: str) -> datetime | None:
     return dt
 
 
-pages_router = Router(tags=["private"])
+pages_router = Router()
 
 
 @pages_router.get(

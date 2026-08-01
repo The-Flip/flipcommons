@@ -462,7 +462,7 @@ def _hydrate_cards(
 # The listing endpoint
 # ---------------------------------------------------------------------------
 
-games_router = Router(tags=["games"])
+games_router = Router()
 
 
 def game_list_page(f: GameFilters, *, page: int = 1) -> GameListSchema:

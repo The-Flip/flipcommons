@@ -164,7 +164,7 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
 # Router
 # ---------------------------------------------------------------------------
 
-corporate_entities_router = Router(tags=["corporate-entities"])
+corporate_entities_router = Router()
 
 
 def _corporate_entity_list_qs() -> QuerySet[CorporateEntity]:
@@ -231,7 +231,6 @@ def list_corporate_entities(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)

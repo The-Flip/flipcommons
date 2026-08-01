@@ -107,7 +107,7 @@ from .themes import _serialize_detail as _serialize_theme_detail
 from .titles import TitleDetailSchema, _serialize_title_detail
 from .titles import _detail_qs as _title_detail_qs
 
-pages_router = Router(tags=["private"])
+pages_router = Router()
 
 # Minimum trimmed ``q`` length the global search acts on. Below this the endpoint
 # returns empty sections without touching the DB, and the SvelteKit page shows a

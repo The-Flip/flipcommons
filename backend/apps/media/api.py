@@ -64,7 +64,7 @@ from apps.provenance.models import ChangeSetAction
 
 logger = logging.getLogger(__name__)
 
-media_router = Router(tags=["media", "private"])
+media_router = Router()
 
 
 def _write_media_claim(

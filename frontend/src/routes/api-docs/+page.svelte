@@ -9,7 +9,7 @@
   // svelte.config.js prerender.origin), the same source the canonical
   // href and OG tags use, so this stays correct without hardcoding.
   let typesCommand = $derived(
-    `npx openapi-typescript ${page.url.origin}/api/export/openapi.json -o schema.d.ts`,
+    `npx openapi-typescript ${page.url.origin}/api/public/openapi.json -o schema.d.ts`,
   );
 
   const scalarCustomCss = `
@@ -26,15 +26,15 @@
 		}
 	`;
 
-  // The export API is a dedicated NinjaAPI whose OpenAPI document is exactly the
-  // published surface (the bulk export) — no internal endpoints to filter out.
+  // The public API is a dedicated NinjaAPI whose OpenAPI document is exactly
+  // the published surface — no internal endpoints to filter out.
   $effect(() => {
     const controller = new AbortController();
 
     (async () => {
       let spec: unknown;
       try {
-        const res = await fetch('/api/export/openapi.json', { signal: controller.signal });
+        const res = await fetch('/api/public/openapi.json', { signal: controller.signal });
         spec = await res.json();
       } catch {
         if (!controller.signal.aborted) {
@@ -85,7 +85,7 @@
   <div class="resource-card">
     <h3>OpenAPI Spec</h3>
     <p>
-      <a href="/api/export/openapi.json" target="_blank" rel="noopener external">Download</a> the raw
+      <a href="/api/public/openapi.json" target="_blank" rel="noopener external">Download</a> the raw
       OpenAPI 3.1 specification to use with any compatible tooling.
     </p>
   </div>

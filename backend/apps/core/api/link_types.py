@@ -18,7 +18,7 @@ from apps.core.wikilinks import get_picker_type, get_picker_types
 # Router
 # ---------------------------------------------------------------------------
 
-link_types_router = Router(tags=["private"])
+link_types_router = Router()
 
 
 @link_types_router.get("/", response=list[LinkTypeSchema])

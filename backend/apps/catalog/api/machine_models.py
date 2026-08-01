@@ -732,7 +732,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
 # Router
 # ---------------------------------------------------------------------------
 
-models_router = Router(tags=["models"])
+models_router = Router()
 
 
 class ModelListPagination(NamedPageNumberPagination):
@@ -843,9 +843,8 @@ class ModelRecentSchema(Schema):
     thumbnail_url: str | None = None
 
 
-# Website-only (homepage widget), not external catalog data — kept out of the
-# public API docs via tags=["private"].
-@models_router.get("/recent/", response=list[ModelRecentSchema], tags=["private"])
+# Website-only (homepage widget), not external catalog data.
+@models_router.get("/recent/", response=list[ModelRecentSchema])
 @decorate_view(cache_control(no_cache=True))
 def list_recent_models(request: HttpRequest) -> list[ModelRecentSchema]:
     """Return the 3 newest non-variant models, one per title."""
@@ -890,9 +889,8 @@ def list_recent_models(request: HttpRequest) -> list[ModelRecentSchema]:
     return results
 
 
-# Serves the in-app edit form, not external consumers — kept out of the public
-# API docs via tags=["private"].
-@models_router.get("/edit-options/", response=ModelEditOptionsSchema, tags=["private"])
+# Serves the in-app edit form, not external consumers.
+@models_router.get("/edit-options/", response=ModelEditOptionsSchema)
 @decorate_view(cache_control(no_cache=True))
 def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
     """Return all dropdown options for the MachineModel edit form."""
@@ -953,7 +951,6 @@ _SELF_REF_FIELDS: frozenset[str] = frozenset(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -1068,7 +1065,6 @@ def patch_model_claims(
     "/{path:public_id}/delete-preview/",
     auth=django_auth,
     response=ModelDeletePreviewSchema,
-    tags=["private"],
 )
 def model_delete_preview(
     request: HttpRequest, public_id: str
@@ -1097,7 +1093,6 @@ def model_delete_preview(
         422: SoftDeleteBlockedSchema | AlreadyDeletedSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_DELETE)
 @rate_limited(DELETE_RATE_LIMIT_SPEC)
@@ -1147,7 +1142,6 @@ def delete_model(
         404: ErrorDetailSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
 @rate_limited(CREATE_RATE_LIMIT_SPEC)

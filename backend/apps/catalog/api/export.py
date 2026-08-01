@@ -1,4 +1,4 @@
-"""Model-driven bulk-export API: ``GET /api/export/<entity-plural>/``.
+"""Model-driven bulk-export API: ``GET /api/public/export/<entity-plural>/``.
 
 One cached, flat, slug-keyed dump per catalog entity — the resolved shape (one
 canonical value per field), not the claim graph. Built so adding a catalog
@@ -967,7 +967,7 @@ def _register(spec: ExportSpec) -> None:
     export_router.get(
         f"/{entity_type_plural}/",
         # 429 documented so the public OpenAPI advertises the per-IP limit and
-        # its Retry-After body (the export API is the sole documented surface).
+        # its Retry-After body.
         response={200: list[schema], 429: RateLimitErrorSchema},  # type: ignore[valid-type]
         summary=label_plural,
         description=f"Bulk export all {label_plural}.",

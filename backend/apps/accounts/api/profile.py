@@ -23,7 +23,7 @@ from .profile_schemas import (
     UserProfileSchema,
 )
 
-user_page_router = Router(tags=["private"])
+user_page_router = Router()
 
 
 class EntityContributionRow(TypedDict):

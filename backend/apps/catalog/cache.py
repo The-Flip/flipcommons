@@ -14,7 +14,7 @@ What is cached, who reads it, and the cost it avoids:
 - Manufacturer facet options (``GET /api/pages/manufacturers``) — the
   /manufacturers filter sidebar.
 - Locations tree — the locations-page hierarchy.
-- Per-entity-type bulk-export blobs (``GET /api/export/<entity>/``) — a flat,
+- Per-entity-type bulk-export blobs (``GET /api/public/export/<entity>/``) — a flat,
   slug-keyed dump of every active entity of a type, for bulk/external consumers
   (rate-limited, not a per-page UI call). The most expensive payload to rebuild.
 
@@ -71,7 +71,7 @@ _GAMES_FACETS_BASE = f"catalog:games:facets:{_CACHE_VERSION}"
 # Same, for the /manufacturers page (GET /api/pages/manufacturers).
 _MANUFACTURERS_FACETS_BASE = f"catalog:manufacturers:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
-# Per-entity bulk-export blobs (GET /api/export/<entity>/). One slot per
+# Per-entity bulk-export blobs (GET /api/public/export/<entity>/). One slot per
 # entity_type × audience; cleared wholesale by invalidate_response_cache()
 # because a single catalog edit can ripple across entities (e.g. a Model edit
 # shifts a Manufacturer's model_count).

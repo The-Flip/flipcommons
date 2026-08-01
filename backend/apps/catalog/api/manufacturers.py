@@ -351,7 +351,7 @@ def _manufacturer_qs() -> QuerySet[Manufacturer]:
 # Router
 # ---------------------------------------------------------------------------
 
-manufacturers_router = Router(tags=["manufacturers"])
+manufacturers_router = Router()
 
 
 def _page_thumbnails(
@@ -535,7 +535,6 @@ def manufacturer_facets_response(filters: MfrFilters) -> HttpResponse:
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
