@@ -276,6 +276,14 @@ SIGNUP_CANCEL_RATELIMIT_IP = (20, 60)
 # real-time polling the export exists to discourage. (limit, window_seconds).
 EXPORT_RATELIMIT_IP = (120, 3600)
 
+# Public filtering API (GET /api/public/filter/models/). Its own bucket, sized
+# separately from the export's: a filter call is the cheap alternative to
+# re-syncing a dump, so charging it against the full-sync budget would be
+# backwards. One Model query per request; 600/hour ≈ 10/minute is ~unhittable
+# for the sanctioned shape (a consumer composing a handful of filters per
+# sync) while bounding abuse. (limit, window_seconds).
+FILTER_RATELIMIT_IP = (600, 3600)
+
 # ── WorkOS AuthKit ────────────────────────────────────────────────
 WORKOS_API_KEY = os.environ.get("WORKOS_API_KEY", "").strip()
 WORKOS_CLIENT_ID = os.environ.get("WORKOS_CLIENT_ID", "").strip()

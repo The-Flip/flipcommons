@@ -94,18 +94,17 @@ class GameListSchema(Schema):
     count: int
 
 
-class GameFilterQuerySchema(Schema):
-    """Every listing filter dimension as query params — one vocabulary end to
-    end (URL ⇄ this schema ⇄ ``GameFilters``). Multi-value params are
-    **repeated** (``theme=a&theme=b``), read natively as ``list[str]``."""
+class GameDimensionQuerySchema(Schema):
+    """Every filter *dimension* as query params — one vocabulary end to end
+    (URL ⇄ this schema ⇄ ``GameFilters``), shared by the internal listing and
+    the public filter route. Multi-value params are **repeated**
+    (``theme=a&theme=b``), read natively as ``list[str]``.
 
-    q: str = Field(
-        "",
-        description=(
-            "Free-text search. Accent- and case-insensitive substring match "
-            "against title and model names and abbreviations."
-        ),
-    )
+    ``q`` is deliberately not here: it is the record-local shared class rather
+    than a dimension, the internal listing adds it in
+    :class:`GameFilterQuerySchema`, and the public route does not publish it
+    (its accent folding is backend-dependent)."""
+
     manufacturer: str | None = Field(
         None,
         description="Manufacturer slug (see `GET /api/manufacturers/`).",
@@ -233,7 +232,6 @@ class GameFilterQuerySchema(Schema):
 
     def to_filters(self) -> GameFilters:
         return GameFilters(
-            q=self.q or "",
             manufacturer=self.manufacturer,
             person=self.person,
             tech_gen=self.tech_gen,
@@ -256,6 +254,22 @@ class GameFilterQuerySchema(Schema):
             production_status=tuple(self.production_status),
             corporate_entity=self.corporate_entity,
         )
+
+
+class GameFilterQuerySchema(GameDimensionQuerySchema):
+    """The internal listing's full query vocabulary: every dimension plus the
+    free-text ``q``."""
+
+    q: str = Field(
+        "",
+        description=(
+            "Free-text search. Accent- and case-insensitive substring match "
+            "against title and model names and abbreviations."
+        ),
+    )
+
+    def to_filters(self) -> GameFilters:
+        return replace(super().to_filters(), q=self.q or "")
 
 
 class PlayerCountOptionSchema(Schema):

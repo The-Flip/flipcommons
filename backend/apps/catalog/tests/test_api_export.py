@@ -49,7 +49,7 @@ class TestPublishedPathInventory:
         expected = {
             f"/api/public/export/{spec.model.entity_type_plural}/"
             for spec in _REGISTRY.values()
-        }
+        } | {"/api/public/filter/models/"}
         assert paths == expected
 
 

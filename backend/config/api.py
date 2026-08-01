@@ -11,6 +11,7 @@ from ninja.errors import HttpError, ValidationError
 from ninja.security import django_auth
 
 from apps.catalog.api.export import export_rate_limit_summary, export_router
+from apps.catalog.api.public_filter import filter_rate_limit_summary, filter_router
 from apps.catalog.engine.entity_api.field_constraints import FieldConstraintSchema
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -42,16 +43,21 @@ public_api = NinjaAPI(
     title="Flipcommons Public API",
     version="1.0.0",
     description=(
-        "The public Flipcommons API: bulk export of catalog records.\n\n"
+        "The public Flipcommons API: bulk export of catalog records, plus a "
+        'filtering endpoint that answers "which models match" so you don\'t '
+        "have to reimplement the catalog's relationships client-side.\n\n"
         "Please be gentle on the system: save the exported data and do the rest "
-        "of your operations locally on your exported copy. Export requests are "
-        # Limit derived from the live config so the published number never goes stale.
-        f"rate-limited to {export_rate_limit_summary()} per IP; a 429 with a "
-        "Retry-After header means you've exceeded it."
+        "of your operations locally on your exported copy, joining the filter "
+        "endpoint's ids against it. Requests are rate-limited per IP — "
+        # Limits derived from the live config so the published numbers never go stale.
+        f"exports to {export_rate_limit_summary()}, filtering to "
+        f"{filter_rate_limit_summary()}; a 429 with a Retry-After header "
+        "means you've exceeded a limit."
     ),
     urls_namespace="public",
 )
 public_api.add_router("/export/", export_router)
+public_api.add_router("/filter/", filter_router)
 
 
 class SiteStatsSchema(Schema):
