@@ -109,7 +109,7 @@ describe('/search page', () => {
       },
     });
     const link = screen.getByRole('link', { name: /see all games matching "medieval"/i });
-    expect(link).toHaveAttribute('href', '/titles?q=medieval');
+    expect(link).toHaveAttribute('href', '/games?q=medieval');
   });
 
   it('omits the "See all" link when a section is within the cap', () => {

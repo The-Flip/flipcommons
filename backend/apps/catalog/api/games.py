@@ -609,7 +609,7 @@ def games_facets_response(f: GameFilters) -> HttpResponse:
 
 class GameSearchSectionSchema(Schema):
     """The Games section of the global ``/search`` page: up to 10 cards plus a
-    ``has_more`` flag (the frontend links to ``/titles?q=`` for the rest).
+    ``has_more`` flag (the frontend links to ``/games?q=`` for the rest).
     ``items`` reuses the listing card so a section row matches the ``/games``
     grid exactly."""
 
@@ -622,7 +622,7 @@ _SEARCH_LIMIT = 10
 
 def game_search_section(q: str, *, min_rank: int) -> GameSearchSectionSchema:
     """Top ≤10 game cards matching ``q`` — the same rows, order and serializer
-    as the listing, so the section matches ``/titles?q=`` exactly.
+    as the listing, so the section matches ``/games?q=`` exactly.
 
     Titles matched only by their long-form ``description`` rank *below* the
     name/alias tier, and the tier is deliberately **not** routed through the

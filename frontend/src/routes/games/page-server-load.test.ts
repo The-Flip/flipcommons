@@ -26,7 +26,7 @@ function routedFetch(cards: Response) {
 }
 
 function event(fetch: ReturnType<typeof vi.fn>, search = '') {
-  const url = new URL(`http://localhost:5173/titles${search}`);
+  const url = new URL(`http://localhost:5173/games${search}`);
   return {
     fetch,
     url,
@@ -34,7 +34,7 @@ function event(fetch: ReturnType<typeof vi.fn>, search = '') {
   } as unknown as Parameters<typeof load>[0];
 }
 
-describe('/titles +page.server load', () => {
+describe('/games +page.server load', () => {
   it('awaits page 1 cards and returns items/count/query', async () => {
     const fetch = routedFetch(
       new Response(JSON.stringify({ items: [CARD], count: 1 }), {

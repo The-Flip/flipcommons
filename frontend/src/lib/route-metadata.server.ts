@@ -4,6 +4,7 @@
 
 import type { RouteId } from '$app/types';
 import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
+import { LISTING_ROUTE_OVERRIDES, listingPath } from '$lib/entities/listing-path';
 import { listingMeta } from '$lib/entities/schema-org';
 import type { Crumb } from '$lib/components/layout/page/head/jsonld';
 
@@ -69,6 +70,13 @@ export const SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS = [
 export const LISTED_INDEXABLE_ENTITY_SLUG_SOURCE = {
   '/manufacturers/[slug]/systems': 'manufacturer',
 } as const satisfies Partial<Record<RouteId, CatalogEntityKey>>;
+
+// LISTING_ROUTE_OVERRIDES inverted: overridden listing route ID → entity key.
+const OVERRIDE_LISTING_TO_KEY: ReadonlyMap<string, CatalogEntityKey> = new Map(
+  (Object.entries(LISTING_ROUTE_OVERRIDES) as [CatalogEntityKey, RouteId][]).map(
+    ([entity, routeId]) => [routeId, entity],
+  ),
+);
 
 /** Classification of a SvelteKit route for search engine indexing purposes. */
 export type RouteClass =
@@ -143,6 +151,9 @@ function buildAuthGatedPrefixes(): ReadonlySet<string> {
 }
 
 function classifyCatalog(id: string): RouteClass | null {
+  const overridden = OVERRIDE_LISTING_TO_KEY.get(id);
+  if (overridden) return { kind: 'catalog-listing', entity: overridden };
+
   // /(legal)/privacy → segments = ['(legal)', 'privacy'] — won't match any plural, returns null.
   const segments = id === '/' ? [] : id.slice(1).split('/');
   if (segments.length === 0) return null;
@@ -305,7 +316,7 @@ function listingCrumb(entity: CatalogEntityKey): Crumb | null {
   if (!ENTITIES_WITH_LISTING.has(entity)) return null;
   return {
     label: listingMeta(entity).breadcrumb,
-    href: `/${ENTITY_META[entity].entity_type_plural}`,
+    href: listingPath(entity),
   };
 }
 

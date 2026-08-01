@@ -171,6 +171,43 @@ describe('FacetedCatalogListing', () => {
     expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
   });
 
+  // Title is the one entity whose listing (/games, via the listingPath
+  // override) and create route (/titles/new) live under different segments.
+  // Regression pins for the fix where filter navigation targeted the entity
+  // plural and bounced every filter change through the /titles 301 as a full
+  // document load.
+  describe('catalogKey="title" (the games listing)', () => {
+    it('filter navigation targets /games, not the entity plural', async () => {
+      pageState.url = new URL('http://localhost/games');
+      const user = userEvent.setup();
+      render(FacetedCatalogListingFixture, {
+        props: { catalogKey: 'title' as const, initial: { items: ITEMS, count: 2 } },
+      });
+
+      await user.click(await screen.findByTestId('sb-set'));
+
+      await waitFor(() => expect(goto).toHaveBeenCalledTimes(1));
+      expect(goto.mock.calls[0][0]).toMatch(/^\/games\?/);
+    });
+
+    it('the create prompt still targets /titles/new', async () => {
+      pageState.url = new URL('http://localhost/games?q=nonesuch');
+      render(FacetedCatalogListingFixture, {
+        props: {
+          catalogKey: 'title' as const,
+          initial: { items: [], count: 0 },
+          query: { q: 'nonesuch' },
+          queryCount: Promise.resolve(0),
+        },
+      });
+
+      expect(await screen.findByRole('link', { name: /create/i })).toHaveAttribute(
+        'href',
+        '/titles/new?name=nonesuch',
+      );
+    });
+  });
+
   it('does not show the create prompt when unauthenticated', async () => {
     authMock.isAuthenticated = false;
     const queryCount = Promise.resolve(0);

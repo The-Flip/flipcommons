@@ -1,3 +1,4 @@
+<!-- @component Site-wide top navigation bar. -->
 <script lang="ts">
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
@@ -14,15 +15,17 @@
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
   import { toast } from '$lib/toast/toast.svelte';
 
+  // `activePrefixes` marks an item active on paths beyond its own href —
+  // Title detail pages live under /titles while their listing is /games.
   const navItems = [
-    { href: '/titles' as const, label: 'Games' },
+    { href: '/games' as const, label: 'Games', activePrefixes: ['/games', '/titles'] },
     { href: '/manufacturers' as const, label: 'Manufacturers' },
     { href: '/people' as const, label: 'People' },
   ];
   const changelogHref = '/changesets' as const;
 
-  function isActive(href: string) {
-    return page.url.pathname.startsWith(href);
+  function isActive(href: string, activePrefixes?: readonly string[]) {
+    return (activePrefixes ?? [href]).some((p) => page.url.pathname.startsWith(p));
   }
 
   // Mirrors the `(--breakpoint-narrow)` CSS tier below. Used to decide
@@ -77,8 +80,8 @@
 
 <SiteHeader>
   <nav class="primary-nav" aria-label="Primary">
-    {#each navItems as { href, label } (href)}
-      <a href={resolve(href)} class="nav-link" class:active={isActive(href)}>
+    {#each navItems as { href, label, activePrefixes } (href)}
+      <a href={resolve(href)} class="nav-link" class:active={isActive(href, activePrefixes)}>
         {label}
       </a>
     {/each}
@@ -132,8 +135,10 @@
           <FaIcon icon={faBars} size="1.25rem" />
         {/snippet}
         {#if isMobile}
-          {#each navItems as { href, label } (href)}
-            <MenuItem href={resolve(href)} current={isActive(href)}>{label}</MenuItem>
+          {#each navItems as { href, label, activePrefixes } (href)}
+            <MenuItem href={resolve(href)} current={isActive(href, activePrefixes)}
+              >{label}</MenuItem
+            >
           {/each}
           <MenuDivider />
         {/if}

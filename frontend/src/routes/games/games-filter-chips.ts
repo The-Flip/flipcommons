@@ -10,7 +10,7 @@ import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveF
 import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
 
 /**
- * Build the active-filter chips for /titles from the current filter state.
+ * Build the active-filter chips for /games from the current filter state.
  *
  * `options` are the streamed facet lists, used only to resolve slug → display
  * name; the chips' `remove` closures mutate the passed `filters` object (the
@@ -21,7 +21,7 @@ import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
  * fields (one chip, cleared to null), multi-select fields (one chip per value),
  * and the bespoke scalar filters (player count, year range).
  */
-export function titleFilterChips(
+export function gameFilterChips(
   filters: FilterState,
   options: GameFilterOptionsSchema,
 ): FilterChipSpec[] {

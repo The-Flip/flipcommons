@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { UNCLASSIFIED, emptyFilterState } from '$lib/facet-engine';
 import type { GameFilterOptionsSchema } from '$lib/api/schema';
-import { titleFilterChips } from './titles-filter-chips';
+import { gameFilterChips } from './games-filter-chips';
 
 function options(overrides: Partial<GameFilterOptionsSchema> = {}): GameFilterOptionsSchema {
   return {
@@ -24,14 +24,14 @@ function options(overrides: Partial<GameFilterOptionsSchema> = {}): GameFilterOp
   };
 }
 
-describe('titleFilterChips', () => {
+describe('gameFilterChips', () => {
   it('returns no chips when nothing is filtered', () => {
-    expect(titleFilterChips(emptyFilterState(), options())).toEqual([]);
+    expect(gameFilterChips(emptyFilterState(), options())).toEqual([]);
   });
 
   it('labels a single-select chip from the option list and clears it on remove', () => {
     const filters = { ...emptyFilterState(), manufacturer: 'stern' };
-    const chips = titleFilterChips(
+    const chips = gameFilterChips(
       filters,
       options({ manufacturer: [{ public_id: 'stern', name: 'Stern', count: 3 }] }),
     );
@@ -44,13 +44,13 @@ describe('titleFilterChips', () => {
   });
 
   it('falls back to the slug when the option list lacks a name', () => {
-    const chips = titleFilterChips({ ...emptyFilterState(), manufacturer: 'mystery' }, options());
+    const chips = gameFilterChips({ ...emptyFilterState(), manufacturer: 'mystery' }, options());
     expect(chips[0].label).toBe('mystery');
   });
 
   it('emits one chip per multi-select value and removes only that value', () => {
     const filters = { ...emptyFilterState(), themes: ['sci-fi', 'horror'] };
-    const chips = titleFilterChips(
+    const chips = gameFilterChips(
       filters,
       options({
         theme: [
@@ -68,7 +68,7 @@ describe('titleFilterChips', () => {
   it('labels edge chips from the relationship vocabulary, not the option names', () => {
     const filters = { ...emptyFilterState(), edges: ['bootleg', 'copy:in'] };
     // The payload names edge options by wire value; the chip must not echo it.
-    const chips = titleFilterChips(
+    const chips = gameFilterChips(
       filters,
       options({
         edge: [
@@ -84,17 +84,17 @@ describe('titleFilterChips', () => {
   });
 
   it('formats the player-count chip, folding 6+', () => {
-    expect(titleFilterChips({ ...emptyFilterState(), playerCount: 4 }, options())[0].label).toBe(
+    expect(gameFilterChips({ ...emptyFilterState(), playerCount: 4 }, options())[0].label).toBe(
       '4 players',
     );
-    expect(titleFilterChips({ ...emptyFilterState(), playerCount: 6 }, options())[0].label).toBe(
+    expect(gameFilterChips({ ...emptyFilterState(), playerCount: 6 }, options())[0].label).toBe(
       '6+ players',
     );
   });
 
   it('builds one year-range chip and clears both bounds on remove', () => {
     const filters = { ...emptyFilterState(), yearMin: 1990, yearMax: 2000 };
-    const chips = titleFilterChips(filters, options());
+    const chips = gameFilterChips(filters, options());
 
     expect(chips).toHaveLength(1);
     expect(chips[0]).toMatchObject({ key: 'year', label: 'Year: 1990–2000' });
@@ -106,7 +106,7 @@ describe('titleFilterChips', () => {
 
   it('shows one chip for the canonical preset pair, labeled like the dropdown selection', () => {
     const filters = { ...emptyFilterState(), gameFormats: ['pinball', UNCLASSIFIED] };
-    const chips = titleFilterChips(
+    const chips = gameFilterChips(
       filters,
       options({ game_format: [{ public_id: 'pinball', name: 'Pinball', count: 5659 }] }),
     );
@@ -119,7 +119,7 @@ describe('titleFilterChips', () => {
 
   it('shows one chip for a lone sparse value, including unclassified', () => {
     const exact = { ...emptyFilterState(), gameFormats: ['bingo-pinball'] };
-    const exactChips = titleFilterChips(
+    const exactChips = gameFilterChips(
       exact,
       options({ game_format: [{ public_id: 'bingo-pinball', name: 'Bingo Pinball', count: 3 }] }),
     );
@@ -128,7 +128,7 @@ describe('titleFilterChips', () => {
     // The reserved value's label is the frontend literal — it is never a
     // payload option to resolve a name from.
     const nulls = { ...emptyFilterState(), cabinets: [UNCLASSIFIED] };
-    const nullChips = titleFilterChips(nulls, options());
+    const nullChips = gameFilterChips(nulls, options());
     expect(nullChips.map((c) => c.label)).toEqual(['Unclassified']);
     nullChips[0].remove();
     expect(nulls.cabinets).toEqual([]);
@@ -136,7 +136,7 @@ describe('titleFilterChips', () => {
 
   it('degrades an arbitrary sparse union to one removable chip per raw value', () => {
     const filters = { ...emptyFilterState(), gameFormats: ['pinball', 'shuffle'] };
-    const chips = titleFilterChips(
+    const chips = gameFilterChips(
       filters,
       options({
         game_format: [
@@ -158,7 +158,7 @@ describe('titleFilterChips', () => {
       themes: ['sci-fi'],
       playerCount: 4,
     };
-    const chips = titleFilterChips(
+    const chips = gameFilterChips(
       filters,
       options({
         manufacturer: [{ public_id: 'stern', name: 'Stern', count: 1 }],

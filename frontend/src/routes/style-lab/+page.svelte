@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import ActiveFilterChips, {
     type FilterChipSpec,
   } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
@@ -63,8 +64,8 @@
         <Button>Search</Button>
       </div>
       <p>
-        Match results across <a href="/titles">titles</a>, manufacturers, people, systems, and
-        gameplay features.
+        Match results across <a href={resolve('/games')}>games</a>, manufacturers, people, systems,
+        and gameplay features.
       </p>
     </div>
   </section>

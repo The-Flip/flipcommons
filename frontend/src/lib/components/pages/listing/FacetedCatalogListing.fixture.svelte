@@ -2,6 +2,7 @@
   import FacetedCatalogListing from './FacetedCatalogListing.svelte';
   import Sidebar from './FacetedCatalogListing.fixtureSidebar.svelte';
   import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
+  import type { CatalogEntityKey } from '$lib/entities/entity-meta';
 
   type F = { query: string; foo: string | null };
   type O = { foo: { public_id: string; name: string; count: number }[] };
@@ -9,12 +10,14 @@
   type Q = { q?: string };
 
   let {
+    catalogKey = 'manufacturer',
     initial,
     query = {},
     filterOptions = Promise.resolve<O | undefined>({ foo: [] }),
     queryCount = Promise.resolve<number | null | undefined>(null),
     fetchPage = () => Promise.resolve({ items: [], count: 0 }),
   }: {
+    catalogKey?: CatalogEntityKey;
     initial: { items: Item[]; count: number };
     query?: Q;
     filterOptions?: Promise<O | undefined>;
@@ -36,7 +39,7 @@
 </script>
 
 <FacetedCatalogListing
-  catalogKey="manufacturer"
+  {catalogKey}
   {engine}
   {Sidebar}
   {chips}

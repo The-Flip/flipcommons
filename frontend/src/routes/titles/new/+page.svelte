@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import client from '$lib/api/client';
   import CreatePage from '$lib/components/pages/record/create/CreatePage.svelte';
 
@@ -10,5 +11,5 @@
   initialName={data.initialName}
   submit={(body) => client.POST('/api/titles/', { body })}
   detailHref={(slug) => `/titles/${slug}`}
-  cancelHref="/titles"
+  cancelHref={resolve('/games')}
 />

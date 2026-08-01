@@ -31,7 +31,7 @@ export function unwrapPage<T>(data: { items: T[]; count: number } | undefined): 
  * Pass `initial` to seed page 1 from an SSR load: `items`/`count` are
  * populated synchronously (so they render during SSR) and the `onMount`
  * first fetch is skipped — the next fetch is page 2. Used by the SSR
- * `/titles` grid, whose page 1 already arrives in the server response.
+ * `/games` grid, whose page 1 already arrives in the server response.
  */
 export function createPaginatedLoader<T>(
   fetchPage: (page: number) => Promise<{ items: T[]; count: number }>,

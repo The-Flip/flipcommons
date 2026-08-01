@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { RouteId } from '$app/types';
 import {
   classifyRoute,
+  detailCrumbs,
   isCatalogRoute,
   isSearchEngineIndexable,
   allRoutes,
@@ -10,6 +11,7 @@ import {
   SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS,
   type RouteClass,
 } from './route-metadata.server';
+import { listingPath } from '$lib/entities/listing-path';
 import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 // SvelteKit's ssr resolution rule: walk leaf-to-root through the
@@ -159,7 +161,7 @@ describe('route-metadata', () => {
     ['/about/people', 'listed-indexable', true, null],
     ['/(legal)/privacy', 'listed-indexable', true, null],
     ['/manufacturers/[slug]/systems', 'listed-indexable', true, null],
-    ['/titles', 'catalog-listing', true, 'title'],
+    ['/games', 'catalog-listing', true, 'title'],
     ['/titles/[slug]', 'catalog-detail', true, 'title'],
     ['/titles/[slug]/edit-history', 'catalog-edit-history', true, 'title'],
     ['/titles/[slug]/sources', 'catalog-sources', true, 'title'],
@@ -180,6 +182,23 @@ describe('route-metadata', () => {
     ['/kiosk/edit', 'auth-gated', false, null],
     ['/kiosk/edit/[id]', 'auth-gated', false, null],
   ];
+
+  describe('listingPath', () => {
+    it('resolves the overridden games listing (title → /games)', () => {
+      expect(listingPath('title')).toBe('/games');
+    });
+
+    it('defaults to /{entity_type_plural} for non-overridden entities', () => {
+      expect(listingPath('manufacturer')).toBe('/manufacturers');
+    });
+
+    it('Title (and so Model) breadcrumb trails link the Games listing at /games', () => {
+      expect(detailCrumbs('title')).toEqual([
+        { label: 'Home', href: '/' },
+        { label: 'Games', href: '/games' },
+      ]);
+    });
+  });
 
   it.each(ANCHORS)(
     'classifies %s as %s (indexable=%s, entity=%s)',
