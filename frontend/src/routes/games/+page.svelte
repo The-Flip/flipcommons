@@ -42,6 +42,7 @@
       thumbnailUrl={game.thumbnail_url}
       manufacturerName={game.manufacturer?.name}
       year={game.year}
+      roles={game.roles}
     />
   {/snippet}
 </FacetedCatalogListing>
