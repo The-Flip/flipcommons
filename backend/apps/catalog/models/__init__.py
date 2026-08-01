@@ -31,6 +31,7 @@ from .series import Franchise, Series
 from .system import System, SystemMpuString
 from .taxonomy import (
     PRODUCED_SLUG,
+    UNCLASSIFIED_SLUG,
     Cabinet,
     CreditRole,
     DisplaySubtype,

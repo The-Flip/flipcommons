@@ -82,6 +82,7 @@ from apps.core.search import fold as _fold
 
 from ..models import (
     PRODUCED_SLUG,
+    UNCLASSIFIED_SLUG,
     Cabinet,
     GameFormat,
     GameplayFeature,
@@ -95,9 +96,10 @@ from ..models import (
 from ._edge_vocabulary import edge_q, parse_edge_value
 
 # The reserved wire value for the sparse dimensions: "the field is unset",
-# translated to ``<field>__isnull=True`` by the narrowers. A vocabulary row
-# carrying this slug would be shadowed — nothing enforces its absence.
-UNCLASSIFIED: Final = "unclassified"
+# translated to ``<field>__isnull=True`` by the narrowers. The word is reserved
+# in the database by a CHECK on each sparse vocabulary, so no row can carry the
+# slug and be shadowed by this predicate.
+UNCLASSIFIED: Final = UNCLASSIFIED_SLUG
 
 # ---------------------------------------------------------------------------
 # Inputs
