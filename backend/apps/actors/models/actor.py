@@ -4,8 +4,7 @@
 ``Claim.actor``) and the join key for all contribution/history queries. It is
 NOT an identity, profile, auth, or credential record — those live on the
 backing satellite (``User`` / ``Source`` / future bots), which point *down* at
-their ``Actor`` via :class:`apps.actors.models.base.ActorModel`. See
-``docs/plans/auth/Actors.md`` § "What Actor is and isn't for".
+their ``Actor`` via :class:`apps.actors.models.base.ActorModel`.
 """
 
 from __future__ import annotations

@@ -17,4 +17,5 @@ Instead, describe the actual why, rationale, goal or concept.
 By default, don't talk about the prior state of the system, such as "This does NOT do xxx" or "Deliberately NOT derived from xxx". No future reader will know or care about xxx. In rare circumstances prior state IS load-bearing:
 
 - Regression test comments
+- DB migrations: these are static, frozen, refer to past state
 - It's something a naive reader might legitimately think to change the code back to

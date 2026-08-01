@@ -1,23 +1,29 @@
 """Server-side faceted filtering for the manufacturers listing page.
 
-Manufacturers' parallel to ``_title_facets.py`` — its own explicit ``filtered`` /
-``facet_counts`` assembly calling the shared leaves in ``engine/query/facet_helpers.py``,
-free to diverge where manufacturers genuinely differ from titles.
+Its own explicit ``filtered`` / ``facet_counts`` assembly, calling the shared leaves
+in ``engine/query/facet_helpers.py``. The games listing calls those same leaves from a
+different assembly — the card-grain roll-up engine (``_game_rows.py`` +
+``_game_facets.py``), which cards a Title or a Model per row where manufacturers stay
+one row per manufacturer. Only the leaves are shared, so this assembly is free to
+diverge wherever manufacturers genuinely differ.
 
-Like titles, it applies one narrower per dimension in an N-1 loop (:func:`filtered`),
-serves the page result via :func:`ordered`, and assembles the sidebar option lists in
-:func:`facet_counts`. Where manufacturers genuinely differ from titles:
+Like the games fan-out, it applies one narrower per dimension (:func:`filtered`),
+serves the page result via :func:`ordered` and assembles the sidebar option lists in
+:func:`facet_counts`. Its exclude loop is uniformly N-1 where the games fan-out's is
+not: every ``MfrFilters`` field is single-valued, so every click *replaces* the current
+selection, while the games listing's accumulating dimensions stay applied in their own
+counts (``facet_exclude``). Where manufacturers genuinely differ from a title/model
+listing:
 
 - **Filter side anchors at the model through the CE:** ``entities__models`` (a
   manufacturer's models hang off its corporate entities). The active-non-variant
   ``_MODEL`` guard rides every model-level narrower; counts root at the
   ``MachineModel`` model with the bare ``_MODEL_COUNT_GUARD``.
-- **Location** is the dual pair titles' taxonomy facets are: the count rolls a
-  Chicago count *up* into Illinois/USA (``hierarchy_rollup``); the filter selects a
-  chosen ``location_path`` *down* into its descendants (path-prefix match). Both run
-  under the active-CE guard. Location roots at ``CorporateEntityLocation`` (location
-  hangs off the CE, not a model), so its count uses the active-CE guard, not
-  ``_MODEL_COUNT_GUARD``.
+- **Location** is a dual pair: the count rolls a Chicago count *up* into Illinois/USA
+  (``hierarchy_rollup``); the filter selects a chosen ``location_path`` *down* into its
+  descendants (path-prefix match). Both run under the active-CE guard. Location roots
+  at ``CorporateEntityLocation`` (location hangs off the CE, not a model), so its count
+  uses the active-CE guard, not ``_MODEL_COUNT_GUARD``.
 - **Year is span-overlap**, not "a model inside the range": two separate
   ``.filter()`` calls (``__lte=year_max`` AND ``__gte=year_min``) so different models
   can satisfy the two bounds.
@@ -33,8 +39,8 @@ The ``q`` predicate (the subtle part):
   names, CE aliases and location names (+ ancestors) only via active CEs**. The
   active-CE guard is therefore **per-term, inside the CE-reached branches**, never a
   global ``AND`` — a global guard would drop a manufacturer with no active CE from a
-  pure *name* match (the manufacturers analogue of titles' first-model ``q`` parity
-  trap). **Location matching is depth-unlimited** (the shared ``ancestor_map``), so it
+  pure *name* match (**the global-guard trap**, named again at :func:`_apply_q`).
+  **Location matching is depth-unlimited** (the shared ``ancestor_map``), so it
   agrees with the location *facet* counts: a CE nested 5+ deep still matches a
   top-country ``q`` — the correct behavior (a country search should find all its
   manufacturers), and pinned by a test.
@@ -49,12 +55,12 @@ The ``q`` predicate (the subtle part):
 - **Diacritic fold, two mechanisms, two backend behaviors**:
   the SQL-folded fields (name, own aliases, CE names/aliases) fold via
   ``LOWER(UNACCENT(...))`` on **Postgres** and fall back to bare ``icontains`` on
-  **SQLite** (same dev/prod split as titles). The **location** term can't be a SQL
-  fold — it matches a location's name *or any ancestor's*, and ancestor names aren't
-  an annotatable field — so it resolves in **Python** via ``_fold`` on **both**
-  backends. Net dev-only asymmetry on SQLite: ``q=montreal`` matches a Montréal
-  *location* but not a diacritic manufacturer *name*. Invisible in production
-  (Postgres → every branch folds). Punctuation is not folded either way.
+  **SQLite**. The **location** term can't be a SQL fold — it matches a location's name
+  *or any ancestor's*, and ancestor names aren't an annotatable field — so it resolves
+  in **Python** via ``_fold`` on **both** backends. Net dev-only asymmetry on SQLite:
+  ``q=montreal`` matches a Montréal *location* but not a diacritic manufacturer
+  *name*. Invisible in production (Postgres → every branch folds). Punctuation is not
+  folded either way.
 """
 
 from __future__ import annotations
@@ -158,9 +164,9 @@ _MODEL = Q(entities__models__variant_of__isnull=True) & active_status_q(
 # The same active-non-variant rule at the **MachineModel root** (no prefix) — the
 # guard the shared count/bounds leaves apply. Equivalent to
 # ``.filter(variant_of__isnull=True).active()``; spelled as one Q so it can be passed
-# as an argument. ``active()`` is null-inclusive for legacy ingest. (Manufacturers
-# copies titles' ``_MODEL_COUNT_GUARD`` rather than sharing it — it names
-# ``variant_of``, a MachineModel-specific field, so it is not domain-free.)
+# as an argument. ``active()`` is null-inclusive for legacy ingest. (Kept out of the
+# shared leaves: it names ``variant_of``, a MachineModel-specific field, so it is
+# not domain-free.)
 _MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & active_status_q()
 
 # Distinct count of a manufacturer's active non-variant models, as a correlated
@@ -219,7 +225,7 @@ def _apply_q(qs: QuerySet[Manufacturer], q: str) -> QuerySet[Manufacturer]:
 
     ``name OR own_alias OR (ce_name AND ce_active) OR (ce_alias AND ce_active)
     OR ((location_name OR ancestor_name) AND ce_active)`` — the guard living inside
-    each CE-reached branch, never global (the parity trap). Guarded branches are
+    each CE-reached branch, never global (the global-guard trap). Guarded branches are
     ``Exists`` subqueries rooted CE-side so match + guard share a row; the unguarded
     own terms are an outer annotation (name, single-valued same row) and an own-alias
     ``Exists``."""

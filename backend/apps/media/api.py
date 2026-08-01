@@ -82,7 +82,7 @@ def _write_media_claim(
     media-specific call — the generic ``resolve_after_mutation`` dispatch already
     routes ``media_attachment`` to the media resolver. Callers stay inside their
     own ``transaction.atomic()`` block for asset/storage orchestration;
-    ``execute_claims`` nests a savepoint within it. See docs/plans/auth/Actors.md.
+    ``execute_claims`` nests a savepoint within it.
     """
     execute_claims(
         entity,

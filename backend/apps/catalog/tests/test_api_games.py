@@ -11,6 +11,7 @@ roll-up rules themselves are pinned in ``test_game_rows.py`` /
 """
 
 from dataclasses import fields
+from typing import NamedTuple
 
 import pytest
 from django.db import connection
@@ -426,6 +427,15 @@ class TestGamesFacetsPage:
         assert client.get("/api/pages/games?q=Rock%20Encore").json()["query_count"] == 1
 
 
+class _Sentinel(NamedTuple):
+    """A param's probe value on both sides of ``to_filters()``: what goes onto
+    the wire, and what its ``GameFilters`` field must then carry (list params
+    arrive as a tuple)."""
+
+    wire: object
+    on_filters: object
+
+
 class TestWireVocabularyCompleteness:
     """The wire vocabulary is hand-spelled three times (``GameFilters`` →
     ``GameDimensionQuerySchema`` → ``to_filters()``), and the public filter
@@ -434,44 +444,74 @@ class TestWireVocabularyCompleteness:
     guard and then narrow nothing, returning the whole catalog as a confident
     wrong answer. These guards pin the three spellings to each other."""
 
-    def _sentinel(self, annotation: object) -> object:
+    # A filter field is named for its wire param; these three are pluralized on
+    # the way in. A param diverging any further than that fails
+    # ``test_every_param_reaches_the_filter_set``, whose remedy is to align the
+    # two names or — deliberately — record the divergence here.
+    PLURAL_FIELDS = {
+        "theme": "themes",
+        "gameplay_feature": "gameplay_features",
+        "reward_type": "reward_types",
+    }
+
+    def _sentinel(self, name: str, index: int, annotation: object) -> _Sentinel:
+        """A probe value unique to the param, so that a transposition between
+        two same-typed assignments in ``to_filters()`` lands a recognizably
+        foreign value instead of an indistinguishable one."""
         if annotation == list[str]:
-            return ["sentinel"]
+            return _Sentinel([f"{name}-sentinel"], (f"{name}-sentinel",))
         if annotation == (str | None) or annotation is str:
-            return "sentinel"
+            return _Sentinel(f"{name}-sentinel", f"{name}-sentinel")
         if annotation == (int | None):
-            return 3
+            return _Sentinel(index + 1, index + 1)
         raise AssertionError(f"unhandled param type {annotation!r} — extend the map")
 
     def test_every_param_reaches_the_filter_set(self):
-        """Each wire param, set alone to a sentinel, must change at least one
-        ``GameFilters`` field; together they must reach every field. The first
-        half catches a declared-but-unwired param, the second a filter
-        dimension no wire param can express."""
+        """Each wire param, set alone to its own sentinel, must carry that
+        sentinel to the identically-named ``GameFilters`` field and to no
+        other; together they must reach every field. The first half catches a
+        declared-but-unwired param and a transposed pair of same-typed
+        assignments, the second a filter dimension no wire param can express."""
         default = GameFilters()
+        filter_fields = {fl.name for fl in fields(GameFilters)}
         covered: set[str] = set()
-        for name, info in GameFilterQuerySchema.model_fields.items():
-            schema = GameFilterQuerySchema.model_validate(
-                {name: self._sentinel(info.annotation)}
-            )
+        for index, (name, info) in enumerate(
+            GameFilterQuerySchema.model_fields.items()
+        ):
+            sentinel = self._sentinel(name, index, info.annotation)
+            schema = GameFilterQuerySchema.model_validate({name: sentinel.wire})
             f = schema.to_filters()
             changed = {
                 fl.name
                 for fl in fields(GameFilters)
                 if getattr(f, fl.name) != getattr(default, fl.name)
             }
-            assert changed, f"param {name!r} narrows nothing"
+            expected = self.PLURAL_FIELDS.get(name, name)
+            assert expected in filter_fields, (
+                f"param {name!r} has no GameFilters field of that name — rename "
+                f"one to match the other, or record the divergence in PLURAL_FIELDS"
+            )
+            assert changed == {expected}, (
+                f"param {name!r} narrows {changed or '{}'}, not {{{expected!r}}}"
+            )
+            assert getattr(f, expected) == sentinel.on_filters, (
+                f"param {name!r} reaches GameFilters.{expected} carrying "
+                f"{getattr(f, expected)!r} — some other param's value"
+            )
             covered |= changed
-        assert covered == {fl.name for fl in fields(GameFilters)}
+        assert covered == filter_fields
 
     def test_pin_round_trips_through_the_wire(self):
         """``from_filters`` must invert ``to_filters`` with every dimension
         active at once — the ``pin`` a page payload carries is exactly the
         filter set its embed ran, or pages 2+ silently paginate a different
-        set."""
+        set. Per-param sentinels make an asymmetric transposition (one mapper
+        swapped, the other not) a mismatch rather than a consistent echo."""
         params = {
-            name: self._sentinel(info.annotation)
-            for name, info in GameDimensionQuerySchema.model_fields.items()
+            name: self._sentinel(name, index, info.annotation).wire
+            for index, (name, info) in enumerate(
+                GameDimensionQuerySchema.model_fields.items()
+            )
         }
         f = GameDimensionQuerySchema.model_validate(params).to_filters()
         assert GameDimensionQuerySchema.from_filters(f).to_filters() == f

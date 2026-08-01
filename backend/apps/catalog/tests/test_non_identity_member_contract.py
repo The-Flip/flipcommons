@@ -1,16 +1,13 @@
 """Contract tests for a non-identity member — the narrowed model_relationship shape.
 
-The gate before the real spec change (docs/plans/catalog_data_model/
-ClaimIdentityNarrowing.md): before ``target_label`` leaves the claim identity,
-every consumer must already honor a member that carries claim data without
-contributing to the claim key. The narrowed spec is pure data, so these tests
-build it here — ``target_label`` as a member with ``identity=None`` — derive
-its schema through the real derivation helpers, patch it into the schema
-registry per-test and run it against the real ``ModelRelationship`` table.
-Each latent "member ⟺ identity" assumption fails here, not in review.
+``target_label`` is a member that carries claim data without contributing to
+the claim key, and every consumer must honor that. The spec is pure data, so
+these tests build it here — ``target_label`` as a member with ``identity=None``
+— derive its schema through the real derivation helpers, patch it into the
+schema registry per-test and run it against the real ``ModelRelationship``
+table. Each latent "member ⟺ identity" assumption fails here, not in review.
 
-Once the real spec narrows, these tests describe the live shape; they are kept
-(not folded into test_resolve_model_relationships) because they pin the
+Kept separate from test_resolve_model_relationships because they pin the
 *contract* — key exclusion, tombstone shape, in-place reword — rather than the
 namespace's end-to-end behavior.
 """

@@ -4,8 +4,7 @@ Sits after ``AuthenticationMiddleware`` so ``request.user`` is resolved.
 For authenticated requests the scope carries the user's id and username;
 for anonymous requests no user is attached. Tags (``auth_state``,
 ``ua_family``) are set on every request so the issue stream is
-filterable for both anonymous and authenticated traffic — see
-ObservabilityArchitecture.md § Kept fields.
+filterable for both anonymous and authenticated traffic.
 
 The ``{id, username}`` keep-list is **load-bearing** for the privacy
 contract. There is no ``before_send`` scrubber to catch a mistake here

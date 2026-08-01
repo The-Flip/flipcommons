@@ -126,7 +126,8 @@ class User(ActorModel, AbstractUser):
     # not yet run is treated as unverified.
     email_verified = models.BooleanField(default=False)
 
-    # Request-time freshness signal (see ProviderSwitching.md).
+    # Request-time freshness signal — "actively using the site", which
+    # ``User.last_login`` (auth-time only) does not capture.
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
     # Wikipedia-style attribution priority.

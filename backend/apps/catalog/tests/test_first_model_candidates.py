@@ -208,7 +208,7 @@ def test_every_relationship_type_classifies_its_behavior() -> None:
 @pytest.mark.django_db
 def test_export_edition_sibling_is_not_the_first_model(big_ben_title):
     """An export edition sharing a Title with its domestic original never heads
-    it (Exports.md). Same-year pairs are the common real case (the export ships
+    it. Same-year pairs are the common real case (the export ships
     the same year), so the ``(year, name)`` tiebreak can't be trusted — here the
     export is given the *earlier* year to prove subordination does the work."""
     domestic = make_machine_model(

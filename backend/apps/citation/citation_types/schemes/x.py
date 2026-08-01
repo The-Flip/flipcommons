@@ -3,7 +3,7 @@
 A **web** scheme, deliberately — X is mixed media. A ``/status/`` URL entails
 nothing about what the post holds (text, photos, video), and a scheme may
 only recognize URL shapes that are guaranteed instances of its owning type
-(the type-homogeneity rule; see ``docs/plans/citations/VideoCitations.md``).
+(the type-homogeneity rule).
 TikTok passes that rule because its paths discriminate (``/video/`` vs
 ``/photo/``); X's don't, so its children mint as web pages: whole-post
 cites with no timestamp prompt (``skip_locator``), and a genuine video post

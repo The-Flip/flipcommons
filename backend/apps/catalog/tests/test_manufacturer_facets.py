@@ -4,7 +4,7 @@
 
 - **Branches** — name + own aliases (unconditional), CE names/aliases and location
   names (+ ancestors) only via **active** CEs.
-- **The guard-scoping parity trap** — a pure *name* match survives even when the
+- **The global-guard trap** — a pure *name* match survives even when the
   manufacturer has no active CE; an inactive CE's name/alias/location does **not**
   match (the guard is per-term, never global).
 - **Location ancestor match** — a Chicago CE matches ``q=Illinois``/``q=USA``; the dual
@@ -205,7 +205,7 @@ class TestQBranches:
 
 
 # ---------------------------------------------------------------------------
-# The guard-scoping parity trap — the guard is per-term, never global
+# The global-guard trap — the guard is per-term, never global
 # ---------------------------------------------------------------------------
 
 

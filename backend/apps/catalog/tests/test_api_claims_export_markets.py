@@ -1,5 +1,5 @@
 """Tests for export-edition and export-market editing via
-PATCH /api/models/{public_id}/claims/ — the Exports.md feature surface."""
+PATCH /api/models/{public_id}/claims/."""
 
 from __future__ import annotations
 
@@ -221,7 +221,7 @@ class TestExportMarkets:
         assert resp.status_code == 422
 
     def test_null_location_row_must_be_only_row(self, client, user, pm, italy):
-        # The Exports.md shape rule: a label or unknown row cannot be combined
+        # The shape rule: a label or unknown row cannot be combined
         # with country rows.
         client.force_login(user)
         resp = _patch(

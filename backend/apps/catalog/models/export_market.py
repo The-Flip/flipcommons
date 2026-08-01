@@ -1,14 +1,13 @@
 """ModelExportMarket: claim-controlled export-market rows on machine models.
 
-The join table behind "built for export to [market]" — see
-docs/plans/catalog_data_model/exports/Exports.md. Each row records one export
+The join table behind "built for export to [market]". Each row records one export
 destination for a subject MachineModel at one of three resolutions: a seeded
 country (``target_market_location``), a free-text region label
 (``target_market_label``, e.g. "Europe") when the market is not a single
 country, or neither — the bottom rung, where the row's existence records
 "built for export" with an unknown destination.
 
-A model's rows take exactly one of three shapes (Exports.md): multiple
+A model's rows take exactly one of three shapes: multiple
 country rows, a single label row, or a single unknown row. The DB enforces
 the per-shape uniqueness below; the "a null-location row must be the model's
 only row" mix rule is a write-path invariant (the editor planner enforces it —

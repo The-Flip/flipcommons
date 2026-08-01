@@ -161,8 +161,7 @@ class Title(
         The earliest non-variant active :class:`MachineModel` by ``(year,
         name)`` — the model whose manufacturer and year stand in for the title's
         own. Correlates on ``OuterRef("pk")``, so it's only valid inside a
-        ``Subquery`` / ``annotate()`` over a ``Title`` queryset; the autocomplete
-        sublabel and ``_title_facets`` both read from it.
+        ``Subquery`` / ``annotate()`` over a ``Title`` queryset.
 
         The identity/order rule itself is single-sourced in
         :meth:`MachineModel.first_model_candidates`; this just correlates it.

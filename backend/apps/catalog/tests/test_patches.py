@@ -4182,7 +4182,7 @@ claims:
 
 
 def test_export_market_country_plus_unknown_row_rejected(machine_model, italy):
-    # The Exports.md shape rule, per entry: a null-identity row (the unknown
+    # The shape rule, per entry: a null-identity row (the unknown
     # market) must be the model's only row — mixing it with country rows is
     # an authoring error, not two independent claims.
     with pytest.raises(PatchError, match="only row"):
