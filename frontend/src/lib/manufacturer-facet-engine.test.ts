@@ -55,7 +55,7 @@ describe('mfrFiltersFromParams / mfrFiltersToParams', () => {
     );
     expect(sp.get('location')).toBe('usa');
     expect(sp.get('year_min')).toBe('1990');
-    expect(sp.get('tech_gen')).toBe('solid-state');
+    expect(sp.get('technology_generation')).toBe('solid-state');
   });
 
   it('empty state produces no params', () => {
@@ -64,7 +64,9 @@ describe('mfrFiltersFromParams / mfrFiltersToParams', () => {
   });
 
   it('reads partial params', () => {
-    const f = mfrFiltersFromParams(new URLSearchParams('location=usa&tech_gen=solid-state'));
+    const f = mfrFiltersFromParams(
+      new URLSearchParams('location=usa&technology_generation=solid-state'),
+    );
     expect(f.location).toBe('usa');
     expect(f.techGeneration).toBe('solid-state');
     expect(f.person).toBeNull();

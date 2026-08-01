@@ -58,14 +58,16 @@ def corp(db, mfr):
 
 
 @pytest.fixture
-def tech_gen(db):
+def technology_generation(db):
     return TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
 
 
 @pytest.fixture
-def tech_sub(db, tech_gen):
+def tech_sub(db, technology_generation):
     return TechnologySubgeneration.objects.create(
-        name="Integrated", slug="integrated", technology_generation=tech_gen
+        name="Integrated",
+        slug="integrated",
+        technology_generation=technology_generation,
     )
 
 
@@ -153,7 +155,7 @@ def machine(
     db,
     corp,
     title,
-    tech_gen,
+    technology_generation,
     tech_sub,
     display_type,
     display_subtype,
@@ -166,7 +168,7 @@ def machine(
         slug="medieval-madness",
         corporate_entity=corp,
         title=title,
-        technology_generation=tech_gen,
+        technology_generation=technology_generation,
         technology_subgeneration=tech_sub,
         display_type=display_type,
         display_subtype=display_subtype,
@@ -193,9 +195,9 @@ class TestProtectBlocksDeletion:
         with pytest.raises(ProtectedError):
             corp.delete()
 
-    def test_technology_generation_protected(self, machine, tech_gen):
+    def test_technology_generation_protected(self, machine, technology_generation):
         with pytest.raises(ProtectedError):
-            tech_gen.delete()
+            technology_generation.delete()
 
     def test_technology_subgeneration_protected(self, machine, tech_sub):
         with pytest.raises(ProtectedError):
@@ -344,10 +346,12 @@ class TestCascadeOwnerSide:
         gen.delete()
         assert not TechnologySubgeneration.objects.filter(slug="orphan-sub").exists()
 
-    def test_tech_gen_cascade_blocked_transitively(self, machine, tech_gen):
+    def test_tech_gen_cascade_blocked_transitively(
+        self, machine, technology_generation
+    ):
         """Cascade from TechGen → TechSubgen is blocked by MachineModel PROTECT."""
         with pytest.raises(ProtectedError):
-            tech_gen.delete()
+            technology_generation.delete()
 
 
 # ---------------------------------------------------------------------------

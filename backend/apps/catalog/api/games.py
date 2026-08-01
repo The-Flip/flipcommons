@@ -116,7 +116,7 @@ class GameDimensionQuerySchema(Schema):
             "is credited on."
         ),
     )
-    tech_gen: str | None = Field(
+    technology_generation: str | None = Field(
         None,
         description="Technology-generation slug (see `GET /api/technology-generations/`).",
     )
@@ -150,7 +150,7 @@ class GameDimensionQuerySchema(Schema):
             "its sub-themes."
         ),
     )
-    feature: list[str] = Field(
+    gameplay_feature: list[str] = Field(
         [],
         description=(
             "Gameplay-feature slug (see `GET /api/gameplay-features/`). "
@@ -224,7 +224,7 @@ class GameDimensionQuerySchema(Schema):
         return GameFilters(
             manufacturer=self.manufacturer,
             person=self.person,
-            tech_gen=self.tech_gen,
+            technology_generation=self.technology_generation,
             display_type=self.display_type,
             system=self.system,
             franchise=self.franchise,
@@ -233,7 +233,7 @@ class GameDimensionQuerySchema(Schema):
             year_min=self.year_min,
             year_max=self.year_max,
             themes=tuple(self.theme),
-            features=tuple(self.feature),
+            gameplay_features=tuple(self.gameplay_feature),
             reward_types=tuple(self.reward_type),
             edge=tuple(self.edge),
             display_subtype=self.display_subtype,
@@ -270,7 +270,7 @@ class PlayerCountOptionSchema(Schema):
 class GameFilterOptionsSchema(Schema):
     manufacturer: list[FacetOptionSchema] = []
     person: list[FacetOptionSchema] = []
-    tech_gen: list[FacetOptionSchema] = []
+    technology_generation: list[FacetOptionSchema] = []
     display_type: list[FacetOptionSchema] = []
     system: list[FacetOptionSchema] = []
     reward_type: list[FacetOptionSchema] = []
@@ -283,7 +283,7 @@ class GameFilterOptionsSchema(Schema):
     game_format: list[FacetOptionSchema] = []
     production_status: list[FacetOptionSchema] = []
     theme: list[FacetOptionSchema] = []
-    feature: list[FacetOptionSchema] = []
+    gameplay_feature: list[FacetOptionSchema] = []
     franchise: list[FacetOptionSchema] = []
     series: list[FacetOptionSchema] = []
     player_count: list[PlayerCountOptionSchema] = []
@@ -544,7 +544,7 @@ def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
         "filter_options": {
             "manufacturer": _facet_option_dicts(opts.manufacturer),
             "person": _facet_option_dicts(opts.person),
-            "tech_gen": _facet_option_dicts(opts.tech_gen),
+            "technology_generation": _facet_option_dicts(opts.technology_generation),
             "display_type": _facet_option_dicts(opts.display_type),
             "system": _facet_option_dicts(opts.system),
             "reward_type": _facet_option_dicts(opts.reward_type),
@@ -553,7 +553,7 @@ def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
             "game_format": _facet_option_dicts(opts.game_format),
             "production_status": _facet_option_dicts(opts.production_status),
             "theme": _facet_option_dicts(opts.theme),
-            "feature": _facet_option_dicts(opts.feature),
+            "gameplay_feature": _facet_option_dicts(opts.gameplay_feature),
             "franchise": _facet_option_dicts(opts.franchise),
             "series": _facet_option_dicts(opts.series),
             "player_count": [{"value": p.value, "count": p.count} for p in players],

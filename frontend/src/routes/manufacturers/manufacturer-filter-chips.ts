@@ -34,7 +34,7 @@ export function manufacturerFilterChips(
 
   single(filters.location, 'location', options.location);
   single(filters.person, 'person', options.person);
-  single(filters.techGeneration, 'techGeneration', options.tech_gen);
+  single(filters.techGeneration, 'techGeneration', options.technology_generation);
 
   if (filters.yearMin != null || filters.yearMax != null) {
     const lo = filters.yearMin != null ? String(filters.yearMin) : '';

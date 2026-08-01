@@ -166,7 +166,11 @@ function toNum(v: string): number | null {
 
 const PARAM_MAP: (SingleParam | MultiParam)[] = [
   { param: 'q', get: (f) => f.query || null, set: (f, v) => (f.query = v) },
-  { param: 'tech_gen', get: (f) => f.techGeneration, set: (f, v) => (f.techGeneration = v) },
+  {
+    param: 'technology_generation',
+    get: (f) => f.techGeneration,
+    set: (f, v) => (f.techGeneration = v),
+  },
   {
     param: 'year_min',
     get: (f) => (f.yearMin != null ? String(f.yearMin) : null),
@@ -186,7 +190,7 @@ const PARAM_MAP: (SingleParam | MultiParam)[] = [
     set: (f, v) => (f.themes = v),
   },
   {
-    param: 'feature',
+    param: 'gameplay_feature',
     multi: true,
     get: (f) => f.features,
     set: (f, v) => (f.features = v),

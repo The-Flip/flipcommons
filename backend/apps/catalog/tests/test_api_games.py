@@ -340,7 +340,7 @@ class TestGamesFacetsPage:
         assert set(data["filter_options"]) == {
             "manufacturer",
             "person",
-            "tech_gen",
+            "technology_generation",
             "display_type",
             "system",
             "reward_type",
@@ -349,7 +349,7 @@ class TestGamesFacetsPage:
             "game_format",
             "production_status",
             "theme",
-            "feature",
+            "gameplay_feature",
             "franchise",
             "series",
             "player_count",

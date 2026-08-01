@@ -7,7 +7,7 @@ function options(overrides: Partial<GameFilterOptionsSchema> = {}): GameFilterOp
   return {
     manufacturer: [],
     person: [],
-    tech_gen: [],
+    technology_generation: [],
     display_type: [],
     system: [],
     reward_type: [],
@@ -16,7 +16,7 @@ function options(overrides: Partial<GameFilterOptionsSchema> = {}): GameFilterOp
     game_format: [],
     production_status: [],
     theme: [],
-    feature: [],
+    gameplay_feature: [],
     franchise: [],
     series: [],
     player_count: [],

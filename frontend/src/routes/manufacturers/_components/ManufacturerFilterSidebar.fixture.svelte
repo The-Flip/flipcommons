@@ -12,7 +12,7 @@
       { public_id: 'pat-lawlor', name: 'Pat Lawlor', count: 1 },
       { public_id: 'steve-ritchie', name: 'Steve Ritchie', count: 2 },
     ],
-    tech_gen: [
+    technology_generation: [
       { public_id: 'solid-state', name: 'Solid State', count: 2 },
       { public_id: 'electromechanical', name: 'Electromechanical', count: 1 },
     ],

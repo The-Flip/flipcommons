@@ -10,11 +10,11 @@ facet fan-out at card grain in ``_game_facets.py``, both built on this
 module's two sets and rungs. The filter vocabulary is the full listing set,
 by semantics class:
 
-- ``manufacturer`` / ``person`` / ``tech_gen`` / ``display_type`` / ``system``
+- ``manufacturer`` / ``person`` / ``technology_generation`` / ``display_type`` / ``system``
   — single-valued Model-only
 - ``player_count`` — bucketed Model-only (``6`` means "6 or more", via the
   shared ``_bucket_q``)
-- ``themes`` / ``features`` — multi-select Model-only (AND of ORs,
+- ``themes`` / ``gameplay_features`` — multi-select Model-only (AND of ORs,
   descendant-expanded)
 - ``reward_types`` — multi-select Model-only (AND, no hierarchy)
 - ``edge`` — multi-select Model-only (AND, no hierarchy): relationship keys
@@ -112,7 +112,7 @@ class GameFilters:
     q: str = ""
     manufacturer: str | None = None
     person: str | None = None
-    tech_gen: str | None = None
+    technology_generation: str | None = None
     display_type: str | None = None
     system: str | None = None
     franchise: str | None = None
@@ -121,7 +121,7 @@ class GameFilters:
     year_min: int | None = None
     year_max: int | None = None
     themes: tuple[str, ...] = ()
-    features: tuple[str, ...] = ()
+    gameplay_features: tuple[str, ...] = ()
     reward_types: tuple[str, ...] = ()
     edge: tuple[str, ...] = ()
     display_subtype: str | None = None
@@ -139,13 +139,13 @@ class GameFilters:
 ModelDimension = Literal[
     "manufacturer",
     "person",
-    "tech_gen",
+    "technology_generation",
     "display_type",
     "system",
     "player_count",
     "year",
     "themes",
-    "features",
+    "gameplay_features",
     "reward_types",
     "edge",
     "display_subtype",
@@ -244,13 +244,13 @@ class TaxonomyExpansion(NamedTuple):
     tables ~20× per request. Free when neither dimension is active."""
 
     themes: tuple[frozenset[str], ...]
-    features: tuple[frozenset[str], ...]
+    gameplay_features: tuple[frozenset[str], ...]
 
 
 def expand_taxonomy(f: GameFilters) -> TaxonomyExpansion:
     return TaxonomyExpansion(
         themes=_taxonomy_expansion(f.themes, Theme),
-        features=_taxonomy_expansion(f.features, GameplayFeature),
+        gameplay_features=_taxonomy_expansion(f.gameplay_features, GameplayFeature),
     )
 
 
@@ -383,10 +383,10 @@ def _narrow_themes(
     return qs
 
 
-def _narrow_features(
+def _narrow_gameplay_features(
     qs: QuerySet[MachineModel], f: GameFilters, expansion: TaxonomyExpansion
 ) -> QuerySet[MachineModel]:
-    for descendants in expansion.features:
+    for descendants in expansion.gameplay_features:
         qs = qs.filter(gameplay_features__slug__in=descendants)
     return qs
 
@@ -459,13 +459,15 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             facet=PathFacet("person", "credits__person__slug", "credits__person__name"),
         ),
         FilterDimension(
-            key="tech_gen",
-            active=lambda f: bool(f.tech_gen),
+            key="technology_generation",
+            active=lambda f: bool(f.technology_generation),
             narrow=lambda qs, f, expansion: qs.filter(
-                technology_generation__slug=f.tech_gen
+                technology_generation__slug=f.technology_generation
             ),
             facet=PathFacet(
-                "tech_gen", "technology_generation__slug", "technology_generation__name"
+                "technology_generation",
+                "technology_generation__slug",
+                "technology_generation__name",
             ),
         ),
         FilterDimension(
@@ -501,10 +503,12 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             combine="and",
         ),
         FilterDimension(
-            key="features",
-            active=lambda f: bool(f.features),
-            narrow=_narrow_features,
-            facet=TaxonomyFacet("feature", GameplayFeature, "gameplay_features"),
+            key="gameplay_features",
+            active=lambda f: bool(f.gameplay_features),
+            narrow=_narrow_gameplay_features,
+            facet=TaxonomyFacet(
+                "gameplay_feature", GameplayFeature, "gameplay_features"
+            ),
             combine="and",
         ),
         FilterDimension(

@@ -570,6 +570,7 @@ Decisions taken with the product owner (2026-07-31):
 - **600/hour** for the filter bucket — ~unhittable for the sanctioned shape (a handful of filter calls per sync), tunable at runtime like the export's.
 - **Strict params approved**: an unknown query param **name** errors alongside unknown `edge` values — the same typo argument one level up, since `edge_type=` silently ignored would return the whole catalog. A pleasant fallout: `q=` and `page=` fail actively, documenting what is deliberately absent.
 - **The error status is 422**, the project's validation-error taxonomy; where earlier drafts of this section said "400" they meant "an error, not a confident wrong answer".
+- **Wire names match the entity registry** (2026-08-01, pre-publication): `tech_gen` → `technology_generation` and `feature` → `gameplay_feature`, across the games listing, the manufacturers listing and the published route — the last two of eighteen entity-backed params whose spelling had drifted from the registry's `entity_type`. Renamed now precisely because publication freezes the vocabulary; historical tables and outcome records in this document keep the names that were current when they were written.
 
 Verification, live at the dev API — every prediction reproduced exactly: unfiltered **6,913**; `edge=conversion_kit` **141** against 139 listing cards and `edge=remake_of` **24** against 19 — the divergence is the design working, and the two counts must never be reconciled; `manufacturer=vifico` 13; `edge=bootleg` 5; the two sparse presets 6,387 (`game_format`) and 6,747 (`production_status`) — The Flip's documented null-OR workarounds as one query each.
 
@@ -581,10 +582,10 @@ Verification, live at the dev API — every prediction reproduced exactly: unfil
 
 | old `/api/models/` param                                 | published                                                              |
 | -------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `type`                                                   | `tech_gen`                                                             |
+| `type`                                                   | `technology_generation`                                                |
 | `display`                                                | `display_type`                                                         |
 | `subgeneration`                                          | `technology_subgeneration` (same own-FK-or-system OR arm)              |
-| `feature` (single)                                       | `feature` (repeatable, ANDed, descendant-expanded)                     |
+| `feature` (single)                                       | `gameplay_feature` (repeatable, ANDed, descendant-expanded)            |
 | `game_format` / `cabinet` / `production_status` (single) | repeatable, plus the reserved `unclassified`; a bare slug is unchanged |
 | `include_variants`                                       | **gone**                                                               |
 | `ordering`                                               | **gone**                                                               |
@@ -627,7 +628,7 @@ To cut something, don't drop the row; change its status, with a reason beside it
 | Italian bootlegs                                      | Filter      | Deferred  | `edge=bootleg` × manufacturer location, which is deferred                                                                      |
 | Bootlegs everywhere                                   | Filter      | PR.REL    | `edge=bootleg` on its own — the unqualified list is the whole ask                                                              |
 | The Chicago bingo-pinball industry                    | Filter      | Deferred  | `game_format=bingo-pinball` ships in PR.SPARSE; the Chicago half needs manufacturer location                                   |
-| Spanish EM manufacturers                              | Filter      | Deferred  | `tech_gen=electromechanical` ships; the Spanish half needs manufacturer location                                               |
+| Spanish EM manufacturers                              | Filter      | Deferred  | `technology_generation=electromechanical` ships; the Spanish half needs manufacturer location                                  |
 | Models copied across a national boundary              | Filter      | Deferred  | far-end country constraint                                                                                                     |
 | One manufacturer's whole output                       | Filter      | PR.HET    | `manufacturer=`                                                                                                                |
 | All the variants for a specific manufacturer          | Filter      | PR.REL    | `edge=variant_of` × `manufacturer=`                                                                                            |

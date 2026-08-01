@@ -54,7 +54,11 @@ def main() -> None:
             15,
         ),
         ("manufacturer=williams", GameFilters(manufacturer="williams"), 487),
-        ("tech_gen=solid-state", GameFilters(tech_gen="solid-state"), 1432),
+        (
+            "technology_generation=solid-state",
+            GameFilters(technology_generation="solid-state"),
+            1432,
+        ),
         ("theme=fantasy", GameFilters(themes=("fantasy",)), 396),
         ("q=godzilla", GameFilters(q="godzilla"), 3),
     )
@@ -62,7 +66,10 @@ def main() -> None:
     # The filtered fan-out cases — pinned so the third figure is reproducible.
     fanout_filters: tuple[tuple[str, GameFilters], ...] = (
         ("no filter", GameFilters()),
-        ("tech_gen=solid-state", GameFilters(tech_gen="solid-state")),
+        (
+            "technology_generation=solid-state",
+            GameFilters(technology_generation="solid-state"),
+        ),
         ("manufacturer=williams", GameFilters(manufacturer="williams")),
     )
 

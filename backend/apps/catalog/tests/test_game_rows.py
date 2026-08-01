@@ -158,13 +158,13 @@ class TestLifecycleStates:
 ACTIVATING: dict[ModelDimension, GameFilters] = {
     "manufacturer": GameFilters(manufacturer="nobody"),
     "person": GameFilters(person="nobody"),
-    "tech_gen": GameFilters(tech_gen="nothing"),
+    "technology_generation": GameFilters(technology_generation="nothing"),
     "display_type": GameFilters(display_type="nothing"),
     "system": GameFilters(system="nothing"),
     "player_count": GameFilters(player_count=2),
     "year": GameFilters(year_min=1990),
     "themes": GameFilters(themes=("nothing",)),
-    "features": GameFilters(features=("nothing",)),
+    "gameplay_features": GameFilters(gameplay_features=("nothing",)),
     "reward_types": GameFilters(reward_types=("nothing",)),
     "edge": GameFilters(edge=("copy",)),
     "display_subtype": GameFilters(display_subtype="nothing"),
@@ -499,7 +499,9 @@ class TestVocabulary:
         _feature("six-ball-multiball", parents=(multiball,))
         t = _title("Balls", "balls")
         _model(t, "balls-m", features=("six-ball-multiball",))
-        assert _cards(GameFilters(features=("multiball",))) == {("title", "Balls")}
+        assert _cards(GameFilters(gameplay_features=("multiball",))) == {
+            ("title", "Balls")
+        }
 
     def test_reward_types_all_must_land_on_one_model(self, db):
         t = _title("Prizes", "prizes")
