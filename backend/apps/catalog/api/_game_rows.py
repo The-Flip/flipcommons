@@ -796,17 +796,32 @@ def title_rows_qs(
     ).filter(n_models__gt=0, n_match=F("n_models"))
 
 
+def matching_models(
+    f: GameFilters, *, expansion: TaxonomyExpansion | None = None
+) -> QuerySet[MachineModel]:
+    """The flat matching set at Model grain: every active Model (Variants
+    included) under a live Title that satisfies the whole query — the
+    Model-only dimensions, the record-local shared class and the Title-only
+    bind. This is the set *before* roll-up: :func:`model_rows_qs` subtracts
+    the two roll-up exclusions from it, so a surface that wants the matching
+    Models without the display rule reads this and never re-derives the
+    predicate."""
+    if expansion is None:
+        expansion = expand_taxonomy(f)
+    return carding_models(f, expansion=expansion).filter(
+        _title_only_q(f, prefix="title__")
+    )
+
+
 def model_rows_qs(
     f: GameFilters, *, expansion: TaxonomyExpansion | None = None
 ) -> QuerySet[MachineModel]:
-    """Rungs 2 and 3 — Models that card: in :func:`carding_models`, their Title
-    did not card, their Title satisfies every Title-only dimension (the binding
-    half of the Title-only class), and — for a Variant — the parent Model is
-    not itself in ``carding`` (absorption)."""
+    """Rungs 2 and 3 — Models that card: in :func:`matching_models`, their
+    Title did not card, and — for a Variant — the parent Model is not itself
+    in :func:`carding_models` (absorption)."""
     if expansion is None:
         expansion = expand_taxonomy(f)
-    carding = carding_models(f, expansion=expansion)
-    rows = carding.filter(_title_only_q(f, prefix="title__"))
+    rows = matching_models(f, expansion=expansion)
     rows = rows.exclude(title__in=title_rows_qs(f, expansion=expansion).values("pk"))
     # Explicit two-arm Q: ``exclude(variant_of__in=…)`` alone would lean on
     # NULL semantics for non-variants; this spells "is a Variant AND parent

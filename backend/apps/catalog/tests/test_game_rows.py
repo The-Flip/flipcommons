@@ -24,8 +24,12 @@ from apps.catalog.api._game_rows import (
     GameFilters,
     GameRow,
     ModelDimension,
+    carding_models,
     game_rows_merged,
+    matching_models,
+    model_rows_qs,
     preset_values,
+    title_rows_qs,
 )
 from apps.catalog.models import (
     LicenseStatus,
@@ -730,3 +734,91 @@ def _model_theme(slug: str):
     from apps.catalog.tests.game_builders import _theme
 
     return [_theme(slug)]
+
+
+# ---------------------------------------------------------------------------
+# The flat set — matching_models is what the roll-up subtracts from
+# ---------------------------------------------------------------------------
+
+
+def _pks(qs) -> set[int]:
+    return set(qs.values_list("pk", flat=True))
+
+
+class TestMatchingModels:
+    """``matching_models`` is the flat matching set at Model grain, and
+    ``model_rows_qs`` must equal it minus exactly two exclusions: Models whose
+    Title carded, and Variants whose parent absorbed them. Nothing else may
+    ever separate the two sets — a surface reading ``matching_models`` (no
+    roll-up) and the listing must agree on which Models match."""
+
+    @staticmethod
+    def _assert_rollup_is_the_only_difference(f: GameFilters) -> None:
+        carded_titles = _pks(title_rows_qs(f))
+        absorbing = _pks(carding_models(f))
+        derived = {
+            pk
+            for pk, title_id, parent_id in matching_models(f).values_list(
+                "pk", "title_id", "variant_of_id"
+            )
+            if title_id not in carded_titles
+            and (parent_id is None or parent_id not in absorbing)
+        }
+        assert _pks(model_rows_qs(f)) == derived
+
+    @staticmethod
+    def _scene() -> None:
+        """One catalog exercising both exclusions at once: a unanimous Title
+        (Models match, Title cards), a shattered Title (matching Models card),
+        an absorbed Variant and a surfacing one — crossed with a theme
+        hierarchy, an edge, a franchise and a sparse value."""
+        space = _theme("space")
+        _theme("mars", parents=(space,))
+        rolled = _title("Rolled", "rolled", franchise=_franchise("marvel"))
+        _model(rolled, "rolled-a", manufacturer="stern", themes=("space",))
+        _model(rolled, "rolled-b", manufacturer="stern", themes=("mars",))
+        shattered = _title("Shattered", "shattered")
+        stern = _model(
+            shattered,
+            "shattered-stern",
+            manufacturer="stern",
+            themes=("space",),
+            game_format="shuffle",
+        )
+        bally = _model(shattered, "shattered-bally", manufacturer="bally")
+        _model(shattered, "shattered-variant", manufacturer="stern", variant_of=stern)
+        _model(shattered, "shattered-orphan", manufacturer="stern", variant_of=bally)
+        _edge(bally, stern, RelationshipType.COPY)
+
+    def test_rollup_is_the_only_difference_across_dimension_families(self, db):
+        self._scene()
+        matrix = [
+            GameFilters(),
+            GameFilters(manufacturer="stern"),
+            GameFilters(themes=("space",)),  # descendant expansion reaches mars
+            GameFilters(edge=("copy",)),
+            GameFilters(edge=("copy:in",)),
+            GameFilters(franchise="marvel"),
+            GameFilters(q="Rolled"),
+            GameFilters(q="Shattered", manufacturer="stern"),
+            GameFilters(game_format=("pinball", UNCLASSIFIED)),
+        ]
+        for f in matrix:
+            self._assert_rollup_is_the_only_difference(f)
+
+    def test_flat_set_keeps_what_the_rollup_hides(self, db):
+        """The exact sets under ``manufacturer=stern``: the unanimous Title's
+        Models and the absorbed Variant are in the flat set but not the rows;
+        the Variant under a failing parent is in both."""
+        self._scene()
+        f = GameFilters(manufacturer="stern")
+        flat = set(matching_models(f).values_list("slug", flat=True))
+        rows = set(model_rows_qs(f).values_list("slug", flat=True))
+        assert flat == {
+            "rolled-a",
+            "rolled-b",
+            "shattered-stern",
+            "shattered-variant",
+            "shattered-orphan",
+        }
+        assert rows == {"shattered-stern", "shattered-orphan"}
