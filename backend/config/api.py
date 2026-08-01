@@ -11,6 +11,7 @@ from ninja.errors import HttpError, ValidationError
 from ninja.security import django_auth
 
 from apps.catalog.api.export import export_rate_limit_summary, export_router
+from apps.catalog.api.public_filter import filter_rate_limit_summary, filter_router
 from apps.catalog.engine.entity_api.field_constraints import FieldConstraintSchema
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -30,27 +31,33 @@ api = NinjaAPI(
     docs_url=None,
 )
 
-# Public API: the bulk export — the sole documented, externally-consumed surface.
-# A SEPARATE NinjaAPI so its OpenAPI document *is* exactly the export (no tag
-# filtering, and internal endpoints cannot leak into it). Mounted at /api/export/
-# (config/urls.py). Abuse is capped per-IP by the export views (the project's
-# sanctioned IP limiter, settings.EXPORT_RATELIMIT_IP), which raises
-# StructuredApiError — so export_api registers the shared structured-error handler
-# below.
-export_api = NinjaAPI(
-    title="Flipcommons Export API",
+# Public API: the documented, externally-consumed surface. A SEPARATE NinjaAPI so
+# its OpenAPI document *is* exactly the published surface — publication is by
+# location, not by annotation, so an internal endpoint cannot leak into it
+# through a forgotten marker. Mounted at /api/public/ (config/urls.py); each
+# router mounted here is a section of the published reference (its tags render
+# as the section headings). Abuse is capped per-IP by the views (the project's
+# sanctioned IP limiter), which raises StructuredApiError — so public_api
+# registers the shared structured-error handler below.
+public_api = NinjaAPI(
+    title="Flipcommons Public API",
     version="1.0.0",
     description=(
-        "Bulk export records from Flipcommons.\n\n"
+        "The public Flipcommons API: bulk export of catalog records, plus a "
+        'filtering endpoint that answers "which models match" so you don\'t '
+        "have to reimplement the catalog's relationships client-side.\n\n"
         "Please be gentle on the system: save the exported data and do the rest "
-        "of your operations locally on your exported copy. Requests are "
-        # Limit derived from the live config so the published number never goes stale.
-        f"rate-limited to {export_rate_limit_summary()} per IP; a 429 with a "
-        "Retry-After header means you've exceeded it."
+        "of your operations locally on your exported copy, joining the filter "
+        "endpoint's ids against it. Requests are rate-limited per IP — "
+        # Limits derived from the live config so the published numbers never go stale.
+        f"exports to {export_rate_limit_summary()}, filtering to "
+        f"{filter_rate_limit_summary()}; a 429 with a Retry-After header "
+        "means you've exceeded a limit."
     ),
-    urls_namespace="export",
+    urls_namespace="public",
 )
-export_api.add_router("/", export_router)
+public_api.add_router("/export/", export_router)
+public_api.add_router("/filter/", filter_router)
 
 
 class SiteStatsSchema(Schema):
@@ -60,7 +67,7 @@ class SiteStatsSchema(Schema):
     people: int
 
 
-@api.get("/stats", response=SiteStatsSchema, tags=["private"])
+@api.get("/stats", response=SiteStatsSchema)
 def stats(request: HttpRequest) -> dict[str, int]:
     with connection.cursor() as cursor:
         cursor.execute(
@@ -83,7 +90,7 @@ def stats(request: HttpRequest) -> dict[str, int]:
     }
 
 
-@api.get("/health", tags=["private"])
+@api.get("/health")
 def health(request: HttpRequest) -> dict[str, str]:
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1")
@@ -101,7 +108,7 @@ class VersionSchema(Schema):
     data_patch: str | None
 
 
-@api.get("/version", response=VersionSchema, tags=["private"])
+@api.get("/version", response=VersionSchema)
 def version(request: HttpRequest) -> VersionSchema:
     """Build and data-freshness identity.
 
@@ -130,7 +137,7 @@ class _SentryTestError(RuntimeError):
     """
 
 
-@api.get("/sentry_test", tags=["private"], auth=django_auth)
+@api.get("/sentry_test", auth=django_auth)
 @requires(Activity.OBSERVABILITY_DEBUG)
 def sentry_test(request: HttpRequest) -> Never:
     """Deliberately raise so the Sentry pipeline can be verified.
@@ -184,12 +191,12 @@ def _structured_error_response(exc: StructuredApiError) -> JsonResponse:
 
 
 # Registered on both APIs: the internal API for its full structured-error
-# taxonomy, and the export API whose only structured error is the rate-limit 429
-# (RateLimitExceededError → {kind, retry_after} + Retry-After). Same wire shape on
-# both. The decorator returns the function unchanged, so stacking just adds a
-# second registration.
+# taxonomy, and the public API whose structured errors are the rate-limit 429
+# (RateLimitExceededError → {kind, retry_after} + Retry-After) and validation
+# 400s. Same wire shape on both. The decorator returns the function unchanged,
+# so stacking just adds a second registration.
 @api.exception_handler(StructuredApiError)
-@export_api.exception_handler(StructuredApiError)
+@public_api.exception_handler(StructuredApiError)
 def _handle_structured_api_error(
     request: HttpRequest, exc: StructuredApiError
 ) -> JsonResponse:
@@ -201,7 +208,12 @@ def _handle_structured_api_error(
 _REQUEST_SOURCES = frozenset({"body", "query", "path", "header", "cookie", "form"})
 
 
+# Registered on both APIs, like the structured handler above: the public
+# filter route documents ValidationErrorSchema for its 422s, so a pydantic
+# binding failure (`year_min=nope`) must produce the same structured object
+# as the route's own validation errors, not Ninja's default error array.
 @api.exception_handler(ValidationError)
+@public_api.exception_handler(ValidationError)
 def _handle_pydantic_validation_error(
     request: HttpRequest, exc: ValidationError
 ) -> JsonResponse:
@@ -245,7 +257,6 @@ def _handle_pydantic_validation_error(
     "/field-constraints/{entity_type}",
     response=dict[str, FieldConstraintSchema],
     exclude_none=True,
-    tags=["private"],
 )
 def get_field_constraints(
     request: HttpRequest, entity_type: str

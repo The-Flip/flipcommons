@@ -122,7 +122,7 @@ class ManufacturerFilterQuerySchema(Schema):
             "machines this person is credited on."
         ),
     )
-    tech_gen: str | None = Field(
+    technology_generation: str | None = Field(
         None,
         description=(
             "Technology-generation slug (see `GET /api/technology-generations/`)."
@@ -140,7 +140,7 @@ class ManufacturerFilterQuerySchema(Schema):
             q=self.q or "",
             location=self.location,
             person=self.person,
-            tech_gen=self.tech_gen,
+            technology_generation=self.technology_generation,
             year_min=self.year_min,
             year_max=self.year_max,
         )
@@ -156,7 +156,7 @@ class ManufacturerFilterQuerySchema(Schema):
 class ManufacturerFilterOptionsSchema(Schema):
     location: list[FacetOptionSchema] = []
     person: list[FacetOptionSchema] = []
-    tech_gen: list[FacetOptionSchema] = []
+    technology_generation: list[FacetOptionSchema] = []
     year: YearBoundsSchema = YearBoundsSchema()
 
 
@@ -351,7 +351,7 @@ def _manufacturer_qs() -> QuerySet[Manufacturer]:
 # Router
 # ---------------------------------------------------------------------------
 
-manufacturers_router = Router(tags=["manufacturers"])
+manufacturers_router = Router()
 
 
 def _page_thumbnails(
@@ -494,7 +494,7 @@ def _filter_options_payload(opts: FilterOptions) -> dict[str, object]:
         "filter_options": {
             "location": _facet_option_dicts(opts.location),
             "person": _facet_option_dicts(opts.person),
-            "tech_gen": _facet_option_dicts(opts.tech_gen),
+            "technology_generation": _facet_option_dicts(opts.technology_generation),
             "year": {"min": opts.year.min, "max": opts.year.max},
         }
     }
@@ -535,7 +535,6 @@ def manufacturer_facets_response(filters: MfrFilters) -> HttpResponse:
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)

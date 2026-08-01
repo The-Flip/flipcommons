@@ -176,7 +176,7 @@ _IMMUTABLE_FIELDS = frozenset({"parent", "slug", "location_type"})
 # Single resource-shaped router mounted at ``/api/locations/``. The
 # read-side ``locations_router`` lives separately under
 # ``/api/pages/locations/`` because Location's detail is a page payload.
-locations_write_router = Router(tags=["private"])
+locations_write_router = Router()
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +282,6 @@ register_entity_create(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)

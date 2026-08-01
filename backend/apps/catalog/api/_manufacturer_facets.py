@@ -116,7 +116,7 @@ class MfrFilters:
     year_min: int | None = None
     year_max: int | None = None
     person: str | None = None
-    tech_gen: str | None = None
+    technology_generation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -126,7 +126,7 @@ class FilterOptions:
 
     location: list[FacetOption] = field(default_factory=list)
     person: list[FacetOption] = field(default_factory=list)
-    tech_gen: list[FacetOption] = field(default_factory=list)
+    technology_generation: list[FacetOption] = field(default_factory=list)
     year: Bounds[int] = Bounds(None, None)
 
 
@@ -289,7 +289,13 @@ def _apply_q(qs: QuerySet[Manufacturer], q: str) -> QuerySet[Manufacturer]:
 
 # Order is irrelevant to the result (AND is commutative) but fixed so the N-1
 # ``exclude`` keys are a closed, documented set.
-DIMENSIONS: tuple[str, ...] = ("q", "location", "year", "person", "tech_gen")
+DIMENSIONS: tuple[str, ...] = (
+    "q",
+    "location",
+    "year",
+    "person",
+    "technology_generation",
+)
 
 
 def apply_dimension(
@@ -333,9 +339,10 @@ def apply_dimension(
             return qs
         case "person" if f.person:
             return qs.filter(_MODEL, entities__models__credits__person__slug=f.person)
-        case "tech_gen" if f.tech_gen:
+        case "technology_generation" if f.technology_generation:
             return qs.filter(
-                _MODEL, entities__models__technology_generation__slug=f.tech_gen
+                _MODEL,
+                entities__models__technology_generation__slug=f.technology_generation,
             )
         case _:
             return qs
@@ -390,7 +397,7 @@ _REVERSE_KEY = "corporate_entity__manufacturer_id"
 
 def _count_model_facet(ids: QuerySet[Manufacturer], relation: str) -> list[FacetOption]:
     """Count distinct manufacturers per value of a model-level facet (person,
-    tech_gen), restricted to **active non-variant** models so variants/retired models
+    technology_generation), restricted to **active non-variant** models so variants/retired models
     don't leak values the card never shows. *relation* is the count-root-relative path
     from ``MachineModel`` to the value holder (``credits__person``,
     ``technology_generation``)."""
@@ -448,11 +455,11 @@ def facet_counts(f: MfrFilters) -> FilterOptions:
             _selected(f.person),
             Person,
         ),
-        tech_gen=with_selected(
+        technology_generation=with_selected(
             _count_model_facet(
-                filtered(f, exclude="tech_gen"), "technology_generation"
+                filtered(f, exclude="technology_generation"), "technology_generation"
             ),
-            _selected(f.tech_gen),
+            _selected(f.technology_generation),
             TechnologyGeneration,
         ),
         year=bounds(

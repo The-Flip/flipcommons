@@ -9,7 +9,7 @@ function options(
   return {
     location: [],
     person: [],
-    tech_gen: [],
+    technology_generation: [],
     year: { min: null, max: null },
     ...overrides,
   };
@@ -67,7 +67,7 @@ describe('manufacturerFilterChips', () => {
       options({
         location: [{ public_id: 'usa', name: 'USA', count: 1 }],
         person: [{ public_id: 'pat-lawlor', name: 'Pat Lawlor', count: 1 }],
-        tech_gen: [{ public_id: 'solid-state', name: 'Solid State', count: 1 }],
+        technology_generation: [{ public_id: 'solid-state', name: 'Solid State', count: 1 }],
       }),
     );
     expect(chips.map((c) => c.key)).toEqual([

@@ -260,7 +260,7 @@ def _get_manufacturers_for_pks(pks: Iterable[int]) -> list[LocationManufacturerS
 # Router
 # ---------------------------------------------------------------------------
 
-locations_router = Router(tags=["private"])
+locations_router = Router()
 
 
 def _get_location_detail(location_path: str) -> LocationDetailSchema:

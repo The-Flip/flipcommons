@@ -35,7 +35,9 @@
 
   let locationOptions = $derived(filterOptions ? toOptions(filterOptions.location) : []);
   let personOptions = $derived(filterOptions ? toOptions(filterOptions.person) : []);
-  let techGenOptions = $derived(filterOptions ? toOptions(filterOptions.tech_gen) : []);
+  let techGenOptions = $derived(
+    filterOptions ? toOptions(filterOptions.technology_generation) : [],
+  );
 
   let anyActive = $derived(hasActiveMfrFilters(filters));
 

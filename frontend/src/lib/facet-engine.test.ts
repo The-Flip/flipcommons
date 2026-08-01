@@ -39,7 +39,7 @@ describe('filtersFromParams', () => {
 
   it('parses all param types', () => {
     const sp = new URLSearchParams(
-      'q=medieval&tech_gen=solid-state&year_min=1990&year_max=2000&manufacturer=williams&person=pat-lawlor&theme=medieval&theme=sports&edge=copy&edge=bootleg:in&display_type=dmd&player_count=4&system=wpc-95&franchise=star-wars&series=castle',
+      'q=medieval&technology_generation=solid-state&year_min=1990&year_max=2000&manufacturer=williams&person=pat-lawlor&theme=medieval&theme=sports&edge=copy&edge=bootleg:in&display_type=dmd&player_count=4&system=wpc-95&franchise=star-wars&series=castle',
     );
     const f = filtersFromParams(sp);
     expect(f.query).toBe('medieval');
@@ -74,7 +74,7 @@ describe('filtersFromParams', () => {
     };
     const sp = filtersToParams(state, new URLSearchParams());
     expect(sp.getAll('theme')).toEqual(['medieval', 'sports']);
-    expect(sp.getAll('feature')).toEqual(['multiball']);
+    expect(sp.getAll('gameplay_feature')).toEqual(['multiball']);
     expect(sp.getAll('edge')).toEqual(['copy', 'variant_of:in']);
     // and back
     expect(filtersFromParams(sp).themes).toEqual(['medieval', 'sports']);

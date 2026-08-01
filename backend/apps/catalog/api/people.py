@@ -228,7 +228,7 @@ def _serialize_person_row(
 # Router
 # ---------------------------------------------------------------------------
 
-people_router = Router(tags=["people"])
+people_router = Router()
 
 
 class PersonListSchema(Schema):
@@ -298,7 +298,6 @@ def person_search_section(q: str) -> PersonSearchSectionSchema:
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -340,7 +339,6 @@ def patch_person_claims(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
 @rate_limited(CREATE_RATE_LIMIT_SPEC)
@@ -425,7 +423,6 @@ def _active_credit_count(person: Person) -> int:
     "/{path:public_id}/delete-preview/",
     auth=django_auth,
     response=PersonDeletePreviewSchema,
-    tags=["private"],
 )
 def person_delete_preview(
     request: HttpRequest, public_id: str
@@ -455,7 +452,6 @@ def person_delete_preview(
         422: PersonSoftDeleteBlockedSchema | AlreadyDeletedSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_DELETE)
 @rate_limited(DELETE_RATE_LIMIT_SPEC)
@@ -524,7 +520,6 @@ def delete_person(
         404: ErrorDetailSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
 @rate_limited(CREATE_RATE_LIMIT_SPEC)

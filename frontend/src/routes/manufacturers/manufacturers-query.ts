@@ -14,7 +14,7 @@ export interface ManufacturersQuery {
   q?: string;
   location?: string;
   person?: string;
-  tech_gen?: string;
+  technology_generation?: string;
   year_min?: number;
   year_max?: number;
 }
@@ -32,7 +32,7 @@ export function queryFromUrl(url: URL): ManufacturersQuery {
     q: str('q'),
     location: str('location'),
     person: str('person'),
-    tech_gen: str('tech_gen'),
+    technology_generation: str('technology_generation'),
     year_min: num('year_min'),
     year_max: num('year_max'),
   };

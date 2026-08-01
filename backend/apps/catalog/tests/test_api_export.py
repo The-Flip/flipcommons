@@ -1,4 +1,4 @@
-"""Tests for the model-driven bulk-export API (``GET /api/export/<entity>/``)."""
+"""Tests for the model-driven bulk-export API (``GET /api/public/export/<entity>/``)."""
 
 from __future__ import annotations
 
@@ -31,9 +31,26 @@ HIDDEN = frozenset(
 
 
 def _row(client, entity_plural: str, public_id: str) -> dict[str, Any]:
-    resp = client.get(f"/api/export/{entity_plural}/")
+    resp = client.get(f"/api/public/export/{entity_plural}/")
     assert resp.status_code == 200
     return next(r for r in resp.json() if r["public_id"] == public_id)
+
+
+class TestPublishedPathInventory:
+    """Publication is by location: mounting a router on ``public_api`` is what
+    publishes it. The one remaining accident is mounting an *internal* router
+    there, so the published path inventory is pinned to exactly the intended
+    surface."""
+
+    def test_public_api_paths_are_exactly_the_published_surface(self):
+        from config.api import public_api
+
+        paths = set(public_api.get_openapi_schema()["paths"])
+        expected = {
+            f"/api/public/export/{spec.model.entity_type_plural}/"
+            for spec in _REGISTRY.values()
+        } | {"/api/public/filter/models/"}
+        assert paths == expected
 
 
 class TestExportShape:
@@ -41,7 +58,7 @@ class TestExportShape:
         # 20 catalog entities, one blob route each.
         assert len(EXPORT_ENTITY_TYPES) == len(_REGISTRY)
         for plural in ("models", "manufacturers", "themes", "titles"):
-            assert client.get(f"/api/export/{plural}/").status_code == 200
+            assert client.get(f"/api/public/export/{plural}/").status_code == 200
 
     def test_row_is_flat_and_slug_keyed(self, client, machine_model):
         row = _row(client, "models", machine_model.slug)
@@ -72,8 +89,8 @@ class TestExportShape:
             assert hidden not in row, f"{hidden} leaked into the public export"
 
     def test_detail_grade_not_card(self, client, machine_model):
-        # The card list (ModelListItemSchema) is name/slug/manufacturer/year/
-        # thumbnail only; the export must carry the deeper fields.
+        # A card shape is name/manufacturer/year/thumbnail only; the export
+        # must carry the deeper fields.
         row = _row(client, "models", machine_model.slug)
         for deeper in ("description", "production_quantity", "opdb_id", "credits"):
             assert deeper in row
@@ -135,19 +152,19 @@ class TestExportStripsInlineCitations:
 
 class TestExportCache:
     def test_etag_and_conditional_304(self, client, machine_model):
-        r1 = client.get("/api/export/models/")
+        r1 = client.get("/api/public/export/models/")
         etag = r1["ETag"]
         assert etag
-        r2 = client.get("/api/export/models/", HTTP_IF_NONE_MATCH=etag)
+        r2 = client.get("/api/public/export/models/", HTTP_IF_NONE_MATCH=etag)
         assert r2.status_code == 304
 
     def test_mutation_invalidates(self, client, machine_model):
-        before = client.get("/api/export/models/")
+        before = client.get("/api/public/export/models/")
         assert before.status_code == 200
         machine_model.name = "Renamed Madness"
         machine_model.save()
         invalidate_response_cache()
-        after = client.get("/api/export/models/")
+        after = client.get("/api/public/export/models/")
         row = next(r for r in after.json() if r["public_id"] == machine_model.slug)
         assert row["name"] == "Renamed Madness"
 
@@ -159,7 +176,7 @@ class TestExportPerf:
         # Two models, bounded query budget — proves no per-row N+1. The budget
         # covers the base queryset + the fixed prefetches + the bulk link map.
         with django_assert_max_num_queries(20):
-            resp = client.get("/api/export/models/")
+            resp = client.get("/api/public/export/models/")
         assert resp.status_code == 200
         assert len({r["public_id"] for r in resp.json()}) >= 2
 
@@ -331,7 +348,7 @@ class TestExportAggregatingPerf:
     ):
         # The aggregating entity (Count/Min/Max annotations) must not N+1 either.
         with django_assert_max_num_queries(20):
-            resp = client.get("/api/export/manufacturers/")
+            resp = client.get("/api/public/export/manufacturers/")
         assert resp.status_code == 200
 
 
@@ -352,7 +369,7 @@ class TestExportCompleteness:
         # Cross-entity net: the per-entity drift snapshot covers only MachineModel,
         # so guard every entity against leaking the known-internal claim fields.
         for spec in _REGISTRY.values():
-            resp = client.get(f"/api/export/{spec.model.entity_type_plural}/")
+            resp = client.get(f"/api/public/export/{spec.model.entity_type_plural}/")
             assert resp.status_code == 200
             for row in resp.json():
                 leaked = HIDDEN & row.keys()
@@ -371,8 +388,8 @@ class TestExportRateLimit:
         self, client, machine_model, settings
     ):
         self._limit_one(settings)
-        assert client.get("/api/export/models/").status_code == 200
-        resp = client.get("/api/export/models/")
+        assert client.get("/api/public/export/models/").status_code == 200
+        resp = client.get("/api/public/export/models/")
         assert resp.status_code == 429
         # Same wire shape as the rest of the app: Retry-After + structured body.
         assert resp["Retry-After"]
@@ -384,13 +401,15 @@ class TestExportRateLimit:
         # The limit keys on the sanctioned IP (REMOTE_ADDR in tests, X-Real-IP via
         # Caddy in prod), never X-Forwarded-For — so rotating XFF can't dodge it.
         self._limit_one(settings)
-        first = client.get("/api/export/models/", HTTP_X_FORWARDED_FOR="1.1.1.1")
-        second = client.get("/api/export/models/", HTTP_X_FORWARDED_FOR="9.9.9.9")
+        first = client.get("/api/public/export/models/", HTTP_X_FORWARDED_FOR="1.1.1.1")
+        second = client.get(
+            "/api/public/export/models/", HTTP_X_FORWARDED_FOR="9.9.9.9"
+        )
         assert first.status_code == 200
         assert second.status_code == 429  # different XFF, same bucket
 
     def test_internal_api_is_not_rate_limited(self, client, machine_model):
-        # The limiter lives in the export views only; internal routes are unmetered.
+        # The limiter lives in the public views only; internal routes are unmetered.
         # No squeeze needed — internal routes never read EXPORT_RATELIMIT_IP.
-        assert client.get("/api/models/").status_code == 200
-        assert client.get("/api/models/").status_code == 200
+        assert client.get("/api/models/recent/").status_code == 200
+        assert client.get("/api/models/recent/").status_code == 200

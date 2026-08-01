@@ -94,48 +94,47 @@ class GameListSchema(Schema):
     count: int
 
 
-class GameFilterQuerySchema(Schema):
-    """Every listing filter dimension as query params — one vocabulary end to
-    end (URL ⇄ this schema ⇄ ``GameFilters``). Multi-value params are
-    **repeated** (``theme=a&theme=b``), read natively as ``list[str]``."""
+class GameDimensionQuerySchema(Schema):
+    """Every filter *dimension* as query params — one vocabulary end to end
+    (URL ⇄ this schema ⇄ ``GameFilters``), shared by the internal listing and
+    the public filter route. Multi-value params are **repeated**
+    (``theme=a&theme=b``), read natively as ``list[str]``.
 
-    q: str = Field(
-        "",
-        description=(
-            "Free-text search. Accent- and case-insensitive substring match "
-            "against title and model names and abbreviations."
-        ),
-    )
+    ``q`` is deliberately not here: it is the record-local shared class rather
+    than a dimension, the internal listing adds it in
+    :class:`GameFilterQuerySchema`, and the public route does not publish it
+    (its accent folding is backend-dependent)."""
+
     manufacturer: str | None = Field(
         None,
-        description="Manufacturer slug (see `GET /api/manufacturers/`).",
+        description="Manufacturer slug (see `GET /api/public/export/manufacturers/`).",
     )
     person: str | None = Field(
         None,
         description=(
-            "Person slug (see `GET /api/people/`). Matches records this person "
+            "Person slug (see `GET /api/public/export/people/`). Matches records this person "
             "is credited on."
         ),
     )
-    tech_gen: str | None = Field(
+    technology_generation: str | None = Field(
         None,
-        description="Technology-generation slug (see `GET /api/technology-generations/`).",
+        description="Technology-generation slug (see `GET /api/public/export/technology-generations/`).",
     )
     display_type: str | None = Field(
         None,
-        description="Display-type slug (see `GET /api/display-types/`).",
+        description="Display-type slug (see `GET /api/public/export/display-types/`).",
     )
     system: str | None = Field(
         None,
-        description="System slug (see `GET /api/systems/`).",
+        description="System slug (see `GET /api/public/export/systems/`).",
     )
     franchise: str | None = Field(
         None,
-        description="Franchise slug (see `GET /api/franchises/`).",
+        description="Franchise slug (see `GET /api/public/export/franchises/`).",
     )
     series: str | None = Field(
         None,
-        description="Series slug (see `GET /api/series/`).",
+        description="Series slug (see `GET /api/public/export/series/`).",
     )
     player_count: int | None = Field(
         None,
@@ -146,22 +145,24 @@ class GameFilterQuerySchema(Schema):
     theme: list[str] = Field(
         [],
         description=(
-            "Theme slug (see `GET /api/themes/`). Repeat to require several "
-            "(`theme=a&theme=b`); a parent theme also matches its sub-themes."
+            "Theme slug (see `GET /api/public/export/themes/`). Repeatable, ANDed: "
+            "`theme=a&theme=b` requires both. A parent theme also matches "
+            "its sub-themes."
         ),
     )
-    feature: list[str] = Field(
+    gameplay_feature: list[str] = Field(
         [],
         description=(
-            "Gameplay-feature slug (see `GET /api/gameplay-features/`). Repeatable; "
-            "a parent feature also matches its sub-features."
+            "Gameplay-feature slug (see `GET /api/public/export/gameplay-features/`). "
+            "Repeatable, ANDed: all supplied features are required. A parent "
+            "feature also matches its sub-features."
         ),
     )
     reward_type: list[str] = Field(
         [],
         description=(
-            "Reward-type slug (see `GET /api/reward-types/`). Repeatable; all "
-            "supplied slugs must match."
+            "Reward-type slug (see `GET /api/public/export/reward-types/`). Repeatable, "
+            "ANDed: all supplied reward types are required."
         ),
     )
     edge: list[str] = Field(
@@ -172,71 +173,60 @@ class GameFilterQuerySchema(Schema):
             "(unlicensed copy) or `licensed_build` (licensed copy). Append `:in` "
             "to match the other end of the relationship (`edge=copy` finds "
             "copies, `edge=copy:in` finds models that have been copied). "
-            "Repeatable; all supplied keys must match. Unknown keys match "
-            "nothing."
+            "Repeatable, ANDed: all supplied keys are required."
         ),
     )
     display_subtype: str | None = Field(
         None,
-        description="Display-subtype slug (see `GET /api/display-subtypes/`).",
+        description="Display-subtype slug (see `GET /api/public/export/display-subtypes/`).",
     )
     tag: str | None = Field(
         None,
-        description="Tag slug (see `GET /api/tags/`).",
+        description="Tag slug (see `GET /api/public/export/tags/`).",
     )
     technology_subgeneration: str | None = Field(
         None,
         description=(
-            "Technology-subgeneration slug (see `GET /api/technology-subgenerations/`). "
+            "Technology-subgeneration slug (see `GET /api/public/export/technology-subgenerations/`). "
             "Matches models carrying the subgeneration directly or through their system."
         ),
     )
     cabinet: list[str] = Field(
         [],
         description=(
-            "Cabinet slug (see `GET /api/cabinets/`), or the reserved value "
-            "`unclassified` to match models with no cabinet recorded. "
-            "Repeatable; a model matches any of the supplied values. A bare "
-            "slug matches only explicitly classified models; the sidebar's "
-            "Floor selection sends `cabinet=floor&cabinet=unclassified`."
+            "Cabinet style slug (see `GET /api/public/export/cabinets/`) or "
+            "`unclassified` to match models with no recorded cabinet style. "
+            "Repeatable, ORed: a model matches any of the supplied values."
         ),
     )
     game_format: list[str] = Field(
         [],
         description=(
-            "Game-format slug (see `GET /api/game-formats/`), or the reserved "
-            "value `unclassified` to match models with no format recorded. "
-            "Repeatable; a model matches any of the supplied values. A bare "
-            "slug matches only explicitly classified models; the sidebar's "
-            "Pinball selection sends "
-            "`game_format=pinball&game_format=unclassified`."
+            "Game-format slug (see `GET /api/public/export/game-formats/`) or "
+            "`unclassified` to match models with no recorded game format. "
+            "Repeatable, ORed: a model matches any of the supplied values."
         ),
     )
     production_status: list[str] = Field(
         [],
         description=(
-            "Production-status slug (see `GET /api/production-statuses/`), or "
-            "the reserved value `unclassified` to match models with no status "
-            "recorded. Repeatable; a model matches any of the supplied "
-            "values. A bare slug matches only explicitly classified models; "
-            "the sidebar's Produced selection sends "
-            "`production_status=produced&production_status=unclassified`."
+            "Production-status slug (see `GET /api/public/export/production-statuses/`) or "
+            "`unclassified` to match models with no recorded status. "
+            "Repeatable, ORed: a model matches any of the supplied values."
         ),
     )
     corporate_entity: str | None = Field(
         None,
         description=(
-            "Corporate-entity slug (see `GET /api/corporate-entities/`). Narrower "
-            "than `manufacturer`: matches records built by this specific entity."
+            "Corporate-entity slug (see `GET /api/public/export/corporate-entities/`)."
         ),
     )
 
     def to_filters(self) -> GameFilters:
         return GameFilters(
-            q=self.q or "",
             manufacturer=self.manufacturer,
             person=self.person,
-            tech_gen=self.tech_gen,
+            technology_generation=self.technology_generation,
             display_type=self.display_type,
             system=self.system,
             franchise=self.franchise,
@@ -245,7 +235,7 @@ class GameFilterQuerySchema(Schema):
             year_min=self.year_min,
             year_max=self.year_max,
             themes=tuple(self.theme),
-            features=tuple(self.feature),
+            gameplay_features=tuple(self.gameplay_feature),
             reward_types=tuple(self.reward_type),
             edge=tuple(self.edge),
             display_subtype=self.display_subtype,
@@ -258,6 +248,22 @@ class GameFilterQuerySchema(Schema):
         )
 
 
+class GameFilterQuerySchema(GameDimensionQuerySchema):
+    """The internal listing's full query vocabulary: every dimension plus the
+    free-text ``q``."""
+
+    q: str = Field(
+        "",
+        description=(
+            "Free-text search. Accent- and case-insensitive substring match "
+            "against title and model names and abbreviations."
+        ),
+    )
+
+    def to_filters(self) -> GameFilters:
+        return replace(super().to_filters(), q=self.q or "")
+
+
 class PlayerCountOptionSchema(Schema):
     value: int
     count: int
@@ -266,7 +272,7 @@ class PlayerCountOptionSchema(Schema):
 class GameFilterOptionsSchema(Schema):
     manufacturer: list[FacetOptionSchema] = []
     person: list[FacetOptionSchema] = []
-    tech_gen: list[FacetOptionSchema] = []
+    technology_generation: list[FacetOptionSchema] = []
     display_type: list[FacetOptionSchema] = []
     system: list[FacetOptionSchema] = []
     reward_type: list[FacetOptionSchema] = []
@@ -279,7 +285,7 @@ class GameFilterOptionsSchema(Schema):
     game_format: list[FacetOptionSchema] = []
     production_status: list[FacetOptionSchema] = []
     theme: list[FacetOptionSchema] = []
-    feature: list[FacetOptionSchema] = []
+    gameplay_feature: list[FacetOptionSchema] = []
     franchise: list[FacetOptionSchema] = []
     series: list[FacetOptionSchema] = []
     player_count: list[PlayerCountOptionSchema] = []
@@ -462,7 +468,7 @@ def _hydrate_cards(
 # The listing endpoint
 # ---------------------------------------------------------------------------
 
-games_router = Router(tags=["games"])
+games_router = Router()
 
 
 def game_list_page(f: GameFilters, *, page: int = 1) -> GameListSchema:
@@ -540,7 +546,7 @@ def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
         "filter_options": {
             "manufacturer": _facet_option_dicts(opts.manufacturer),
             "person": _facet_option_dicts(opts.person),
-            "tech_gen": _facet_option_dicts(opts.tech_gen),
+            "technology_generation": _facet_option_dicts(opts.technology_generation),
             "display_type": _facet_option_dicts(opts.display_type),
             "system": _facet_option_dicts(opts.system),
             "reward_type": _facet_option_dicts(opts.reward_type),
@@ -549,7 +555,7 @@ def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
             "game_format": _facet_option_dicts(opts.game_format),
             "production_status": _facet_option_dicts(opts.production_status),
             "theme": _facet_option_dicts(opts.theme),
-            "feature": _facet_option_dicts(opts.feature),
+            "gameplay_feature": _facet_option_dicts(opts.gameplay_feature),
             "franchise": _facet_option_dicts(opts.franchise),
             "series": _facet_option_dicts(opts.series),
             "player_count": [{"value": p.value, "count": p.count} for p in players],

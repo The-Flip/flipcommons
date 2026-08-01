@@ -43,7 +43,7 @@
   let manufacturerOptions = $derived(filterOptions ? toOptions(filterOptions.manufacturer) : []);
   let personOptions = $derived(filterOptions ? toOptions(filterOptions.person) : []);
   let themeOptions = $derived(filterOptions ? toOptions(filterOptions.theme) : []);
-  let featureOptions = $derived(filterOptions ? toOptions(filterOptions.feature) : []);
+  let featureOptions = $derived(filterOptions ? toOptions(filterOptions.gameplay_feature) : []);
   let rewardTypeOptions = $derived(filterOptions ? toOptions(filterOptions.reward_type) : []);
   // Edge options arrive named by wire value; the labels are the relationship
   // vocabulary's, resolved client-side.
@@ -87,7 +87,9 @@
     filters[field] = value == null ? [] : presetValues(field, value);
   }
 
-  let techGenOptions = $derived(filterOptions ? toOptions(filterOptions.tech_gen) : []);
+  let techGenOptions = $derived(
+    filterOptions ? toOptions(filterOptions.technology_generation) : [],
+  );
   let displayTypeOptions = $derived(filterOptions ? toOptions(filterOptions.display_type) : []);
   let systemOptions = $derived(filterOptions ? toOptions(filterOptions.system) : []);
   let franchiseOptions = $derived(filterOptions ? toOptions(filterOptions.franchise) : []);

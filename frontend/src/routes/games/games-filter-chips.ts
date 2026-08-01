@@ -92,12 +92,12 @@ export function gameFilterChips(
     }
   };
 
-  single(filters.techGeneration, 'techGeneration', options.tech_gen);
+  single(filters.techGeneration, 'techGeneration', options.technology_generation);
   single(filters.displayType, 'displayType', options.display_type);
   single(filters.manufacturer, 'manufacturer', options.manufacturer);
   single(filters.person, 'person', options.person);
   multi(filters.themes, 'themes', options.theme);
-  multi(filters.features, 'features', options.feature);
+  multi(filters.features, 'features', options.gameplay_feature);
   multi(filters.rewardTypes, 'rewardTypes', options.reward_type);
   sparse('gameFormats', options.game_format);
   sparse('productionStatuses', options.production_status);

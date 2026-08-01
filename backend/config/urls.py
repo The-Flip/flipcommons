@@ -6,13 +6,13 @@ from django.http import HttpRequest
 from django.http.response import HttpResponseBase
 from django.urls import URLPattern, URLResolver, path, re_path
 
-from .api import api, export_api
+from .api import api, public_api
 
 urlpatterns: list[URLPattern | URLResolver] = [
     path("djadmin/", admin.site.urls),
-    # Export API first — it's the more specific prefix, and its own OpenAPI doc is
+    # Public API first — it's the more specific prefix, and its own OpenAPI doc is
     # the public reference. Must precede the internal "api/" catch-all.
-    path("api/export/", export_api.urls),
+    path("api/public/", public_api.urls),
     path("api/", api.urls),
 ]
 

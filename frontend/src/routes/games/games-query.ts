@@ -14,7 +14,7 @@ export interface GamesQuery {
   q?: string;
   manufacturer?: string;
   person?: string;
-  tech_gen?: string;
+  technology_generation?: string;
   display_type?: string;
   system?: string;
   franchise?: string;
@@ -23,7 +23,7 @@ export interface GamesQuery {
   year_min?: number;
   year_max?: number;
   theme?: string[];
-  feature?: string[];
+  gameplay_feature?: string[];
   reward_type?: string[];
   edge?: string[];
   game_format?: string[];
@@ -49,7 +49,7 @@ export function queryFromUrl(url: URL): GamesQuery {
     q: str('q'),
     manufacturer: str('manufacturer'),
     person: str('person'),
-    tech_gen: str('tech_gen'),
+    technology_generation: str('technology_generation'),
     display_type: str('display_type'),
     system: str('system'),
     franchise: str('franchise'),
@@ -58,7 +58,7 @@ export function queryFromUrl(url: URL): GamesQuery {
     year_min: num('year_min'),
     year_max: num('year_max'),
     theme: multi('theme'),
-    feature: multi('feature'),
+    gameplay_feature: multi('gameplay_feature'),
     reward_type: multi('reward_type'),
     edge: multi('edge'),
     game_format: multi('game_format'),

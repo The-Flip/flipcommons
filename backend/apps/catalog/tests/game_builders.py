@@ -188,7 +188,7 @@ def _model(
     name: str | None = None,
     manufacturer: str | None = None,
     year: int | None = None,
-    tech_gen: str | None = None,
+    technology_generation: str | None = None,
     display_type: str | None = None,
     display_subtype: str | None = None,
     system: str | None = None,
@@ -212,7 +212,9 @@ def _model(
         slug=slug,
         corporate_entity=_mfr(manufacturer) if manufacturer else None,
         year=year,
-        technology_generation=_tech(tech_gen) if tech_gen else None,
+        technology_generation=_tech(technology_generation)
+        if technology_generation
+        else None,
         display_type=_display(display_type) if display_type else None,
         display_subtype=_display_subtype(display_subtype) if display_subtype else None,
         system=_system(system) if system else None,

@@ -138,7 +138,9 @@ class TestShapes:
         t = _title("Balls", "balls")
         _model(t, "balls-a", features=("multiball",))
         _model(t, "balls-b", name="Balls B")
-        assert _counts(game_facet_counts(GameFilters()).feature) == {"multiball": 1}
+        assert _counts(game_facet_counts(GameFilters()).gameplay_feature) == {
+            "multiball": 1
+        }
 
     def test_player_buckets_fixed_list(self, db):
         t = _title("Crowd", "crowd")
@@ -306,7 +308,7 @@ class TestAccumulatingDimensions:
 FACET_FILTER_FIELD: dict[str, str] = {
     "manufacturer": "manufacturer",
     "person": "person",
-    "tech_gen": "tech_gen",
+    "technology_generation": "technology_generation",
     "display_type": "display_type",
     "system": "system",
     "reward_type": "reward_types",
@@ -315,7 +317,7 @@ FACET_FILTER_FIELD: dict[str, str] = {
     "game_format": "game_format",
     "production_status": "production_status",
     "theme": "themes",
-    "feature": "features",
+    "gameplay_feature": "gameplay_features",
     "franchise": "franchise",
     "series": "series",
 }
@@ -343,7 +345,7 @@ def _add(current: tuple[str, ...], value: str) -> tuple[str, ...]:
 NARROWERS: dict[str, Callable[[GameFilters, str], GameFilters]] = {
     "manufacturer": lambda f, v: replace(f, manufacturer=v),
     "person": lambda f, v: replace(f, person=v),
-    "tech_gen": lambda f, v: replace(f, tech_gen=v),
+    "technology_generation": lambda f, v: replace(f, technology_generation=v),
     "display_type": lambda f, v: replace(f, display_type=v),
     "system": lambda f, v: replace(f, system=v),
     "reward_type": lambda f, v: replace(f, reward_types=_add(f.reward_types, v)),
@@ -354,7 +356,9 @@ NARROWERS: dict[str, Callable[[GameFilters, str], GameFilters]] = {
         f, production_status=_sparse_click("production_status", v)
     ),
     "theme": lambda f, v: replace(f, themes=_add(f.themes, v)),
-    "feature": lambda f, v: replace(f, features=_add(f.features, v)),
+    "gameplay_feature": lambda f, v: replace(
+        f, gameplay_features=_add(f.gameplay_features, v)
+    ),
     "franchise": lambda f, v: replace(f, franchise=v),
     "series": lambda f, v: replace(f, series=v),
 }
@@ -376,7 +380,7 @@ def _build_catalog() -> None:
         name="Alpha",
         manufacturer="stern",
         year=1990,
-        tech_gen="ss",
+        technology_generation="ss",
         display_type="dmd",
         system="wpc",
         player_count=4,
@@ -393,7 +397,7 @@ def _build_catalog() -> None:
         name="Alpha Encore",
         manufacturer="bally",
         year=1991,
-        tech_gen="em",
+        technology_generation="em",
         player_count=2,
         themes=("liquid",),
         features=("ramps",),
@@ -450,7 +454,7 @@ class TestBadgeEqualsResultCount:
         GameFilters(person="lawlor", themes=("liquid",)),
         # One per accumulating dimension, so the loop reaches the second-click
         # path each of them takes.
-        GameFilters(features=("multiball",)),
+        GameFilters(gameplay_features=("multiball",)),
         GameFilters(reward_types=("replay",)),
         GameFilters(themes=("liquid",), reward_types=("extra-ball",)),
         GameFilters(edge=("copy",)),

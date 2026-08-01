@@ -338,12 +338,12 @@ IN_SCOPE_PAGINATED = frozenset(
     }
 )
 
-# ``games``, ``manufacturers`` and ``models`` are bespoke faceted / search
-# endpoints that share the ``{items, count}`` page shape but sit outside the
-# generic catalog-list machinery: ``games`` is the heterogeneous card listing
-# (not a catalog-entity root), the other two predate this work (see the plan's
-# Non-goals).
-PREEXISTING_FACETED = frozenset({"games", "manufacturers", "models"})
+# ``games`` and ``manufacturers`` are bespoke faceted / search endpoints that
+# share the ``{items, count}`` page shape but sit outside the generic
+# catalog-list machinery: ``games`` is the heterogeneous card listing (not a
+# catalog-entity root), and ``manufacturers`` predates this work (see the
+# plan's Non-goals).
+PREEXISTING_FACETED = frozenset({"games", "manufacturers"})
 
 
 def _mounts_paginated_list_root(router: object) -> bool:

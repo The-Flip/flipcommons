@@ -29,7 +29,7 @@ from .workos_match import _try_match_existing
 
 log = logging.getLogger(__name__)
 
-auth_router = Router(tags=["auth", "private"])
+auth_router = Router()
 
 
 @auth_router.get("/me/", response=AuthStatusSchema)

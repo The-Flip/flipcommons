@@ -187,8 +187,8 @@ Answering "there are surely other consumers than the following, we need to do an
 | `GET /api/pages/manufacturer/<slug>`, corporate entities    | `collect_titles` with any-Model semantics                                                     | PR.DETAIL                                                                                                                          |
 | the other 15 dimension detail routes                        | four card schemas, two list mechanisms, no shared path                                        | PR.DETAIL                                                                                                                          |
 | `GET /api/pages/manufacturers`                              | `MfrFilters`, already carries `location`                                                      | unchanged                                                                                                                          |
-| `GET /api/models/` (the list route)                         | internal API, **eight** detail-route consumers, one blessed external consumer                 | freed by PR.DETAIL, then **deleted** — [the public filtering API](#public-filtering-api) publishes the listing's predicate instead |
-| `GET /api/export/models/`                                   | the documented public API. Ships every edge unfiltered, rate-limited per IP                   | **unchanged.** A bulk export is not a filter surface                                                                               |
+| `GET /api/models/` (the list route)                         | internal API, **eight** detail-route consumers, one blessed external consumer                 | freed by PR.DETAIL, then **deleted** — [the public filtering API](#pr-api) publishes the listing's predicate instead               |
+| `GET /api/public/export/models/`                            | the documented public API. Ships every edge unfiltered, rate-limited per IP                   | **unchanged** in shape. A bulk export is not a filter surface; PR.API moved its mount from `/api/export/` to `/api/public/export/` |
 | [Articles](../catalog_data_model/Articles.md) dynamic lists | unbuilt                                                                                       | a stored filter over the same key space                                                                                            |
 
 The export API stays out of it deliberately. It already carries `model_relationships[]` and `export_markets[]` in full, so nothing here is missing from it — what The Flip lacks is not data but a way to ask a question, which is the filtering API's job and not the export's.
@@ -548,6 +548,56 @@ Everything else the rename used to carry — the API path, the card schema, the 
 
 **The non-mechanical part is `route-metadata.server.ts`, which assumes a listing lives at `/{entity_type_plural}`.** `/games` is deliberately not an entity plural, so unhandled it classifies as `unclassified` — silently noindexed by the hook, excluded from the sitemap, and `title` drops out of `ENTITIES_WITH_LISTING`, so every Title and Model detail page loses the "Games" crumb from its JSON-LD breadcrumb trail; the sitemap's listing-`lastmod` wiring (keyed by `/${entity_type_plural}`) also silently stops matching. **Decided: a declared listing-route override** — one map (`{ title: '/games' }`) consulted by `classifyCatalog` (so `/games` classifies as `catalog-listing, entity: 'title'`), by `listingCrumb`'s href, and by the sitemap's listing-lastmod key. This matches the seam that already exists: the listing page passes `catalogKey="title"` to `FacetedCatalogListing`, and `listingMeta('title')` already carries the "Games" copy. **Rejected: adding `/games` to `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`** — that classifies it `listed-indexable`, which forces a hand-maintained `STATIC_LASTMOD` entry (the completeness test demands one) onto a page whose freshness is feed-driven, and still loses the breadcrumb and the feed-keyed `lastmod`.
 
+## ✅ DONE: <a id="pr-api"></a>PR.API — public filtering API
+
+The follow-up from [Consumers → Public API](ModelFiltering.md#public-api) and the "To discuss" item The Flip left at [mfgtimeline.md item 8](../the_flip/mfgtimeline.md): a consumer shouldn't have to understand the catalog's relationships before they can filter by them. Not a repurposing of `GET /api/models/` — a published route over the listing's own predicate, with the old list route deleted.
+
+### Outcome — where it landed (2026-08-01)
+
+Everything is implemented on the branch; the code and its tests are the source of truth, and the working execution plan lived outside the repo. The map:
+
+| what                  | where                                                                                                                                                                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the flat predicate    | `matching_models()` in `_game_rows.py` — `carding_models` plus the Title-only bind, extracted so `model_rows_qs` reads as it minus the two roll-up exclusions; the seam is pinned by `TestMatchingModels` (equivalence across the dimension families)                      |
+| the published surface | `public_api` (`config/api.py`) — `export_api` renamed, mounted at `/api/public/` with routers `/export/` and `/filter/`; the inert internal `tags=[...]` scheme deleted; `TestPublishedPathInventory` pins the OpenAPI path set                                            |
+| the route             | `apps/catalog/api/public_filter.py` — `GET /api/public/filter/models/`, reading the dimension vocabulary through `GameDimensionQuerySchema` (the new base `GameFilterQuerySchema` extends with `q`), answering `{count, public_ids}` unpaginated, ascending by `public_id` |
+| strictness            | unknown param names and unknown `edge` values → structured 422; vocabulary slugs keep match-nothing; the module docstring carries both inversions' rationale                                                                                                               |
+| rate limit            | `FILTER_RATELIMIT_IP = (600, 3600)`, its own `filter` bucket, built per-request from settings                                                                                                                                                                              |
+| behavior pins         | `test_api_public_filter.py` (flat grain, both listing divergences, strictness, M2M distinct, bucket separation from the export); the migrated production-status facet tests                                                                                                |
+
+Decisions taken with the product owner (2026-07-31):
+
+- **600/hour** for the filter bucket — ~unhittable for the sanctioned shape (a handful of filter calls per sync), tunable at runtime like the export's.
+- **Strict params approved**: an unknown query param **name** errors alongside unknown `edge` values — the same typo argument one level up, since `edge_type=` silently ignored would return the whole catalog. A pleasant fallout: `q=` and `page=` fail actively, documenting what is deliberately absent.
+- **The error status is 422**, the project's validation-error taxonomy; where earlier drafts of this section said "400" they meant "an error, not a confident wrong answer".
+- **Wire names match the entity registry** (2026-08-01, pre-publication): `tech_gen` → `technology_generation` and `feature` → `gameplay_feature`, across the games listing, the manufacturers listing and the published route — the last two of eighteen entity-backed params whose spelling had drifted from the registry's `entity_type`. Renamed now precisely because publication freezes the vocabulary; historical tables and outcome records in this document keep the names that were current when they were written.
+
+Verification, live at the dev API — every prediction reproduced exactly: unfiltered **6,913**; `edge=conversion_kit` **141** against 139 listing cards and `edge=remake_of` **24** against 19 — the divergence is the design working, and the two counts must never be reconciled; `manufacturer=vifico` 13; `edge=bootleg` 5; the two sparse presets 6,387 (`game_format`) and 6,747 (`production_status`) — The Flip's documented null-OR workarounds as one query each.
+
+### The design, as shipped
+
+**It does not apply the roll-up.** The roll-up is a reader-facing display rule — show the highest-level grouping that satisfies the query. A machine consumer counting commercially produced machines wants the matching set flat, at Model grain; rolling four Models into one Title card would corrupt exactly the count The Flip is building. The seam is: **the predicate is shared, the roll-up is not** — the published route is a call into the listing engine rather than a second implementation of it, so a dimension added to `MODEL_DIMENSION_SPECS` reaches both surfaces at once.
+
+**One vocabulary, not two.** `GameFilterQuerySchema` was a strict superset of the old route's vocabulary, so there was nothing to converge toward: `list_models`, `ModelListPagination`, `ModelFilterQuerySchema`, `ModelListItemSchema`, `_serialize_model_list` and `_build_model_list_qs` are deleted and the published route reads the listing's dimension params verbatim. `q` is **not** published — its diacritic folding is Postgres-only (the dev/prod gap under [token-insensitive matching](#name-matching)), and a consumer holding the export already has every name. The breaking-change ledger for the one consumer:
+
+| old `/api/models/` param                                 | published                                                              |
+| -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `type`                                                   | `technology_generation`                                                |
+| `display`                                                | `display_type`                                                         |
+| `subgeneration`                                          | `technology_subgeneration` (same own-FK-or-system OR arm)              |
+| `feature` (single)                                       | `gameplay_feature` (repeatable, ANDed, descendant-expanded)            |
+| `game_format` / `cabinet` / `production_status` (single) | repeatable, plus the reserved `unclassified`; a bare slug is unchanged |
+| `include_variants`                                       | **gone**                                                               |
+| `ordering`                                               | **gone**                                                               |
+
+Neither dropped param hardened into contract. `include_variants` died because at flat Model grain a Variant is just a Model — `production_status=announced` returns the announced Limited Edition without a flag, pinned. `ordering` died because an identity-only response is sorted by whoever joins it; rows come back ascending by `public_id`, a promise that costs nothing and survives any backend collation.
+
+**Identity-only response.** `{count, public_ids}`, unpaginated — `/api/public/export/models/` already carries every field including `title` on each row, so the consumer joins on `public_id` and reads the rest from their saved export at either grain. The worst-case body is the whole catalog's id list, a few hundred KB, matching the export's save-your-copy posture better than pagination would. The export carries the records, this route answers "which ones".
+
+**Publication is by location, not by marker.** `public_api`'s OpenAPI document is exactly the published surface; a route is published by being mounted there, and no forgotten annotation can leak one. Tags exist only on the public API, where they are the reference's two section headings (`export`, `filter`). No redirects from `/api/export/` — one consumer, told directly. **Share the predicate, not the endpoint** remains the general answer for dual-use routes: `/api/games/` stays internal (cards, roll-up, facets, thumbnails), the published route is identity-only and flat, and the sharing lives in Python.
+
+**What publishing hardened**: the listing's param vocabulary is now frozen — renaming a sidebar dimension is a breaking API change. Accepted rather than building an alias layer; `edge`'s named-key registry is already the deprecation-friendly half per [stored filters](#stored-filters-constrain-the-syntax). The conversion-kit **exclusion** at the top of The Flip's list still waits on the exclusion UX ([the API does not run in advance of the UI](ModelFiltering.md#exclude-relationships)); meanwhile one call hands back the kit ids to subtract, which turns "understand the relationship model, then design the filtering" into a set subtraction.
+
 ## Coverage ledger
 
 One row per example in [ModelFiltering.md's Examples](ModelFiltering.md#examples), in that document's order, so the two can be read side by side.
@@ -578,7 +628,7 @@ To cut something, don't drop the row; change its status, with a reason beside it
 | Italian bootlegs                                      | Filter      | Deferred  | `edge=bootleg` × manufacturer location, which is deferred                                                                      |
 | Bootlegs everywhere                                   | Filter      | PR.REL    | `edge=bootleg` on its own — the unqualified list is the whole ask                                                              |
 | The Chicago bingo-pinball industry                    | Filter      | Deferred  | `game_format=bingo-pinball` ships in PR.SPARSE; the Chicago half needs manufacturer location                                   |
-| Spanish EM manufacturers                              | Filter      | Deferred  | `tech_gen=electromechanical` ships; the Spanish half needs manufacturer location                                               |
+| Spanish EM manufacturers                              | Filter      | Deferred  | `technology_generation=electromechanical` ships; the Spanish half needs manufacturer location                                  |
 | Models copied across a national boundary              | Filter      | Deferred  | far-end country constraint                                                                                                     |
 | One manufacturer's whole output                       | Filter      | PR.HET    | `manufacturer=`                                                                                                                |
 | All the variants for a specific manufacturer          | Filter      | PR.REL    | `edge=variant_of` × `manufacturer=`                                                                                            |
@@ -606,8 +656,6 @@ Forty rows against thirty-nine examples: "all the variants of one game" splits, 
 **The one row still genuinely undecided** is the widest original-to-copy gap. If the year delta annotates onto the edge it is an ordinary sort key; if it cannot, the question wants a row per _pair_ and lands with the manufacturer pairings as a won't-do.
 
 ## <a id="deferred"></a>Deferred
-
-Work this program leaves for later. Every **Deferred** row in the [coverage ledger](#coverage-ledger) is covered by an item here.
 
 ### <a id="edge-exclusion"></a>Exclusion on relationship keys
 
@@ -648,96 +696,6 @@ Chicago Gaming's Medieval Madness remake tiers are not recorded as Variants wher
 ### <a id="articles-for-relationships"></a>Editorial pages over the vocabulary
 
 The long-term home for "every unlicensed copy" is a written page whose prose carries what a bare list cannot — that unlicensed copying was widespread across Spain, Italy and Brazil, and that only a handful of cases are sourced so far. That mechanism is [Articles](../catalog_data_model/Articles.md), and building interim filter-pages with hardcoded prose creates something Articles then replaces. The vocabulary lands first and the packaging follows; the filter ships either way.
-
-### <a id="public-filtering-api"></a>Public filtering API
-
-This is the follow-up from [Consumers → Public API](ModelFiltering.md#public-api), and the "To discuss" item The Flip left at [mfgtimeline.md item 8](../the_flip/mfgtimeline.md). The basic idea is that filtering the catalog is a lot of work to do client-side because a consumer must first understand the relationships and only then design the filtering.
-
-**Every prerequisite has landed.** PR.DETAIL moved the eight detail routes onto `/api/games/` and left `GET /api/models/` with no frontend consumer at all, PR.REL supplied the relationship keys, PR.SPARSE completed the shared dimension vocabulary. What still reaches the old list route is backend tests — `test_api_models.py`, three assertions in `test_production_status.py` and one line of `test_api_export.py` that only wants a conveniently unmetered internal route — plus the one blessed external consumer [mfgtimeline.md](../the_flip/mfgtimeline.md) points at it.
-
-So this is **not** a repurposing of `GET /api/models/`. It is a published route over the listing's own predicate, and the old list route is deleted.
-
-**It carries no vocabulary the UI does not have.** The product doc's rule is that the API does not run in advance of the UI, so this endpoint exposes include-only relationship keys for as long as the sidebar does. The conversion-kit exclusion at the top of The Flip's list therefore waits on the exclusion UX, not on this endpoint.
-
-#### It does not apply the roll-up
-
-The load-bearing design point, and it runs the opposite way from the listing.
-
-The roll-up is a **reader-facing display rule** — show the highest-level grouping that satisfies the query, so a browsing human sees one Godzilla rather than four. A machine consumer counting commercially produced machines wants the matching set, flat, at Model grain. Rolling four Models into one Title card would corrupt exactly the count The Flip is building.
-
-So the seam is: **the predicate is shared, the roll-up is not.** Concretely it is one extraction: the flat set is `carding_models(f)` plus the Title-only bind, which is what `model_rows_qs` already builds before it applies the two roll-up clauses. Name that `matching_models(f)` in `_game_rows.py` and `model_rows_qs` reads as it minus "its Title carded" and minus "its parent Model absorbed it" — so the published predicate is a call into the listing engine rather than a second implementation of it, and a dimension added to `MODEL_DIMENSION_SPECS` reaches both surfaces at once.
-
-The divergence is then visible as numbers, and the two counts must never be reconciled: `edge=conversion_kit` is 141 Models here against 139 cards on the listing, `edge=remake_of` 24 against 19 — Models collapsing into a unanimous Title card is the listing doing its job and the flat surface refusing to.
-
-#### One vocabulary, not two
-
-The section used to say the codebase would be left with two Model filter vocabularies, defensible only if they differ by grain rather than spelling, and that the param names should converge at publication. That is now the wrong move, because there is nothing to converge toward: `GameFilterQuerySchema` is a strict superset of `ModelFilterQuerySchema`. Every one of the old route's 17 params has a listing counterpart except `include_variants` and `ordering`, and the listing adds `edge`, theme and feature descendant expansion, repeatable multi-select and the `unclassified` bucket. `_build_model_list_qs` is a hand-chained re-spelling of the narrowing chain `model_only_models` drives from the specs — 14 dimensions written out by hand, structurally unable to pick up a new one.
-
-So `list_models`, `ModelListPagination`, `ModelFilterQuerySchema`, `ModelListItemSchema`, `_serialize_model_list` and `_build_model_list_qs` all go, and the published route reads `GameFilterQuerySchema` verbatim. The breaking-change ledger for the one consumer:
-
-| old `/api/models/` param                                 | published                                                              |
-| -------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `type`                                                   | `tech_gen`                                                             |
-| `display`                                                | `display_type`                                                         |
-| `subgeneration`                                          | `technology_subgeneration` (same own-FK-or-system OR arm)              |
-| `feature` (single)                                       | `feature` (repeatable, ANDed, descendant-expanded)                     |
-| `game_format` / `cabinet` / `production_status` (single) | repeatable, plus the reserved `unclassified`; a bare slug is unchanged |
-| `include_variants`                                       | **gone**                                                               |
-| `ordering`                                               | **gone**                                                               |
-
-Neither dropped param hardens into contract. `include_variants` dies because at flat Model grain a Variant is just a Model — the collapse was a display rule and there is no display here. Its one consequence is an improvement: `production_status=announced` returns the announced Limited Edition without a flag, which is the case the [variant exception](#almost-every-browse-surface-excludes-variants) exists to protect. `ordering` dies because an identity-only response is sorted by whoever joins it; rows come back ascending by `public_id`, a promise that costs nothing and survives any backend collation, unlike the listing's `nulls_last` year ordering.
-
-`q` is **not** published. Its diacritic folding is Postgres-only — the dev/prod gap under [token-insensitive matching](#name-matching) — so it is a promise worth not making, and a consumer holding the export already has every name.
-
-**An unknown key is an error here, where the listing matches nothing.** `_edge_vocabulary.py` deliberately gives an unknown or malformed `edge` value the nonexistent-tag feel, which is right for a reader clicking a stale bookmark and is the worst possible failure mode for an integration: a typo returns a confident wrong answer instead of an error. So the published route 400s on an unknown `edge` key. Vocabulary **slugs** keep the match-nothing behavior, because a slug can legitimately be retired and an empty result is then a true answer. That asymmetry is the same one [stored filters](#stored-filters-constrain-the-syntax) argues for — a named key can be deprecated with a message, a slug just goes away.
-
-#### <a id="response-shape"></a>Response shape
-
-Today's `ModelListItemSchema` is a **display** shape: `thumbnail_url` is resolved through `get_minimum_display_rank()`, which means nothing to a consumer joining against its own cached export.
-
-The published shape is identity only, and thinner than this section first specified: **Model `public_id`s alone**, in a `{count, public_ids}` envelope, unpaginated. `/api/export/models/` already carries `title` on every row, so returning a Title slug here would duplicate a field the consumer holds — they join on `public_id` and read `title` for free, at either grain. The whole catalog is 6,913 Models, so the worst-case body is a few hundred KB, which matches the export's own "save your copy" posture better than pagination would.
-
-The two surfaces are companions by design: the export carries the records, this one carries the answer to "which ones".
-
-#### Where it is published
-
-Publication is **by location, not by marker**. `public_api` is a separate `NinjaAPI` whose OpenAPI document is exactly the published surface, so an internal route cannot leak into it through a forgotten annotation. The `tags=["private"]` scheme this replaced is inert and comes out: nothing reads a tag on the internal API — `operation_id` derives from module plus view-function name, `openapi-typescript` keys on paths and the internal API serves no document — so `private`, `citation-sources`, `claims`, `media` and the rest are all equally decorative. The durable rule is that **tags exist only on the public API, where they are the section headings the reference renders**, which is exactly two of them once the routers split.
-
-- `export_api` is renamed `public_api` and mounted at `/api/public/`, with routers `/export/` and `/filter/`: `GET /api/public/export/models/` and `GET /api/public/filter/models/`. What renames is the publication surface; the bulk export keeps its own name everywhere it names the feature rather than the surface — `export_router`, `export_key`, `EXPORT_RATELIMIT_IP`.
-- **No redirects from the old paths.** One consumer, told directly. The project is too new to start collecting compatibility cruft.
-- The guarantee the `private` tag was miming becomes a test pinning `public_api`'s path inventory. Under location-based publication the one remaining way to publish something by accident is mounting an internal router on it.
-- Two frontend call sites move with the mount, both in `routes/api-docs/+page.svelte`: the spec fetch and the `npx openapi-typescript` command string.
-
-**Share the predicate, not the endpoint.** This is the general answer to "what happens when a route is used both internally and publicly", and this endpoint is the worked example: `/api/games/` is internal — cards, roll-up, facets, thumbnails, hydration — while the published route is identity-only and flat. That is not a coincidence of this feature. A public contract is narrower and more stable by construction, so the shape worth publishing is almost never the shape the UI wants, and the sharing belongs in Python rather than over HTTP. If a genuinely identical dual-use route ever appears, registering one view on both APIs costs a duplicate URL and no duplicate logic.
-
-#### Rate limit and caching
-
-**Its own bucket, sized separately from the export's.** `EXPORT_RATELIMIT_IP` is 120 requests/hour per IP as a per-IP full-sync budget — roughly six full exports across the entity endpoints. A filter call is the _cheap alternative_ to re-syncing, so charging it against the sync budget is backwards. The usage shape is different too: many small requests, one Model query each, against ~20 large cached dumps.
-
-No per-query cache. It is one Model query and the rate limit bounds it; the facets cache's invalidation channel is there if that stops being true. This is also where the posture reversal gets bounded — the internal API's `openapi_url=None` exists to deny external systems a real-time target, and a filter API is a partial reversal of that, so the limit is the argument rather than an afterthought.
-
-#### What it answers for The Flip
-
-Their own documented workarounds turn out to be the PR.SPARSE presets verbatim:
-
-| mfgtimeline item                     | their workaround today                                                                 | published query                                                 | Models                                              |
-| ------------------------------------ | -------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------- |
-| 7, production status ("the big one") | "`production_status` = null OR `produced`"                                             | `production_status=produced&production_status=unclassified`     | 6,747 (`mf_sparse_dimensions`)                      |
-| 10, game format                      | "`game_format` = null OR `pinball`"                                                    | `game_format=pinball&game_format=unclassified`                  | 6,387 (`mf_sparse_dimensions`)                      |
-| 9, rethemes                          | read `model_relationships`, match `retheme`                                            | `edge=retheme`, though production status already excludes 37/38 | 38 ([direction table](#direction-is-load-bearing))  |
-| 8, conversion kits                   | "spend quite a lot of time understanding the relationships, THEN design the filtering" | `edge=conversion_kit`, subtracted locally                       | 141 ([direction table](#direction-is-load-bearing)) |
-
-That last row is the ask that spawned this whole section, and it is the one this endpoint does not answer directly, because [exclusion is deferred](#edge-exclusion). It answers the actual complaint anyway: one call hands back the kit slugs to subtract, which turns "understand the relationship model, then design the filtering" into a set subtraction. Exclusion remains the better answer and still waits on the UX.
-
-#### Decisions taken with the product owner (2026-07-31)
-
-- **Publication is by construction, not by annotation** — hence `public_api`, the mount move and the tag deletion above.
-- **No compatibility redirects.** The one consumer gets told.
-- **Model slugs only**, unpaginated, no Title slug.
-- **Its own rate-limit bucket.** The number itself is a policy call at implementation; there is no measurement behind a guess here, so this document does not carry one.
-- **Delete the old vocabulary** rather than converge it.
-
-**What publishing still hardens** is bigger than the two dropped params the section used to name: it freezes the **listing's** param vocabulary. Renaming a sidebar dimension afterwards becomes a breaking API change. Accept that rather than build an alias layer — the names are settled across four shipped PRs, and `edge`'s named-key registry is already the deprecation-friendly half per [stored filters](#stored-filters-constrain-the-syntax).
 
 ## <a id="not-doing"></a>Never'ed
 

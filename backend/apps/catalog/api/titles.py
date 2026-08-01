@@ -580,7 +580,7 @@ def _detail_qs() -> QuerySet[Title]:
 # Router
 # ---------------------------------------------------------------------------
 
-titles_router = Router(tags=["titles"])
+titles_router = Router()
 
 
 @titles_router.patch(
@@ -591,7 +591,6 @@ titles_router = Router(tags=["titles"])
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)
@@ -651,7 +650,6 @@ def patch_title_claims(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
 @rate_limited(CREATE_RATE_LIMIT_SPEC)
@@ -697,7 +695,6 @@ def create_title(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
 @rate_limited(CREATE_RATE_LIMIT_SPEC)
@@ -765,7 +762,6 @@ def create_model(
     "/{path:public_id}/delete-preview/",
     auth=django_auth,
     response=TitleDeletePreviewSchema,
-    tags=["private"],
 )
 def title_delete_preview(
     request: HttpRequest, public_id: str
@@ -805,7 +801,6 @@ def title_delete_preview(
         422: SoftDeleteBlockedSchema | AlreadyDeletedSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_DELETE)
 @rate_limited(DELETE_RATE_LIMIT_SPEC)
@@ -859,7 +854,6 @@ def delete_title(
         404: ErrorDetailSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
 @rate_limited(CREATE_RATE_LIMIT_SPEC)

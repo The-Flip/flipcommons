@@ -81,7 +81,7 @@ class GameplayFeatureDetailSchema(EntityDetailSchema, OwnMediaSchema):
 
 class GameplayFeatureDetailPageSchema(GameplayFeatureDetailSchema):
     """The detail-page payload: the record plus page 1 of its games — the
-    listing pinned to ``feature=<slug>`` (descendants included, rolled up)."""
+    listing pinned to ``gameplay_feature=<slug>`` (descendants included, rolled up)."""
 
     games: GameListSchema
 
@@ -124,7 +124,7 @@ def _serialize_detail(feature: GameplayFeature) -> GameplayFeatureDetailSchema:
 # Router
 # ---------------------------------------------------------------------------
 
-gameplay_features_router = Router(tags=["gameplay-features"])
+gameplay_features_router = Router()
 
 
 def _serialize_gameplay_feature_row(
@@ -211,7 +211,6 @@ def list_gameplay_features(
         422: ValidationErrorSchema,
         429: RateLimitErrorSchema,
     },
-    tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 @rate_limited(EDIT_RATE_LIMIT_SPEC)

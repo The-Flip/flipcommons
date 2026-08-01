@@ -244,24 +244,26 @@ class TestTechGenDeleteBlockedByActiveChild:
     """
 
     @pytest.fixture
-    def tech_gen(self, db):
+    def technology_generation(self, db):
         return TechnologyGeneration.objects.create(
             name="Solid State", slug="solid-state", status="active"
         )
 
     @pytest.fixture
-    def subgen(self, db, tech_gen):
+    def subgen(self, db, technology_generation):
         return TechnologySubgeneration.objects.create(
             name="MPU",
             slug="mpu",
             status="active",
-            technology_generation=tech_gen,
+            technology_generation=technology_generation,
         )
 
-    def test_preview_surfaces_child_count(self, client, user, tech_gen, subgen):
+    def test_preview_surfaces_child_count(
+        self, client, user, technology_generation, subgen
+    ):
         client.force_login(user)
         resp = client.get(
-            f"/api/technology-generations/{tech_gen.slug}/delete-preview/"
+            f"/api/technology-generations/{technology_generation.slug}/delete-preview/"
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -269,22 +271,34 @@ class TestTechGenDeleteBlockedByActiveChild:
         # Blocked → provenance count short-circuits to zero.
         assert body["changeset_count"] == 0
 
-    def test_delete_blocked_with_structured_body(self, client, user, tech_gen, subgen):
+    def test_delete_blocked_with_structured_body(
+        self, client, user, technology_generation, subgen
+    ):
         client.force_login(user)
-        resp = _post(client, f"/api/technology-generations/{tech_gen.slug}/delete/", {})
+        resp = _post(
+            client,
+            f"/api/technology-generations/{technology_generation.slug}/delete/",
+            {},
+        )
         assert resp.status_code == 422
         body = resp.json()
         assert body["blocked_by"] == []
         assert body["active_children_count"] == 1
 
-        tech_gen.refresh_from_db()
-        assert tech_gen.status == "active"
+        technology_generation.refresh_from_db()
+        assert technology_generation.status == "active"
 
-    def test_delete_proceeds_after_child_deleted(self, client, user, tech_gen, subgen):
+    def test_delete_proceeds_after_child_deleted(
+        self, client, user, technology_generation, subgen
+    ):
         subgen.status = "deleted"
         subgen.save(update_fields=["status"])
         client.force_login(user)
-        resp = _post(client, f"/api/technology-generations/{tech_gen.slug}/delete/", {})
+        resp = _post(
+            client,
+            f"/api/technology-generations/{technology_generation.slug}/delete/",
+            {},
+        )
         assert resp.status_code == 200, resp.content
 
 
@@ -294,7 +308,7 @@ class TestTechGenDeleteBlockedByProtectReferrer:
     must block with ``blocked_by`` populated by the generic walker."""
 
     def test_delete_blocked_by_protect_referrer(self, client, user, db):
-        tech_gen = TechnologyGeneration.objects.create(
+        technology_generation = TechnologyGeneration.objects.create(
             name="Solid State", slug="solid-state", status="active"
         )
         title = Title.objects.create(
@@ -305,11 +319,15 @@ class TestTechGenDeleteBlockedByProtectReferrer:
             slug="addams-family",
             title=title,
             status="active",
-            technology_generation=tech_gen,
+            technology_generation=technology_generation,
         )
 
         client.force_login(user)
-        resp = _post(client, f"/api/technology-generations/{tech_gen.slug}/delete/", {})
+        resp = _post(
+            client,
+            f"/api/technology-generations/{technology_generation.slug}/delete/",
+            {},
+        )
         assert resp.status_code == 422
         body = resp.json()
         assert len(body["blocked_by"]) >= 1

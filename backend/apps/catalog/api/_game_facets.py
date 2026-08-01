@@ -115,7 +115,7 @@ class GameFacetOptions:
 
     manufacturer: list[FacetOption] = field(default_factory=list)
     person: list[FacetOption] = field(default_factory=list)
-    tech_gen: list[FacetOption] = field(default_factory=list)
+    technology_generation: list[FacetOption] = field(default_factory=list)
     display_type: list[FacetOption] = field(default_factory=list)
     system: list[FacetOption] = field(default_factory=list)
     reward_type: list[FacetOption] = field(default_factory=list)
@@ -126,7 +126,7 @@ class GameFacetOptions:
     game_format: list[FacetOption] = field(default_factory=list)
     production_status: list[FacetOption] = field(default_factory=list)
     theme: list[FacetOption] = field(default_factory=list)
-    feature: list[FacetOption] = field(default_factory=list)
+    gameplay_feature: list[FacetOption] = field(default_factory=list)
     franchise: list[FacetOption] = field(default_factory=list)
     series: list[FacetOption] = field(default_factory=list)
     player_count: list[PlayerCountOption] = field(default_factory=list)
@@ -574,8 +574,10 @@ def game_facet_counts(f: GameFilters) -> GameFacetOptions:
             counted["manufacturer"], _selected(f.manufacturer), Manufacturer
         ),
         person=with_selected(counted["person"], _selected(f.person), Person),
-        tech_gen=with_selected(
-            counted["tech_gen"], _selected(f.tech_gen), TechnologyGeneration
+        technology_generation=with_selected(
+            counted["technology_generation"],
+            _selected(f.technology_generation),
+            TechnologyGeneration,
         ),
         display_type=with_selected(
             counted["display_type"], _selected(f.display_type), DisplayType
@@ -593,7 +595,9 @@ def game_facet_counts(f: GameFilters) -> GameFacetOptions:
             ProductionStatus,
         ),
         theme=with_selected(counted["theme"], f.themes, Theme),
-        feature=with_selected(counted["feature"], f.features, GameplayFeature),
+        gameplay_feature=with_selected(
+            counted["gameplay_feature"], f.gameplay_features, GameplayFeature
+        ),
         franchise=with_selected(
             _title_facet(f, shared, "franchise", "franchise"),
             _selected(f.franchise),

@@ -84,7 +84,11 @@ const PARAM_MAP: {
     set: (f, v) => (f.yearMax = toNum(v)),
   },
   { param: 'person', get: (f) => f.person, set: (f, v) => (f.person = v) },
-  { param: 'tech_gen', get: (f) => f.techGeneration, set: (f, v) => (f.techGeneration = v) },
+  {
+    param: 'technology_generation',
+    get: (f) => f.techGeneration,
+    set: (f, v) => (f.techGeneration = v),
+  },
 ];
 
 /** Read filter state from URL search params. */

@@ -269,12 +269,20 @@ SIGNUP_SUBMIT_RATELIMIT_SESSION = (10, 60)
 SIGNUP_SUBMIT_RATELIMIT_IP = (30, 60)
 SIGNUP_CANCEL_RATELIMIT_IP = (20, 60)
 
-# Public bulk-export API (GET /api/export/<entity>/). One shared per-IP bucket
+# Public bulk-export API (GET /api/public/export/<entity>/). One shared per-IP bucket
 # across all 20 export endpoints, so the limit is a per-IP full-sync budget: a
 # full dump is ~20 requests, so 120/hour ≈ 6 full dumps/hour. Generous for batch
 # consumers (who should save the export and work locally) while capping the
 # real-time polling the export exists to discourage. (limit, window_seconds).
 EXPORT_RATELIMIT_IP = (120, 3600)
+
+# Public filtering API (GET /api/public/filter/models/). Its own bucket, sized
+# separately from the export's: a filter call is the cheap alternative to
+# re-syncing a dump, so charging it against the full-sync budget would be
+# backwards. One Model query per request; 600/hour ≈ 10/minute is ~unhittable
+# for the sanctioned shape (a consumer composing a handful of filters per
+# sync) while bounding abuse. (limit, window_seconds).
+FILTER_RATELIMIT_IP = (600, 3600)
 
 # ── WorkOS AuthKit ────────────────────────────────────────────────
 WORKOS_API_KEY = os.environ.get("WORKOS_API_KEY", "").strip()

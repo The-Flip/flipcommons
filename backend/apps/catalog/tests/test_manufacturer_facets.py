@@ -110,7 +110,7 @@ def _model(
     ce: CorporateEntity,
     *,
     year: int | None = None,
-    tech_gen: TechnologyGeneration | None = None,
+    technology_generation: TechnologyGeneration | None = None,
     person: Person | None = None,
     status: str = EntityStatus.ACTIVE,
     variant_of: MachineModel | None = None,
@@ -126,7 +126,7 @@ def _model(
         title=title,
         corporate_entity=ce,
         year=year,
-        technology_generation=tech_gen,
+        technology_generation=technology_generation,
         status=status,
         variant_of=variant_of,
         extra_data=extra_data if extra_data is not None else {},
@@ -394,7 +394,7 @@ class TestQMisc:
 
 
 # ---------------------------------------------------------------------------
-# Per-facet filtering (location descendant, year overlap, person, tech_gen)
+# Per-facet filtering (location descendant, year overlap, person, technology_generation)
 # ---------------------------------------------------------------------------
 
 
@@ -475,9 +475,9 @@ class TestPersonAndTechGenFilters:
     def test_tech_gen_matches(self, db):
         ss = _tech("solid-state", "Solid State")
         mfr = _mfr("acme", name="Acme")
-        _model(_ce(mfr, "acme-ce"), tech_gen=ss)
+        _model(_ce(mfr, "acme-ce"), technology_generation=ss)
         _mfr("other", name="Other")
-        assert _slugs(MfrFilters(tech_gen="solid-state")) == {"acme"}
+        assert _slugs(MfrFilters(technology_generation="solid-state")) == {"acme"}
 
 
 class TestCombinedFilters:
@@ -487,16 +487,20 @@ class TestCombinedFilters:
         em = _tech("electromechanical", "EM")
         a = _mfr("a", name="A")
         ce_a = _ce(a, "a-ce")
-        _model(ce_a, year=1990, tech_gen=ss)
+        _model(ce_a, year=1990, technology_generation=ss)
         b = _mfr("b", name="B")
         ce_b = _ce(b, "b-ce")
-        _model(ce_b, year=1990, tech_gen=em)  # year matches, tech_gen doesn't
-        f = MfrFilters(year_min=1985, year_max=1995, tech_gen="solid-state")
+        _model(
+            ce_b, year=1990, technology_generation=em
+        )  # year matches, technology_generation doesn't
+        f = MfrFilters(
+            year_min=1985, year_max=1995, technology_generation="solid-state"
+        )
         assert _slugs(f) == {"a"}
 
     def test_empty_result(self, db):
         _mfr("acme", name="Acme")
-        assert _slugs(MfrFilters(tech_gen="nonexistent")) == set()
+        assert _slugs(MfrFilters(technology_generation="nonexistent")) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -540,8 +544,8 @@ class TestFacetCounts:
         """A model with no technology_generation produces no null option (it would
         fail schema validation)."""
         mfr = _mfr("acme", name="Acme")
-        _model(_ce(mfr, "acme-ce"), tech_gen=None)
-        assert facet_counts(MfrFilters()).tech_gen == []
+        _model(_ce(mfr, "acme-ce"), technology_generation=None)
+        assert facet_counts(MfrFilters()).technology_generation == []
 
     def test_person_count_excludes_deleted_model_credit(self, db):
         """Counts use the active-non-variant model guard, so a person credited only on
@@ -563,9 +567,14 @@ class TestFacetCounts:
         manufacturers ``filtered`` returns for that value alone."""
         ss = _tech("solid-state", "Solid State")
         for slug in ("a", "b", "c"):
-            _model(_ce(_mfr(slug, name=slug.upper()), f"{slug}-ce"), tech_gen=ss)
-        counts = _counts(facet_counts(MfrFilters()).tech_gen)
-        assert counts["solid-state"] == len(_slugs(MfrFilters(tech_gen="solid-state")))
+            _model(
+                _ce(_mfr(slug, name=slug.upper()), f"{slug}-ce"),
+                technology_generation=ss,
+            )
+        counts = _counts(facet_counts(MfrFilters()).technology_generation)
+        assert counts["solid-state"] == len(
+            _slugs(MfrFilters(technology_generation="solid-state"))
+        )
         assert counts["solid-state"] == 3
 
     def test_location_badge_equals_result_count(self, db, usa_il_chicago):
@@ -585,13 +594,13 @@ class TestFacetCounts:
         """A selected value pruned to count 0 stays in its list at count 0 (so the
         chip can resolve its name and stay deselectable)."""
         ss = _tech("solid-state", "Solid State")
-        # tech_gen exists in the catalog but no manufacturer matches the combined
+        # technology_generation exists in the catalog but no manufacturer matches the combined
         # filter (year excludes the only solid-state manufacturer).
         mfr = _mfr("acme", name="Acme")
-        _model(_ce(mfr, "acme-ce"), year=1980, tech_gen=ss)
-        f = MfrFilters(year_min=2000, tech_gen="solid-state")
+        _model(_ce(mfr, "acme-ce"), year=1980, technology_generation=ss)
+        f = MfrFilters(year_min=2000, technology_generation="solid-state")
         assert not _slugs(f)
-        by_id = {o.public_id: o for o in facet_counts(f).tech_gen}
+        by_id = {o.public_id: o for o in facet_counts(f).technology_generation}
         assert by_id["solid-state"].count == 0
         assert by_id["solid-state"].name == "Solid State"
 
@@ -599,7 +608,7 @@ class TestFacetCounts:
 class _Bag(NamedTuple):
     location_paths: frozenset[str]
     person: frozenset[str]
-    tech_gen: frozenset[str]
+    technology_generation: frozenset[str]
     years: frozenset[int]
 
 
@@ -664,11 +673,11 @@ class TestOrdering:
     def test_most_prolific_first_then_name_then_pk(self, db):
         ss = _tech("solid-state", "Solid State")
         a = _mfr("aaa", name="Aaa")
-        _model(_ce(a, "aaa-ce"), tech_gen=ss)
-        _model(_ce(a, "aaa-ce2"), tech_gen=ss)
+        _model(_ce(a, "aaa-ce"), technology_generation=ss)
+        _model(_ce(a, "aaa-ce2"), technology_generation=ss)
         c = _mfr("ccc", name="Ccc")
-        _model(_ce(c, "ccc-ce"), tech_gen=ss)
-        _model(_ce(c, "ccc-ce2"), tech_gen=ss)
+        _model(_ce(c, "ccc-ce"), technology_generation=ss)
+        _model(_ce(c, "ccc-ce2"), technology_generation=ss)
         b = _mfr("bbb", name="Bbb")
         _model(_ce(b, "bbb-ce"))
         rows = _ordered_counts(MfrFilters())
@@ -692,7 +701,7 @@ class TestOrdering:
         guard — not null) and sorts after manufacturers with models."""
         ss = _tech("solid-state", "Solid State")
         prolific = _mfr("prolific", name="Prolific")
-        _model(_ce(prolific, "p-ce"), tech_gen=ss)
+        _model(_ce(prolific, "p-ce"), technology_generation=ss)
         _mfr("empty", name="Empty")  # no CEs, no models
         rows = _ordered_counts(MfrFilters())
         assert rows == [("prolific", 1), ("empty", 0)]
@@ -721,7 +730,7 @@ class TestCardsEndpoint:
 
     def test_returns_items_and_count(self, client, db):
         ss = _tech("solid-state", "Solid State")
-        _model(_ce(_mfr("acme", name="Acme"), "acme-ce"), tech_gen=ss)
+        _model(_ce(_mfr("acme", name="Acme"), "acme-ce"), technology_generation=ss)
         body = client.get("/api/manufacturers/").json()
         assert body["count"] == 1
         assert body["items"][0]["slug"] == "acme"
@@ -744,9 +753,11 @@ class TestCardsEndpoint:
 
     def test_filter_param_narrows_cards(self, client, db):
         ss = _tech("solid-state", "Solid State")
-        _model(_ce(_mfr("acme", name="Acme"), "acme-ce"), tech_gen=ss)
+        _model(_ce(_mfr("acme", name="Acme"), "acme-ce"), technology_generation=ss)
         _model(_ce(_mfr("other", name="Other"), "other-ce"))
-        data = client.get("/api/manufacturers/?tech_gen=solid-state").json()
+        data = client.get(
+            "/api/manufacturers/?technology_generation=solid-state"
+        ).json()
         assert [i["slug"] for i in data["items"]] == ["acme"]
 
     def test_thumbnail_is_newest_model_with_extra_data(self, client, db):
@@ -810,22 +821,31 @@ class TestPageEndpoint:
     def test_shape_is_filter_options_and_query_count(self, client, db):
         _model(
             _ce(_mfr("acme", name="Acme"), "acme-ce"),
-            tech_gen=_tech("solid-state", "Solid State"),
+            technology_generation=_tech("solid-state", "Solid State"),
         )
         body = client.get("/api/pages/manufacturers").json()
         assert set(body) == {"filter_options", "query_count"}
         opts = body["filter_options"]
-        assert set(opts) == {"location", "person", "tech_gen", "year"}
-        assert set(opts["tech_gen"][0]) == {"public_id", "name", "count"}
+        assert set(opts) == {"location", "person", "technology_generation", "year"}
+        assert set(opts["technology_generation"][0]) == {"public_id", "name", "count"}
         assert set(opts["year"]) == {"min", "max"}
 
     def test_badge_equals_result_count(self, client, db):
         ss = _tech("solid-state", "Solid State")
         for slug in ("a", "b"):
-            _model(_ce(_mfr(slug, name=slug.upper()), f"{slug}-ce"), tech_gen=ss)
+            _model(
+                _ce(_mfr(slug, name=slug.upper()), f"{slug}-ce"),
+                technology_generation=ss,
+            )
         facets = client.get("/api/pages/manufacturers").json()["filter_options"]
-        opt = next(o for o in facets["tech_gen"] if o["public_id"] == "solid-state")
-        result = client.get("/api/manufacturers/?tech_gen=solid-state").json()["count"]
+        opt = next(
+            o
+            for o in facets["technology_generation"]
+            if o["public_id"] == "solid-state"
+        )
+        result = client.get(
+            "/api/manufacturers/?technology_generation=solid-state"
+        ).json()["count"]
         assert opt["count"] == result == 2
 
     def test_no_filter_response_is_cached(self, client, db):
@@ -841,9 +861,9 @@ class TestPageEndpoint:
     def test_filtered_response_is_not_cached(self, client, db):
         _model(
             _ce(_mfr("acme", name="Acme"), "acme-ce"),
-            tech_gen=_tech("solid-state", "Solid State"),
+            technology_generation=_tech("solid-state", "Solid State"),
         )
-        client.get("/api/pages/manufacturers?tech_gen=solid-state")
+        client.get("/api/pages/manufacturers?technology_generation=solid-state")
         assert cache.get(manufacturers_facets_key()) is None
 
     def test_cache_invalidation_busts_both_audience_slots(self, client, db):
@@ -864,12 +884,16 @@ class TestPageEndpoint:
 
     def test_query_count_ignores_other_facets(self, client, db):
         ss = _tech("solid-state", "Solid State")
-        # "Acme" has solid-state; "Beta" matches q but not the tech_gen filter.
-        _model(_ce(_mfr("acme", name="Acme"), "acme-ce"), tech_gen=ss)
+        # "Acme" has solid-state; "Beta" matches q but not the technology_generation filter.
+        _model(_ce(_mfr("acme", name="Acme"), "acme-ce"), technology_generation=ss)
         _mfr("beta", name="Beta")
-        body = client.get("/api/pages/manufacturers?q=Beta&tech_gen=solid-state").json()
+        body = client.get(
+            "/api/pages/manufacturers?q=Beta&technology_generation=solid-state"
+        ).json()
         assert body["query_count"] == 1
-        cards = client.get("/api/manufacturers/?q=Beta&tech_gen=solid-state").json()
+        cards = client.get(
+            "/api/manufacturers/?q=Beta&technology_generation=solid-state"
+        ).json()
         assert cards["count"] == 0
 
     def test_query_count_null_without_q(self, client, db):

@@ -107,7 +107,7 @@ from .themes import _serialize_detail as _serialize_theme_detail
 from .titles import TitleDetailSchema, _serialize_title_detail
 from .titles import _detail_qs as _title_detail_qs
 
-pages_router = Router(tags=["private"])
+pages_router = Router()
 
 # Minimum trimmed ``q`` length the global search acts on. Below this the endpoint
 # returns empty sections without touching the DB, and the SvelteKit page shows a
@@ -247,7 +247,7 @@ register_entity_detail_page(
     detail_qs=_gf_detail_qs,
     serialize_page=with_games(
         _serialize_gf_detail,
-        lambda gf: GameFilters(features=(gf.slug,)),
+        lambda gf: GameFilters(gameplay_features=(gf.slug,)),
         GameplayFeatureDetailPageSchema,
     ),
     response_schema=GameplayFeatureDetailPageSchema,
@@ -402,7 +402,7 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(TechnologyGeneration),
     serialize_page=with_games(
         _serialize_taxonomy,
-        lambda obj: GameFilters(tech_gen=obj.slug),
+        lambda obj: GameFilters(technology_generation=obj.slug),
         TaxonomyDetailPageSchema,
     ),
     response_schema=TaxonomyDetailPageSchema,
