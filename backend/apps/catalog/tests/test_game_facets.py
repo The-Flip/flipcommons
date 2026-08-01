@@ -14,6 +14,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import fields, replace
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
 from apps.catalog.api._game_facets import GameFacetOptions, game_facet_counts
 from apps.catalog.api._game_rows import (
     ACCUMULATING_DIMENSIONS,
@@ -560,3 +563,20 @@ class TestBadgeEqualsResultCount:
             for p in opts.player_count:
                 got = len(game_rows_merged(replace(f, player_count=p.value)))
                 assert p.count == got, ("player_count", p.value, f)
+
+
+class TestFanoutSql:
+    def test_no_query_inherits_the_model_ordering(self, db):
+        """Every tally is order-independent, so a fan-out query carrying
+        ``MachineModel.Meta.ordering`` is pure waste — the sort itself, plus
+        ``name`` forced into the SELECT DISTINCT list. The value-rows builders
+        clear it with ``.order_by()``; this pins that a new builder does too."""
+        _build_catalog()
+        with CaptureQueriesContext(connection) as ctx:
+            game_facet_counts(GameFilters())
+        offenders = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if 'ORDER BY "catalog_machinemodel"."name"' in q["sql"]
+        ]
+        assert offenders == []

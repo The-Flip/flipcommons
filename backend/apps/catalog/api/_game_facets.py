@@ -281,6 +281,10 @@ def _value_rows(
         )
         .filter(gate)
         .filter(**{f"{binding.slug_path}__isnull": False})
+        # clear default ordering — the tally is order-independent, and the
+        # Meta ordering would force ``name`` into the SELECT DISTINCT list
+        # (same in every value-rows builder below).
+        .order_by()
         .values_list(
             "pk", "title_id", "variant_of_id", binding.slug_path, binding.name_path
         )
@@ -316,6 +320,7 @@ def _hierarchical_value_rows(
         .filter(gate)
         # filter, not exclude — see _value_rows on multivalued isnull.
         .filter(**{f"{binding.path}__slug__isnull": False})
+        .order_by()
         .values_list("pk", "title_id", "variant_of_id", f"{binding.path}__slug")
         .distinct()
     )
@@ -358,6 +363,7 @@ def _edge_value_rows(
             wire = edge_wire_value(EdgeSelection(key, direction))
             raw = (
                 base.filter(edge_q(EdgeSelection(key, direction)))
+                .order_by()
                 .values_list("pk", "title_id", "variant_of_id")
                 .distinct()
             )
@@ -388,6 +394,7 @@ def _sparse_value_rows(
             f, exclude=facet_exclude(dimension), expansion=shared.expansion
         )
         .filter(gate)
+        .order_by()
         .values_list("pk", "title_id", "variant_of_id", f"{binding.path}__slug")
         .distinct()
     )
@@ -411,6 +418,7 @@ def _player_value_rows(f: GameFilters, shared: _SharedFanout) -> list[_FacetValu
         )
         .filter(gate)
         .filter(player_count__isnull=False)
+        .order_by()
         .values_list("pk", "title_id", "variant_of_id", "player_count")
         .distinct()
     )
@@ -438,6 +446,7 @@ def _title_dimension_value_rows(
         model_only_models(f, expansion=shared.expansion)
         .filter(gate)
         .filter(**{f"title__{fk}__isnull": False})
+        .order_by()
         .values_list(
             "pk",
             "title_id",
