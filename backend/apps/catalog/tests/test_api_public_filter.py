@@ -1,11 +1,12 @@
 """Tests for the public filtering API (``GET /api/public/filter/models/``).
 
 The published half of the listing engine: same dimension vocabulary, same
-predicate, no roll-up. Coverage: the flat Model grain (including the two
-divergences from the listing — unanimous Titles stay Models, Variants need no
-flag), the strictness inversions (unknown param names and unknown ``edge``
-keys are errors where the listing ignores or matches nothing), and the
-route's own rate-limit bucket.
+predicate, no roll-up. Coverage: the published param manifest (the
+param-level twin of ``TestPublishedPathInventory``), the flat Model grain
+(including the two divergences from the listing — unanimous Titles stay
+Models, Variants need no flag), the strictness inversions (unknown param
+names and unknown ``edge`` keys are errors where the listing ignores or
+matches nothing), and the route's own rate-limit bucket.
 """
 
 from __future__ import annotations
@@ -29,6 +30,63 @@ def _body(client, query: str = "") -> dict[str, Any]:
 def _ids(client, query: str = "") -> list[str]:
     ids: list[str] = _body(client, query)["public_ids"]
     return ids
+
+
+class TestPublishedParamInventory:
+    """The param-level twin of ``TestPublishedPathInventory``: the route
+    derives its accepted params from ``GameDimensionQuerySchema``, which the
+    internal listing owns — so adding a listing dimension would otherwise
+    extend the *published* API contract with no affirmative act. The manifest
+    below pins the published vocabulary; editing it is the conscious
+    publication decision."""
+
+    # The vocabulary published on GET /api/public/filter/models/. Deliberately
+    # a literal, not derived: derivation is the hole this test plugs.
+    PUBLISHED_PARAMS = frozenset(
+        {
+            "cabinet",
+            "corporate_entity",
+            "display_subtype",
+            "display_type",
+            "edge",
+            "franchise",
+            "game_format",
+            "gameplay_feature",
+            "manufacturer",
+            "person",
+            "player_count",
+            "production_status",
+            "reward_type",
+            "series",
+            "system",
+            "tag",
+            "technology_generation",
+            "technology_subgeneration",
+            "theme",
+            "year_max",
+            "year_min",
+        }
+    )
+
+    def test_published_params_are_exactly_the_manifest(self):
+        from apps.catalog.api.public_filter import _DECLARED_PARAMS
+
+        added = sorted(_DECLARED_PARAMS - self.PUBLISHED_PARAMS)
+        removed = sorted(self.PUBLISHED_PARAMS - _DECLARED_PARAMS)
+        assert not added, (
+            f"You are about to PUBLISH query param(s) {added} on "
+            f"GET {URL}. A new GameDimensionQuerySchema dimension becomes "
+            "part of the public API contract, and withdrawing a shipped "
+            "param is a breaking change. If publication is intended, add the "
+            "param(s) to PUBLISHED_PARAMS — that edit is the deliberate "
+            "publication decision. If not, exclude them from the published "
+            "route."
+        )
+        assert not removed, (
+            f"Query param(s) {removed} were WITHDRAWN from GET {URL} — a "
+            "breaking change for public consumers. If intended, remove them "
+            "from PUBLISHED_PARAMS too."
+        )
 
 
 class TestFlatGrain:
