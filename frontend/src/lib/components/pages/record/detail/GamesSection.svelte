@@ -49,22 +49,42 @@ own mechanism, so the server load re-runs and reseeds. -->
     return unwrapPage(data);
   };
 
-  // SearchBox binds here — a writable `$derived` so it mirrors the committed
-  // `q` on seed/popstate/goto-landing yet stays reassignable while typing.
-  let queryInput = $derived(q);
+  // SearchBox binds here. The draft is its own state, not a mirror of `q`:
+  // the committed value changes exactly when a debounced navigation lands,
+  // which is exactly when a still-typing user has a longer draft in the box.
+  // svelte-ignore state_referenced_locally
+  let queryInput = $state(q);
+
+  /** The scheduled commit of the current draft; `undefined` when the draft has
+   * nothing left to commit, i.e. the user is not ahead of the committed `q`. */
+  let qTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Adopt the committed value, but only when the user isn't ahead of it, so a
+  // navigation landing mid-word leaves the draft alone. Back/forward and other
+  // outside changes have no commit scheduled, so the box follows the URL.
+  // Ordered before the debounce below, which re-arms on a committed change and
+  // would otherwise make every such change look like the user typing.
+  $effect(() => {
+    const committed = q;
+    if (qTimer !== undefined) return;
+    queryInput = committed;
+  });
 
   // Debounce typing → one `goto ?q=` per pause on the page's own path. The
   // navigation re-runs the server load, which reseeds `games` and `q`.
-  let qTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const next = queryInput.trim();
     if (next === q) return;
     clearTimeout(qTimer);
     qTimer = setTimeout(() => {
+      qTimer = undefined;
       const href = `${page.url.pathname}${next ? `?q=${encodeURIComponent(next)}` : ''}`;
       void goto(href, { keepFocus: true, noScroll: true });
     }, 250);
-    return () => clearTimeout(qTimer);
+    return () => {
+      clearTimeout(qTimer);
+      qTimer = undefined;
+    };
   });
 
   // Appears once the set is big enough to need it, or whenever a query is
