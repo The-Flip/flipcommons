@@ -10,10 +10,20 @@ roll-up rules themselves are pinned in ``test_game_rows.py`` /
 ``test_game_facets.py``; facet caching in ``test_api_cache.py``.
 """
 
+from dataclasses import fields
+
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
+from apps.catalog.api._game_facets import GameFacetOptions
+from apps.catalog.api._game_rows import GameFilters
+from apps.catalog.api.games import (
+    GameDimensionQuerySchema,
+    GameFilterOptionsSchema,
+    GameFilterQuerySchema,
+    _filter_options_payload,
+)
 from apps.catalog.models import Title
 from apps.catalog.tests.conftest import SAMPLE_IMAGES, make_machine_model
 
@@ -119,6 +129,17 @@ class TestGamesList:
 
     def test_whitespace_q_is_no_filter(self, client, title):
         assert client.get("/api/games/?q=%20%20").json()["count"] == 1
+
+    def test_response_carries_the_query_pin(self, client, title):
+        """Every list response echoes the dimension filters it was computed
+        under as ``pin``. Detail pages fetch pages 2+ by spreading it back
+        into ``GET /api/games/``, so the paginated set can never diverge from
+        the embedded page 1. ``q`` is not a dimension and never rides along —
+        it round-trips separately through the page URL."""
+        data = client.get("/api/games/?theme=medieval&q=mad").json()
+        assert data["pin"]["theme"] == ["medieval"]
+        assert data["pin"]["manufacturer"] is None
+        assert "q" not in data["pin"]
 
     def test_q_diacritic_is_backend_specific(self, client, db):
         """Name `q` folds diacritics on Postgres only — the documented dev/prod
@@ -330,7 +351,8 @@ class TestEdgeParams:
 
     def test_unknown_edge_matches_nothing(self, client, copied):
         data = client.get("/api/games/?edge=bogus").json()
-        assert data == {"items": [], "count": 0}
+        assert data["items"] == []
+        assert data["count"] == 0
 
 
 class TestGamesFacetsPage:
@@ -402,3 +424,64 @@ class TestGamesFacetsPage:
             title=t,
         )
         assert client.get("/api/pages/games?q=Rock%20Encore").json()["query_count"] == 1
+
+
+class TestWireVocabularyCompleteness:
+    """The wire vocabulary is hand-spelled three times (``GameFilters`` →
+    ``GameDimensionQuerySchema`` → ``to_filters()``), and the public filter
+    route validates unknown-param *names* against the schema — so a param
+    declared on the schema but missed in ``to_filters()`` would pass the typo
+    guard and then narrow nothing, returning the whole catalog as a confident
+    wrong answer. These guards pin the three spellings to each other."""
+
+    def _sentinel(self, annotation: object) -> object:
+        if annotation == list[str]:
+            return ["sentinel"]
+        if annotation == (str | None) or annotation is str:
+            return "sentinel"
+        if annotation == (int | None):
+            return 3
+        raise AssertionError(f"unhandled param type {annotation!r} — extend the map")
+
+    def test_every_param_reaches_the_filter_set(self):
+        """Each wire param, set alone to a sentinel, must change at least one
+        ``GameFilters`` field; together they must reach every field. The first
+        half catches a declared-but-unwired param, the second a filter
+        dimension no wire param can express."""
+        default = GameFilters()
+        covered: set[str] = set()
+        for name, info in GameFilterQuerySchema.model_fields.items():
+            schema = GameFilterQuerySchema.model_validate(
+                {name: self._sentinel(info.annotation)}
+            )
+            f = schema.to_filters()
+            changed = {
+                fl.name
+                for fl in fields(GameFilters)
+                if getattr(f, fl.name) != getattr(default, fl.name)
+            }
+            assert changed, f"param {name!r} narrows nothing"
+            covered |= changed
+        assert covered == {fl.name for fl in fields(GameFilters)}
+
+    def test_pin_round_trips_through_the_wire(self):
+        """``from_filters`` must invert ``to_filters`` with every dimension
+        active at once — the ``pin`` a page payload carries is exactly the
+        filter set its embed ran, or pages 2+ silently paginate a different
+        set."""
+        params = {
+            name: self._sentinel(info.annotation)
+            for name, info in GameDimensionQuerySchema.model_fields.items()
+        }
+        f = GameDimensionQuerySchema.model_validate(params).to_filters()
+        assert GameDimensionQuerySchema.from_filters(f).to_filters() == f
+
+    def test_facet_payload_spellings_agree(self):
+        """The facet trio — ``GameFacetOptions`` (engine),
+        ``GameFilterOptionsSchema`` (wire) and ``_filter_options_payload``
+        (cacheable dict) — must carry the same field set."""
+        engine = {fl.name for fl in fields(GameFacetOptions)}
+        wire = set(GameFilterOptionsSchema.model_fields)
+        inner = _filter_options_payload(GameFacetOptions())["filter_options"]
+        assert isinstance(inner, dict)
+        assert engine == wire == set(inner)

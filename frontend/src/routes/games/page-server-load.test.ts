@@ -73,6 +73,27 @@ describe('/games +page.server load', () => {
     expect(result.query.edge).toEqual(['copy', 'bootleg:in']);
   });
 
+  it('honors the hidden dimensions from the URL', async () => {
+    // No sidebar control exists for these, but a URL carrying one must filter
+    // the results — otherwise the page renders unfiltered cards under a URL
+    // that claims otherwise.
+    const fetch = routedFetch(
+      new Response(JSON.stringify({ items: [], count: 0 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const result = await load(event(fetch, '?tag=classic&display_subtype=alphanumeric'));
+    if (!result) throw new Error('expected load to return page data');
+    expect(result.query.tag).toBe('classic');
+    expect(result.query.display_subtype).toBe('alphanumeric');
+    const cardCall = fetch.mock.calls.find(
+      (c) => new URL((c[0] as Request).url).pathname === '/api/games/',
+    );
+    expect((cardCall![0] as Request).url).toContain('tag=classic');
+  });
+
   it('throws instead of degrading to empty when the card fetch fails', async () => {
     // A 500 must surface as an error page, not a silent "0 games" success
     // (which could also mislead the create prompt on a query).

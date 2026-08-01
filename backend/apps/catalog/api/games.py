@@ -86,14 +86,6 @@ class GameCardSchema(Schema):
     )
 
 
-class GameListSchema(Schema):
-    """A page of game cards: ``items`` holds this page's rows; ``count`` is the
-    total number of matching cards across all pages."""
-
-    items: list[GameCardSchema]
-    count: int
-
-
 class GameDimensionQuerySchema(Schema):
     """Every filter *dimension* as query params — one vocabulary end to end
     (URL ⇄ this schema ⇄ ``GameFilters``), shared by the internal listing and
@@ -246,6 +238,49 @@ class GameDimensionQuerySchema(Schema):
             production_status=tuple(self.production_status),
             corporate_entity=self.corporate_entity,
         )
+
+    @classmethod
+    def from_filters(cls, f: GameFilters) -> GameDimensionQuerySchema:
+        """The inverse of :meth:`to_filters`, ``q`` excluded (not a dimension).
+        This is what puts a list response's ``pin`` on the wire; the round-trip
+        is pinned by ``test_pin_round_trips_through_the_wire``."""
+        return cls(
+            manufacturer=f.manufacturer,
+            person=f.person,
+            technology_generation=f.technology_generation,
+            display_type=f.display_type,
+            system=f.system,
+            franchise=f.franchise,
+            series=f.series,
+            player_count=f.player_count,
+            year_min=f.year_min,
+            year_max=f.year_max,
+            theme=list(f.themes),
+            gameplay_feature=list(f.gameplay_features),
+            reward_type=list(f.reward_types),
+            edge=list(f.edge),
+            display_subtype=f.display_subtype,
+            tag=f.tag,
+            technology_subgeneration=f.technology_subgeneration,
+            cabinet=list(f.cabinet),
+            game_format=list(f.game_format),
+            production_status=list(f.production_status),
+            corporate_entity=f.corporate_entity,
+        )
+
+
+class GameListSchema(Schema):
+    """A page of game cards: ``items`` holds this page's rows; ``count`` is the
+    total number of matching cards across all pages; ``pin`` echoes the
+    dimension filters the list was computed under (``q`` excluded), so a
+    detail-page embed's consumer fetches pages 2+ by spreading ``pin`` back
+    into ``GET /api/games/`` instead of re-deriving the filters — re-derivation
+    is how the sparse preset pages ended up paginating a different set than
+    their page 1."""
+
+    items: list[GameCardSchema]
+    count: int
+    pin: GameDimensionQuerySchema
 
 
 class GameFilterQuerySchema(GameDimensionQuerySchema):
@@ -485,6 +520,7 @@ def game_list_page(f: GameFilters, *, page: int = 1) -> GameListSchema:
             person=f.person,
         ),
         count=len(rows),
+        pin=GameDimensionQuerySchema.from_filters(f),
     )
 
 

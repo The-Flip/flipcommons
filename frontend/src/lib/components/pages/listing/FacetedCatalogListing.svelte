@@ -126,10 +126,14 @@
   let queryInput = $derived(filters.query);
   let lastSyncedSearch = canonical(seed);
 
-  // Back/forward adopt the URL as the source of truth (does NOT fire on our goto).
-  afterNavigate((nav) => {
-    if (nav.type !== 'popstate') return;
+  // Any navigation that lands on a URL our state doesn't match adopts the URL
+  // as the source of truth — back/forward, and link navigations to this same
+  // route (top-nav "Games" while filtered keeps the component instance, so
+  // `filters` would otherwise stay stale). Our own goto landings and the
+  // initial navigation compare equal and fall through.
+  afterNavigate(() => {
     const f = engine.fromParams(new URLSearchParams(page.url.search));
+    if (canonical(f) === lastSyncedSearch) return;
     filters = f;
     lastSyncedSearch = canonical(f);
   });

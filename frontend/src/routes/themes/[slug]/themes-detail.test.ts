@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
 import type { ThemeDetailPageSchema } from '$lib/api/schema';
+import { emptyPin } from '$lib/api/detail-fixtures';
 
 const MOCK_DATA = {
   name: 'Medieval',
@@ -14,6 +15,7 @@ const MOCK_DATA = {
   parents: [],
   children: [],
   games: {
+    pin: emptyPin(),
     items: [
       {
         entity_type: 'title' as const,

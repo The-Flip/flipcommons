@@ -29,6 +29,14 @@ export interface GamesQuery {
   game_format?: string[];
   production_status?: string[];
   cabinet?: string[];
+  // The hidden dimensions: no sidebar control, but a URL carrying one must
+  // filter the results — otherwise `/games?tag=x` renders unfiltered cards
+  // under a URL that claims otherwise. (A sidebar interaction rebuilds the
+  // URL without them, which stays consistent: URL and results always agree.)
+  display_subtype?: string;
+  tag?: string;
+  technology_subgeneration?: string;
+  corporate_entity?: string;
 }
 
 export function queryFromUrl(url: URL): GamesQuery {
@@ -64,5 +72,9 @@ export function queryFromUrl(url: URL): GamesQuery {
     game_format: multi('game_format'),
     production_status: multi('production_status'),
     cabinet: multi('cabinet'),
+    display_subtype: str('display_subtype'),
+    tag: str('tag'),
+    technology_subgeneration: str('technology_subgeneration'),
+    corporate_entity: str('corporate_entity'),
   };
 }

@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
 import type { SystemDetailPageSchema } from '$lib/api/schema';
+import { emptyPin } from '$lib/api/detail-fixtures';
 
 const MOCK_DATA = {
   name: 'WPC-95',
@@ -13,6 +14,7 @@ const MOCK_DATA = {
   manufacturer: { name: 'Williams', public_id: 'williams' },
   technology_subgeneration: { name: 'Integrated', public_id: 'integrated' },
   games: {
+    pin: emptyPin(),
     items: [
       {
         entity_type: 'title' as const,

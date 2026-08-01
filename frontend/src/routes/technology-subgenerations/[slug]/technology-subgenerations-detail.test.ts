@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TechnologySubgenerationDetailPageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
+import { makeGamesList } from '$lib/api/detail-fixtures';
 
 const MOCK_DATA = {
   name: 'Early SS',
@@ -11,7 +12,7 @@ const MOCK_DATA = {
   aliases: [],
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   technology_generation: { name: 'Solid State', public_id: 'solid-state' },
-  games: { items: [], count: 0 },
+  games: makeGamesList(),
 } satisfies TechnologySubgenerationDetailPageSchema;
 
 describe('technology-subgenerations detail SSR route', () => {

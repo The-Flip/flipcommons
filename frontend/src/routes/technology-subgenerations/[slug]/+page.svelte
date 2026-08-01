@@ -15,11 +15,7 @@
   </section>
 {/if}
 
-<GamesSection
-  games={profile.games}
-  q={data.q}
-  pinned={{ technology_subgeneration: profile.slug }}
-/>
+<GamesSection games={profile.games} q={data.q} />
 
 <style>
   .description {

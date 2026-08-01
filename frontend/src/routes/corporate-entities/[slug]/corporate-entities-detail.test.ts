@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
 import { MOCK_CORPORATE_ENTITY as MOCK_DATA } from './corporate-entity.fixtures';
+import { makeGamesList } from '$lib/api/detail-fixtures';
 
 describe('corporate-entities detail SSR route', () => {
   it('loads from the page endpoint', async () => {
@@ -52,7 +53,7 @@ describe('corporate-entities detail SSR route', () => {
   it('renders the empty-state message when there are no games', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: { ...MOCK_DATA, games: { items: [], count: 0 } }, q: '', jsonLd: {} },
+        data: { profile: { ...MOCK_DATA, games: makeGamesList() }, q: '', jsonLd: {} },
       },
     });
 

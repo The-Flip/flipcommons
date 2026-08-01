@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TaxonomyDetailPageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
+import { makeGamesList } from '$lib/api/detail-fixtures';
 
 const MOCK_DATA = {
   name: 'Standard Body',
@@ -10,7 +11,7 @@ const MOCK_DATA = {
   last_modified: '2024-01-01T00:00:00Z',
   aliases: [],
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  games: { items: [], count: 0 },
+  games: makeGamesList(),
 } satisfies TaxonomyDetailPageSchema;
 
 describe('cabinets detail SSR route', () => {

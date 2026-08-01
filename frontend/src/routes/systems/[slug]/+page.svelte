@@ -15,7 +15,7 @@
   </section>
 {/if}
 
-<GamesSection games={system.games} q={data.q} pinned={{ system: system.slug }} />
+<GamesSection games={system.games} q={data.q} />
 
 <style>
   .description {

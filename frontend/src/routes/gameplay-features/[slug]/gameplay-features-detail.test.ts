@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GameplayFeatureDetailPageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
+import { makeGamesList } from '$lib/api/detail-fixtures';
 
 const MOCK_DATA = {
   name: 'Multiball',
@@ -12,7 +13,7 @@ const MOCK_DATA = {
   parents: [],
   children: [],
   uploaded_media: [],
-  games: { items: [], count: 0 },
+  games: makeGamesList(),
 } satisfies GameplayFeatureDetailPageSchema;
 
 describe('gameplay-features detail SSR route', () => {

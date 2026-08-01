@@ -15,7 +15,7 @@
   </section>
 {/if}
 
-<GamesSection games={franchise.games} q={data.q} pinned={{ franchise: franchise.slug }} />
+<GamesSection games={franchise.games} q={data.q} />
 
 <style>
   .description {

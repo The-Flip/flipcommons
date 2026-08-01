@@ -1,10 +1,11 @@
 import type { CorporateEntityDetailPageSchema } from '$lib/api/schema';
+import { emptyPin } from '$lib/api/detail-fixtures';
 
 /**
  * Canonical corporate-entity page payload for SSR route tests. Typed with
  * `satisfies` so a new backend field is a compile-time error here rather than a
  * silent gap in every test that mocks the page endpoint. Tests spread-and-override
- * for their variations (e.g. `{ ...MOCK_CORPORATE_ENTITY, games: { items: [], count: 0 } }`).
+ * for their variations (e.g. `{ ...MOCK_CORPORATE_ENTITY, games: makeGamesList() }`).
  */
 export const MOCK_CORPORATE_ENTITY = {
   name: 'Williams Electronics',
@@ -18,6 +19,7 @@ export const MOCK_CORPORATE_ENTITY = {
   operating_status: 'unknown',
   aliases: [],
   games: {
+    pin: emptyPin(),
     items: [
       {
         entity_type: 'title' as const,

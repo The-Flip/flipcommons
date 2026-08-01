@@ -134,12 +134,7 @@
 
 <RichTextReferencesAccordion richText={mfr.description} state={richTextState} />
 
-<GamesSection
-  games={mfr.games}
-  q={data.q}
-  pinned={{ manufacturer: mfr.slug }}
-  showManufacturer={false}
-/>
+<GamesSection games={mfr.games} q={data.q} showManufacturer={false} />
 
 <style>
   .company-section {

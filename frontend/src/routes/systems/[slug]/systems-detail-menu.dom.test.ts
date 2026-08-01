@@ -26,6 +26,7 @@ vi.mock('$lib/components/pages/record/edit/SectionEditorHost.svelte', async () =
 
 import Layout from './+layout.svelte';
 import type { SystemDetailPageSchema } from '$lib/api/schema';
+import { makeGamesList } from '$lib/api/detail-fixtures';
 
 const SYSTEM = {
   name: 'WPC-95',
@@ -35,7 +36,7 @@ const SYSTEM = {
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   manufacturer: { name: 'Williams', public_id: 'williams' },
   technology_subgeneration: null,
-  games: { items: [], count: 0 },
+  games: makeGamesList(),
   sibling_systems: [],
 } satisfies SystemDetailPageSchema;
 

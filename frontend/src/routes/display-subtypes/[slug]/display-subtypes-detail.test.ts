@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DisplaySubtypeDetailPageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
+import { makeGamesList } from '$lib/api/detail-fixtures';
 
 const MOCK_DATA = {
   name: '128x32',
@@ -11,7 +12,7 @@ const MOCK_DATA = {
   aliases: [],
   last_modified: '2024-01-01T00:00:00Z',
   display_type: { name: 'Dot Matrix', public_id: 'dot-matrix' },
-  games: { items: [], count: 0 },
+  games: makeGamesList(),
 } satisfies DisplaySubtypeDetailPageSchema;
 
 describe('display-subtypes detail SSR route', () => {

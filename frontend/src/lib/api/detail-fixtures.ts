@@ -5,7 +5,31 @@
  * than an N-file sweep. Mirrors the `error-fixtures.ts` pattern.
  */
 
-import type { ModelDetailSchema, TitleDetailSchema } from './schema';
+import type { GameListSchema, ModelDetailSchema, TitleDetailSchema } from './schema';
+
+/**
+ * A games-list pin with no dimension set — the `pin` an unfiltered list
+ * response carries (list-typed dimensions are always present on the wire).
+ */
+export function emptyPin(): GameListSchema['pin'] {
+  return {
+    theme: [],
+    gameplay_feature: [],
+    reward_type: [],
+    edge: [],
+    cabinet: [],
+    game_format: [],
+    production_status: [],
+  };
+}
+
+/**
+ * Build a complete {@link GameListSchema} — the games embed a detail-page
+ * payload carries — overriding only the fields a given test cares about.
+ */
+export function makeGamesList(overrides: Partial<GameListSchema> = {}): GameListSchema {
+  return { items: [], count: 0, pin: emptyPin(), ...overrides };
+}
 
 /**
  * Build a complete {@link ModelDetailSchema} for tests, overriding only the
