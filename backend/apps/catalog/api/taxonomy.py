@@ -483,11 +483,12 @@ def _bulk_title_counts_for_subgenerations(
     subgen_pks: list[int],
 ) -> dict[int, int]:
     """Count titles under each subgeneration, mirroring the OR semantics
-    of the ``/api/models/?subgeneration=...`` filter: a machine counts
+    of the listing's ``technology_subgeneration`` dimension: a machine counts
     toward a subgen if its own FK references it OR its ``system``'s FK
     references it. Without the inherited branch, subgens whose machines
     carry the attribution only through ``system`` show ``0 titles`` while
-    the detail page lists many — see ``machine_models._build_model_list_qs``.
+    the detail page lists many — see the dimension's narrower in
+    ``_game_rows.MODEL_DIMENSION_SPECS``.
     """
     if not subgen_pks:
         return {}

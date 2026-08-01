@@ -22,97 +22,6 @@ from .conftest import SAMPLE_IMAGES
 
 
 class TestModelsAPI:
-    def test_list_models(self, client, machine_model):
-        resp = client.get("/api/models/")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["count"] == 1
-        assert data["items"][0]["name"] == "Medieval Madness"
-
-    def test_list_models_filter_manufacturer(
-        self, client, machine_model, another_model
-    ):
-        resp = client.get("/api/models/?manufacturer=williams")
-        data = resp.json()
-        assert data["count"] == 1
-        assert data["items"][0]["name"] == "Medieval Madness"
-
-    def test_list_models_filter_type(self, client, machine_model):
-        resp = client.get("/api/models/?type=solid-state")
-        data = resp.json()
-        assert data["count"] == 1
-
-        resp = client.get("/api/models/?type=electromechanical")
-        data = resp.json()
-        assert data["count"] == 0
-
-    def test_list_models_filter_year_range(self, client, machine_model, another_model):
-        resp = client.get("/api/models/?year_min=2000&year_max=2025")
-        data = resp.json()
-        assert data["count"] == 1
-        assert data["items"][0]["name"] == "The Mandalorian"
-
-    def test_list_models_filter_person(
-        self, client, machine_model, person, credit_roles
-    ):
-        role = CreditRole.objects.get(slug="design")
-        Credit.objects.create(model=machine_model, person=person, role=role)
-        resp = client.get("/api/models/?person=pat-lawlor")
-        data = resp.json()
-        assert data["count"] == 1
-
-    def test_list_models_filter_tag(self, client, machine_model, another_model):
-        from apps.catalog.models import MachineModelTag, Tag
-
-        widebody = Tag.objects.create(name="Widebody", slug="widebody")
-        MachineModelTag.objects.create(machinemodel=machine_model, tag=widebody)
-        data = client.get("/api/models/?tag=widebody").json()
-        assert data["count"] == 1
-        assert [item["slug"] for item in data["items"]] == [machine_model.slug]
-
-    def test_list_models_ordering(self, client, machine_model, another_model):
-        resp = client.get("/api/models/?ordering=-year")
-        data = resp.json()
-        assert data["items"][0]["name"] == "The Mandalorian"
-
-    def test_list_models_ordering_nulls_last(self, client, machine_model, db):
-        """Models with no year sort after models with a year."""
-        make_machine_model(name="Unknown Year Game", slug="unknown-year-game")
-        resp = client.get("/api/models/?ordering=-year")
-        data = resp.json()
-        names = [m["name"] for m in data["items"]]
-        assert names[-1] == "Unknown Year Game"
-
-    def test_list_models_ordering_stable(self, client, db):
-        """Models with the same year are sorted by name for stability."""
-        make_machine_model(name="Zeta", slug="zeta", year=2000)
-        make_machine_model(name="Alpha", slug="alpha", year=2000)
-        resp = client.get("/api/models/?ordering=-year")
-        data = resp.json()
-        names = [m["name"] for m in data["items"]]
-        assert names == ["Alpha", "Zeta"]
-
-    def test_list_models_excludes_variants(self, client, machine_model):
-        make_machine_model(
-            name="Medieval Madness (LE)",
-            slug="medieval-madness-le",
-            variant_of=machine_model,
-        )
-        resp = client.get("/api/models/")
-        data = resp.json()
-        assert data["count"] == 1
-        assert data["items"][0]["name"] == "Medieval Madness"
-
-    def test_list_models_thumbnail(self, client, db):
-        make_machine_model(
-            name="With Image",
-            slug="with-image",
-            extra_data={"opdb.images": SAMPLE_IMAGES},
-        )
-        resp = client.get("/api/models/")
-        data = resp.json()
-        assert data["items"][0]["thumbnail_url"] == "https://img.opdb.org/md.jpg"
-
     def test_get_model_detail(
         self, client, machine_model, person, source, credit_roles
     ):
@@ -265,24 +174,6 @@ class TestModelsAPI:
         data = resp.json()
         assert data["title"]["name"] == "Medieval Madness"
         assert data["title"]["public_id"] == title.public_id
-
-    def test_conversions_appear_in_list(self, client, db):
-        """Conversions are NOT filtered from the list endpoint (unlike variants)."""
-        from apps.catalog.models import ModelRelationship
-
-        source = make_machine_model(name="Star Trek", slug="star-trek", year=1991)
-        conversion = make_machine_model(name="Dark Rider", slug="dark-rider")
-        ModelRelationship.objects.create(
-            machine_model=conversion,
-            target_machine=source,
-            relationship_type="conversion",
-            license_status="unknown",
-        )
-        resp = client.get("/api/models/")
-        data = resp.json()
-        names = [m["name"] for m in data["items"]]
-        assert "Dark Rider" in names
-        assert "Star Trek" in names
 
     def test_get_model_404(self, client, db):
         resp = client.get("/api/pages/model/nonexistent")

@@ -89,8 +89,8 @@ class TestExportShape:
             assert hidden not in row, f"{hidden} leaked into the public export"
 
     def test_detail_grade_not_card(self, client, machine_model):
-        # The card list (ModelListItemSchema) is name/slug/manufacturer/year/
-        # thumbnail only; the export must carry the deeper fields.
+        # A card shape is name/manufacturer/year/thumbnail only; the export
+        # must carry the deeper fields.
         row = _row(client, "models", machine_model.slug)
         for deeper in ("description", "production_quantity", "opdb_id", "credits"):
             assert deeper in row
@@ -409,7 +409,7 @@ class TestExportRateLimit:
         assert second.status_code == 429  # different XFF, same bucket
 
     def test_internal_api_is_not_rate_limited(self, client, machine_model):
-        # The limiter lives in the export views only; internal routes are unmetered.
+        # The limiter lives in the public views only; internal routes are unmetered.
         # No squeeze needed — internal routes never read EXPORT_RATELIMIT_IP.
-        assert client.get("/api/models/").status_code == 200
-        assert client.get("/api/models/").status_code == 200
+        assert client.get("/api/models/recent/").status_code == 200
+        assert client.get("/api/models/recent/").status_code == 200

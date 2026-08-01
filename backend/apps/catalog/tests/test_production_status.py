@@ -94,33 +94,32 @@ class TestProductionStatusRouter:
 
 @pytest.mark.django_db
 class TestProductionStatusFacet:
-    def test_models_list_filters_by_production_status(self, client):
+    def test_public_filter_by_production_status(self, client):
         unreleased = ProductionStatus.objects.create(
             name="Unreleased", slug="unreleased"
         )
         produced = ProductionStatus.objects.create(name="Produced", slug="produced")
-        make_machine_model(name="Cancelled", production_status=unreleased)
-        make_machine_model(name="Shipped", production_status=produced)
+        cancelled = make_machine_model(
+            name="Cancelled", slug="cancelled", production_status=unreleased
+        )
+        make_machine_model(name="Shipped", slug="shipped", production_status=produced)
 
-        resp = client.get("/api/models/?production_status=unreleased")
+        url = "/api/public/filter/models/"
+        resp = client.get(f"{url}?production_status=unreleased")
         body = resp.json()
         assert body["count"] == 1
-        assert body["items"][0]["name"] == "Cancelled"
+        assert body["public_ids"] == [cancelled.slug]
 
-        assert (
-            client.get("/api/models/?production_status=produced").json()["count"] == 1
-        )
-        assert (
-            client.get("/api/models/?production_status=announced").json()["count"] == 0
-        )
+        assert client.get(f"{url}?production_status=produced").json()["count"] == 1
+        assert client.get(f"{url}?production_status=announced").json()["count"] == 0
 
-    def test_browse_includes_variants_only_with_flag(self, client):
-        """The status browse lists at variant granularity: a variant carrying a
-        status (e.g. an announced Limited Edition of a shipped Premium) is hidden
-        by the default variant-collapse but surfaces with ``include_variants``."""
+    def test_variant_status_surfaces_without_a_flag(self, client):
+        """A variant carrying its own status (an announced Limited Edition of a
+        shipped Premium) surfaces at the filter's flat Model grain — the case
+        the old list route needed an ``include_variants`` flag for."""
         announced = ProductionStatus.objects.create(name="Announced", slug="announced")
         parent = make_machine_model(name="Premium", slug="premium")
-        make_machine_model(
+        le = make_machine_model(
             name="Limited Edition",
             slug="limited-edition",
             title=parent.title,
@@ -128,17 +127,11 @@ class TestProductionStatusFacet:
             production_status=announced,
         )
 
-        # Default (collapsed): the announced variant is hidden.
-        assert (
-            client.get("/api/models/?production_status=announced").json()["count"] == 0
-        )
-
-        # include_variants surfaces it.
         body = client.get(
-            "/api/models/?production_status=announced&include_variants=true"
+            "/api/public/filter/models/?production_status=announced"
         ).json()
         assert body["count"] == 1
-        assert body["items"][0]["name"] == "Limited Edition"
+        assert body["public_ids"] == [le.slug]
 
 
 @pytest.mark.django_db

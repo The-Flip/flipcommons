@@ -376,7 +376,10 @@ class TestModelDetailApiResponse:
         assert data["image_attribution"]["license_slug"] == "cc-by-sa-4-0"
 
 
-class TestModelListApiResponse:
+class TestGamesListApiResponse:
+    """The games listing card resolves its thumbnail through the same
+    uploaded-first pipeline as the detail page."""
+
     @pytest.fixture
     def client(self, user):
         from django.test import Client
@@ -388,12 +391,11 @@ class TestModelListApiResponse:
     def test_list_uses_uploaded_media(self, client, machine_model, asset, ct_mm):
         _attach(ct_mm, machine_model, asset, category="backglass")
 
-        resp = client.get("/api/models/")
+        resp = client.get("/api/games/")
 
         assert resp.status_code == 200
-        data = resp.json()
-        items = data["items"]
-        match = [i for i in items if i["slug"] == machine_model.slug]
+        items = resp.json()["items"]
+        match = [i for i in items if i["name"] == machine_model.name]
         assert len(match) == 1
         assert match[0]["thumbnail_url"] == _expected_thumb(asset)
 
@@ -401,11 +403,10 @@ class TestModelListApiResponse:
         machine_model.extra_data = OPDB_EXTRA_DATA
         machine_model.save(update_fields=["extra_data"])
 
-        resp = client.get("/api/models/")
+        resp = client.get("/api/games/")
 
         assert resp.status_code == 200
-        data = resp.json()
-        items = data["items"]
-        match = [i for i in items if i["slug"] == machine_model.slug]
+        items = resp.json()["items"]
+        match = [i for i in items if i["name"] == machine_model.name]
         assert len(match) == 1
         assert match[0]["thumbnail_url"] == "https://img.opdb.org/m.jpg"
