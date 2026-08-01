@@ -81,7 +81,7 @@ class GameplayFeatureDetailSchema(EntityDetailSchema, OwnMediaSchema):
 
 class GameplayFeatureDetailPageSchema(GameplayFeatureDetailSchema):
     """The detail-page payload: the record plus page 1 of its games — the
-    listing pinned to ``feature=<slug>`` (descendants included, rolled up)."""
+    listing pinned to ``gameplay_feature=<slug>`` (descendants included, rolled up)."""
 
     games: GameListSchema
 
