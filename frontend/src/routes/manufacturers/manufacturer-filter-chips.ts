@@ -1,4 +1,5 @@
 import type { MfrFilterState } from '$lib/filters/manufacturers';
+import { fieldPatch } from '$lib/filters/params';
 import type { FacetOptionSchema, ManufacturerFilterOptionsSchema } from '$lib/api/schema';
 import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
 
@@ -7,14 +8,15 @@ import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveF
  *
  * `options` are the streamed facet lists, used only to resolve public_id → display
  * name — `undefined` while the stream is pending or failed, when labels degrade to
- * raw slugs. The chips' `remove` closures mutate the passed `filters` object (the
- * page's bindable `$state`), so clicking a chip clears that filter reactively.
- * Pure and component-free so the chip set can be unit-tested directly. Mirrors
- * `games-filter-chips`; all manufacturer facets are single-select plus a year range.
+ * raw slugs. The chips' `remove` closures request the change through `apply`, one
+ * patch per chip. Pure and component-free so the chip set can be unit-tested
+ * directly. Mirrors `games-filter-chips`; all manufacturer facets are
+ * single-select plus a year range.
  */
 export function manufacturerFilterChips(
   filters: MfrFilterState,
   options: ManufacturerFilterOptionsSchema | undefined,
+  apply: (patch: Partial<MfrFilterState>) => void,
 ): FilterChipSpec[] {
   const chips: FilterChipSpec[] = [];
   const nameOf = (opts: FacetOptionSchema[] | undefined, id: string): string =>
@@ -29,7 +31,7 @@ export function manufacturerFilterChips(
     chips.push({
       key: `${field}:${value}`,
       label: nameOf(opts, value),
-      remove: () => (filters[field] = null),
+      remove: () => apply(fieldPatch(field, null)),
     });
   };
 
@@ -43,10 +45,7 @@ export function manufacturerFilterChips(
     chips.push({
       key: 'year',
       label: `Year: ${lo}–${hi}`,
-      remove: () => {
-        filters.year_min = null;
-        filters.year_max = null;
-      },
+      remove: () => apply({ year_min: null, year_max: null }),
     });
   }
 

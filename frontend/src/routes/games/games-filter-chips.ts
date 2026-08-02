@@ -6,6 +6,7 @@ import {
   type FilterState,
   type SparseField,
 } from '$lib/filters/games';
+import { fieldPatch } from '$lib/filters/params';
 import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
 import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
 import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
@@ -17,11 +18,11 @@ import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
  * name — `undefined` while the stream is pending or failed, when labels
  * degrade to raw slugs (the chip row must render regardless: it is the only
  * removal affordance for the chip-only dimensions). The chips' `remove`
- * closures mutate the passed `filters` object (the page's bindable `$state`),
- * so clicking a chip clears that filter reactively.
+ * closures request the change through `apply`, one patch per chip — clicking
+ * a chip clears exactly that filter.
  *
  * Pure and component-free so the chip set — labels, ordering, and what each
- * `remove` clears — can be unit-tested directly. Four shapes: single-select
+ * `remove` patches — can be unit-tested directly. Four shapes: single-select
  * fields (one chip, cleared to null), multi-select fields (one chip per value),
  * the bespoke scalar filters (player count, year range), and the chip-only
  * dimensions (no sidebar control; dimension-prefixed raw-slug labels).
@@ -29,6 +30,7 @@ import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
 export function gameFilterChips(
   filters: FilterState,
   options: GameFilterOptionsSchema | undefined,
+  apply: (patch: Partial<FilterState>) => void,
 ): FilterChipSpec[] {
   const chips: FilterChipSpec[] = [];
   const nameOf = (opts: FacetOptionSchema[] | undefined, slug: string): string =>
@@ -50,7 +52,7 @@ export function gameFilterChips(
     chips.push({
       key: `${field}:${value}`,
       label: nameOf(opts, value),
-      remove: () => (filters[field] = null),
+      remove: () => apply(fieldPatch(field, null)),
     });
   };
 
@@ -63,7 +65,13 @@ export function gameFilterChips(
       chips.push({
         key: `${field}:${slug}`,
         label: nameOf(opts, slug),
-        remove: () => (filters[field] = filters[field].filter((s) => s !== slug)),
+        remove: () =>
+          apply(
+            fieldPatch(
+              field,
+              filters[field].filter((s) => s !== slug),
+            ),
+          ),
       });
     }
   };
@@ -85,7 +93,7 @@ export function gameFilterChips(
       chips.push({
         key: `${field}:${selection}`,
         label: labelOf(selection),
-        remove: () => (filters[field] = []),
+        remove: () => apply(fieldPatch(field, [])),
       });
       return;
     }
@@ -93,7 +101,13 @@ export function gameFilterChips(
       chips.push({
         key: `${field}:${v}`,
         label: labelOf(v),
-        remove: () => (filters[field] = filters[field].filter((s) => s !== v)),
+        remove: () =>
+          apply(
+            fieldPatch(
+              field,
+              filters[field].filter((s) => s !== v),
+            ),
+          ),
       });
     }
   };
@@ -108,7 +122,7 @@ export function gameFilterChips(
     chips.push({
       key: `${field}:${value}`,
       label: `${dimensionLabel}: ${value}`,
-      remove: () => (filters[field] = null),
+      remove: () => apply(fieldPatch(field, null)),
     });
   };
 
@@ -128,7 +142,7 @@ export function gameFilterChips(
     chips.push({
       key: `edge:${value}`,
       label: edgeFilterLabel(value),
-      remove: () => (filters.edge = filters.edge.filter((s) => s !== value)),
+      remove: () => apply({ edge: filters.edge.filter((s) => s !== value) }),
     });
   }
   single(filters.system, 'system', options?.system);
@@ -139,7 +153,7 @@ export function gameFilterChips(
     chips.push({
       key: `player_count:${filters.player_count}`,
       label: `${filters.player_count >= 6 ? '6+' : filters.player_count} players`,
-      remove: () => (filters.player_count = null),
+      remove: () => apply({ player_count: null }),
     });
   }
   if (filters.year_min != null || filters.year_max != null) {
@@ -148,10 +162,7 @@ export function gameFilterChips(
     chips.push({
       key: 'year',
       label: `Year: ${lo}–${hi}`,
-      remove: () => {
-        filters.year_min = null;
-        filters.year_max = null;
-      },
+      remove: () => apply({ year_min: null, year_max: null }),
     });
   }
 

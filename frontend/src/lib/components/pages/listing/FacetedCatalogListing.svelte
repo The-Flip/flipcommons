@@ -1,6 +1,6 @@
 <script lang="ts" generics="F extends { q: string }, O, T extends ListingJsonLdItem">
   import type { Component, Snippet } from 'svelte';
-  import { afterNavigate, goto, invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
   import ActiveFilterChips, {
@@ -21,19 +21,20 @@
   import { decideCreatePrompt } from '$lib/create-prompt';
   import type { FilterCodec } from '$lib/filters/params';
   import { listingPath } from '$lib/entities/listing-path';
+  import { searchDraft } from '$lib/search-draft.svelte';
   import { streamed } from '$lib/streamed.svelte';
   import { resolveHref } from '$lib/utils';
 
   /**
    * Shared shell for the faceted catalog listing pages (`/games`,
    * `/manufacturers`). The faceted superset of `CatalogListing`/`PaginatedListPage`:
-   * it owns the URL⇄filter-state loop (seed from the request URL, popstate resync,
-   * debounced search, `goto` on any filter change), the streamed-facet sidebar
-   * wiring + error/retry, the active chips, the count line, the `{#key}`-remounted
-   * card-grid loader and the create-prompt. Each consuming page supplies only its
-   * per-entity parts: the URL⇄state `engine`, the bindable `Sidebar`, the `chips`
-   * builder, the `fetchPage` closure (path literal baked in, so `T` stays typed)
-   * and the card `children` snippet.
+   * it owns the filter state (derived from the URL, patched via `goto` intents),
+   * the debounced search draft, the streamed-facet sidebar wiring + error/retry,
+   * the active chips, the count line, the `{#key}`-remounted card-grid loader and
+   * the create-prompt. Each consuming page supplies only its per-entity parts:
+   * the URL⇄state `engine`, the `Sidebar`, the `chips` builder, the `fetchPage`
+   * closure (path literal baked in, so `T` stays typed) and the card `children`
+   * snippet.
    *
    * Catalog-coupled by design: it resolves `catalogKey` through `ENTITY_META`
    * rather than taking title/label props.
@@ -54,20 +55,26 @@
     catalogKey: CatalogEntityKey;
     /** The entity's filter codec: URL⇄filter-state serialization for its filter shape `F`. */
     engine: FilterCodec<F>;
-    /** The entity's filter sidebar — rendered with `bind:filters`, so its `filters` prop must be `$bindable()`. */
+    /** The entity's filter sidebar — reads `filters`, requests changes via `onchange`. */
     Sidebar: Component<{
       filterOptions: O | undefined;
       disabled?: boolean;
       busy?: boolean;
       filters: F;
+      onchange: (patch: Partial<F>) => void;
     }>;
     /**
      * Builds the active-filter chips from the live filters + the resolved
      * server options — called with `undefined` options while the facet stream
      * is pending or failed, so the chip row (the only removal affordance for
-     * chip-only dimensions) never depends on the facet payload.
+     * chip-only dimensions) never depends on the facet payload. Each chip's
+     * `remove` requests the change through `apply`.
      */
-    chips: (filters: F, options: O | undefined) => FilterChipSpec[];
+    chips: (
+      filters: F,
+      options: O | undefined,
+      apply: (patch: Partial<F>) => void,
+    ) => FilterChipSpec[];
     /** Streamed facet option lists with live counts; resolves to `undefined` on error (the load `.catch`es). */
     filterOptions: Promise<O | undefined>;
     /** Streamed query-only match count (ignores facets); drives the create prompt. */
@@ -106,62 +113,52 @@
   let gridKey = $derived(JSON.stringify(query));
 
   // ---------------------------------------------------------------------
-  // Filter state lives in the URL. `filters` is the authoritative reactive copy
-  // bound by the sidebar; it's mirrored to the URL via `goto`, which re-runs
-  // +page.server.ts (cards awaited, facets re-streamed). A filter change is a
-  // plain client-side navigation — no client facet engine.
+  // Filter state lives in the URL and is derived from it — there is no
+  // writable copy to fall out of sync, so back/forward, link navigations and
+  // our own goto landings are all the same event: the URL changed. While one
+  // of our own filter navigations is in flight, `pending` holds its target so
+  // controls render — and further intents compose on — the requested state
+  // rather than the still-committed URL. `$state.raw` because settlement
+  // matches intents by object identity.
   // ---------------------------------------------------------------------
-  // Seed from the request URL so a filtered URL renders the search box and
-  // selected filters in the SSR HTML (page.url is the real URL on the server).
-  // `engine` is a static per-page prop, so reading it once at construction is intended.
-  // svelte-ignore state_referenced_locally
-  const seed = engine.parse(new URLSearchParams(page.url.search));
-  let filters = $state<F>(seed);
-  // Debounced into `filters.q` so typing doesn't fire a server navigation
-  // per keystroke, and mirrors it back when it changes from outside (Clear all,
-  // popstate, the seed). Mirroring is safe only because that commit is local
-  // state landing in the same tick — a box whose commit round-trips through the
-  // URL must use `searchDraft`, or a landing rewinds the box mid-word.
-  let queryInput = $derived(filters.q);
-  // svelte-ignore state_referenced_locally
-  let lastSyncedSearch = engine.canonical(seed);
+  let pending = $state.raw<{ href: string; search: string } | null>(null);
+  let filters = $derived(
+    engine.parse(pending ? new URLSearchParams(pending.search) : page.url.searchParams),
+  );
 
-  // Any navigation that lands on a URL our state doesn't match adopts the URL
-  // as the source of truth — back/forward, and link navigations to this same
-  // route (top-nav "Games" while filtered keeps the component instance, so
-  // `filters` would otherwise stay stale). Our own goto landings and the
-  // initial navigation compare equal and fall through.
-  afterNavigate(() => {
-    const f = engine.parse(new URLSearchParams(page.url.search));
-    if (engine.canonical(f) === lastSyncedSearch) return;
-    filters = f;
-    lastSyncedSearch = engine.canonical(f);
-  });
-
-  // Debounce typing → committed query (one server navigation per pause).
-  let qTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    const q = queryInput;
-    if (q === filters.q) return;
-    clearTimeout(qTimer);
-    qTimer = setTimeout(() => (filters.q = q), 250);
-    return () => clearTimeout(qTimer);
-  });
-
-  // filters → URL navigation. Skipped when the URL already matches (the initial
-  // seed, a popstate resync, or the landing of our own goto).
-  $effect(() => {
-    const search = engine.canonical(filters);
-    if (search === lastSyncedSearch) return;
-    lastSyncedSearch = search;
-    void goto(`${resolveHref(navPath)}${search ? `?${search}` : ''}`, {
-      keepFocus: true,
-      noScroll: true,
+  /**
+   * Apply a filter intent: compose the patch on the rendered state and
+   * navigate to the result. The landing updates `page.url`, which is what
+   * re-derives `filters`; a no-op patch doesn't navigate. `pending` clears
+   * when the `goto` settles — SvelteKit settles it on landing, error and
+   * supersession alike — guarded by identity so an earlier intent's
+   * settlement never clears a newer intent's pending. A navigation that
+   * settles without landing (blocked, or aborted by an invalidation) snaps
+   * the rendered state back to the URL's, which is also the honest outcome.
+   */
+  function apply(patch: Partial<F>) {
+    const next = { ...filters, ...patch };
+    const search = engine.canonical(next);
+    if (search === engine.canonical(filters)) return;
+    const intent = { href: `${resolveHref(navPath)}${search ? `?${search}` : ''}`, search };
+    pending = intent;
+    void goto(intent.href, { keepFocus: true, noScroll: true }).finally(() => {
+      if (pending === intent) pending = null;
     });
-  });
+  }
+
+  // The search box holds a draft ahead of the committed query; committing is
+  // a filter intent like any other, round-tripping through the URL. The
+  // committed value is read from the pending-aware `filters`, so our own
+  // commit changes it in the same tick (the landing is a no-op for the box)
+  // and a stale landing while a newer intent is pending can't rewind it.
+  const queryDraft = searchDraft(
+    () => filters.q,
+    (q) => apply(Object.assign({}, filters, { q })),
+  );
 
   // The "create?" prompt keys on the committed query (`query.q`, which the
-  // streamed `query_count` was computed for) — not the mid-debounce `queryInput`.
+  // streamed `query_count` was computed for) — not the mid-debounce draft.
   let createHref = $derived(
     `${resolveHref(`${createBasePath}/new`)}?name=${encodeURIComponent((query.q ?? '').trim())}`,
   );
@@ -187,7 +184,10 @@
 <div class="faceted-page">
   <h1>{listingCopy.heading}</h1>
 
-  <SearchBox bind:value={queryInput} placeholder={`Search ${listingCopy.itemLabelPlural}...`} />
+  <SearchBox
+    bind:value={queryDraft.value}
+    placeholder={`Search ${listingCopy.itemLabelPlural}...`}
+  />
 
   <div class="layout">
     <FilterDrawer label={`Filter ${listingCopy.itemLabelPlural}`}>
@@ -204,12 +204,13 @@
         filterOptions={facets.value}
         disabled={facets.value === undefined}
         busy={facets.status === 'loading'}
-        bind:filters
+        {filters}
+        onchange={apply}
       />
     </FilterDrawer>
 
     <main class="results">
-      <ActiveFilterChips chips={chips(filters, facets.value)} />
+      <ActiveFilterChips chips={chips(filters, facets.value, apply)} />
 
       <p class="count">
         {initial.count.toLocaleString()}
