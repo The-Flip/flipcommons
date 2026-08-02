@@ -21,7 +21,7 @@ export function manufacturerFilterChips(
 
   const single = (
     value: string | null,
-    field: 'location' | 'person' | 'techGeneration',
+    field: 'location' | 'person' | 'technology_generation',
     opts: FacetOptionSchema[],
   ) => {
     if (!value) return;
@@ -34,17 +34,17 @@ export function manufacturerFilterChips(
 
   single(filters.location, 'location', options.location);
   single(filters.person, 'person', options.person);
-  single(filters.techGeneration, 'techGeneration', options.technology_generation);
+  single(filters.technology_generation, 'technology_generation', options.technology_generation);
 
-  if (filters.yearMin != null || filters.yearMax != null) {
-    const lo = filters.yearMin != null ? String(filters.yearMin) : '';
-    const hi = filters.yearMax != null ? String(filters.yearMax) : '';
+  if (filters.year_min != null || filters.year_max != null) {
+    const lo = filters.year_min != null ? String(filters.year_min) : '';
+    const hi = filters.year_max != null ? String(filters.year_max) : '';
     chips.push({
       key: 'year',
       label: `Year: ${lo}–${hi}`,
       remove: () => {
-        filters.yearMin = null;
-        filters.yearMax = null;
+        filters.year_min = null;
+        filters.year_max = null;
       },
     });
   }

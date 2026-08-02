@@ -36,12 +36,14 @@ from ..models import Credit, MachineModel, Title
 from ._game_facets import GameFacetOptions, PlayerCountOption, game_facet_counts
 from ._game_rows import (
     _SORT_YEAR_GUARD,
+    MODEL_DIMENSION_SPECS,
     GameFilters,
     GameRow,
+    ModelDimension,
     game_rows_merged,
 )
 from ._search_sections import description_match_q
-from ._typing import FacetOptionDict
+from ._typing import FacetOptionDict, SparseFacetDict
 from .images import extract_image_urls
 from .schemas import EntityRef, FacetOptionSchema
 
@@ -304,6 +306,17 @@ class PlayerCountOptionSchema(Schema):
     count: int
 
 
+class SparseFacetSchema(Schema):
+    """A sparse dimension's facet payload: the real-vocabulary option list —
+    never an ``unclassified`` row; the default value's count folds in the
+    nulls — plus the ``default_slug`` a null field reads as. The frontend's
+    preset-widening and selection display key on ``default_slug``; the payload
+    is their only source for it."""
+
+    options: list[FacetOptionSchema] = []
+    default_slug: str
+
+
 class GameFilterOptionsSchema(Schema):
     manufacturer: list[FacetOptionSchema] = []
     person: list[FacetOptionSchema] = []
@@ -314,11 +327,9 @@ class GameFilterOptionsSchema(Schema):
     # Edge options' public_id/name are both the wire value (`copy`, `copy:in`);
     # reader-facing labels are the frontend's relationship vocabulary.
     edge: list[FacetOptionSchema] = []
-    # The sparse dimensions: real vocabulary values only — never an
-    # `unclassified` row. The default value's count folds in the nulls.
-    cabinet: list[FacetOptionSchema] = []
-    game_format: list[FacetOptionSchema] = []
-    production_status: list[FacetOptionSchema] = []
+    cabinet: SparseFacetSchema
+    game_format: SparseFacetSchema
+    production_status: SparseFacetSchema
     theme: list[FacetOptionSchema] = []
     gameplay_feature: list[FacetOptionSchema] = []
     franchise: list[FacetOptionSchema] = []
@@ -572,6 +583,19 @@ def _facet_option_dicts(options: list[FacetOption]) -> list[FacetOptionDict]:
     ]
 
 
+def _sparse_facet_dict(
+    key: ModelDimension, options: list[FacetOption]
+) -> SparseFacetDict:
+    """A sparse dimension's payload entry: its options nested with the
+    registry's ``default_slug``."""
+    spec = MODEL_DIMENSION_SPECS[key]
+    assert spec.default_slug is not None  # paired at import time
+    return {
+        "options": _facet_option_dicts(options),
+        "default_slug": spec.default_slug,
+    }
+
+
 def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
     """``GameFacetOptions`` → the JSON-able dict the page endpoint returns (and
     caches). Plain dicts (not Schema instances) so the cache's ``json.dumps``
@@ -587,9 +611,11 @@ def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
             "system": _facet_option_dicts(opts.system),
             "reward_type": _facet_option_dicts(opts.reward_type),
             "edge": _facet_option_dicts(opts.edge),
-            "cabinet": _facet_option_dicts(opts.cabinet),
-            "game_format": _facet_option_dicts(opts.game_format),
-            "production_status": _facet_option_dicts(opts.production_status),
+            "cabinet": _sparse_facet_dict("cabinet", opts.cabinet),
+            "game_format": _sparse_facet_dict("game_format", opts.game_format),
+            "production_status": _sparse_facet_dict(
+                "production_status", opts.production_status
+            ),
             "theme": _facet_option_dicts(opts.theme),
             "gameplay_feature": _facet_option_dicts(opts.gameplay_feature),
             "franchise": _facet_option_dicts(opts.franchise),

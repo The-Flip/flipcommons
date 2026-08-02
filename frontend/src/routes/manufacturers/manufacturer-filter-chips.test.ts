@@ -43,15 +43,15 @@ describe('manufacturerFilterChips', () => {
   });
 
   it('builds one year-range chip and clears both bounds on remove', () => {
-    const filters = { ...emptyMfrFilterState(), yearMin: 1990, yearMax: 2000 };
+    const filters = { ...emptyMfrFilterState(), year_min: 1990, year_max: 2000 };
     const chips = manufacturerFilterChips(filters, options());
 
     expect(chips).toHaveLength(1);
     expect(chips[0]).toMatchObject({ key: 'year', label: 'Year: 1990–2000' });
 
     chips[0].remove();
-    expect(filters.yearMin).toBeNull();
-    expect(filters.yearMax).toBeNull();
+    expect(filters.year_min).toBeNull();
+    expect(filters.year_max).toBeNull();
   });
 
   it('keeps a stable order across mixed dimensions', () => {
@@ -59,8 +59,8 @@ describe('manufacturerFilterChips', () => {
       ...emptyMfrFilterState(),
       location: 'usa',
       person: 'pat-lawlor',
-      techGeneration: 'solid-state',
-      yearMin: 1990,
+      technology_generation: 'solid-state',
+      year_min: 1990,
     };
     const chips = manufacturerFilterChips(
       filters,
@@ -73,7 +73,7 @@ describe('manufacturerFilterChips', () => {
     expect(chips.map((c) => c.key)).toEqual([
       'location:usa',
       'person:pat-lawlor',
-      'techGeneration:solid-state',
+      'technology_generation:solid-state',
       'year',
     ]);
   });

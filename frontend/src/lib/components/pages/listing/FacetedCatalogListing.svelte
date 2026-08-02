@@ -1,4 +1,4 @@
-<script lang="ts" generics="F extends { query: string }, O, T extends ListingJsonLdItem">
+<script lang="ts" generics="F extends { q: string }, O, T extends ListingJsonLdItem">
   import type { Component, Snippet } from 'svelte';
   import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
@@ -112,12 +112,12 @@
   // svelte-ignore state_referenced_locally
   const seed = engine.parse(new URLSearchParams(page.url.search));
   let filters = $state<F>(seed);
-  // Debounced into `filters.query` so typing doesn't fire a server navigation
+  // Debounced into `filters.q` so typing doesn't fire a server navigation
   // per keystroke, and mirrors it back when it changes from outside (Clear all,
   // popstate, the seed). Mirroring is safe only because that commit is local
   // state landing in the same tick — a box whose commit round-trips through the
   // URL must use `searchDraft`, or a landing rewinds the box mid-word.
-  let queryInput = $derived(filters.query);
+  let queryInput = $derived(filters.q);
   // svelte-ignore state_referenced_locally
   let lastSyncedSearch = engine.canonical(seed);
 
@@ -137,9 +137,9 @@
   let qTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const q = queryInput;
-    if (q === filters.query) return;
+    if (q === filters.q) return;
     clearTimeout(qTimer);
-    qTimer = setTimeout(() => (filters.query = q), 250);
+    qTimer = setTimeout(() => (filters.q = q), 250);
     return () => clearTimeout(qTimer);
   });
 

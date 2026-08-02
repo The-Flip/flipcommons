@@ -57,14 +57,19 @@
       : [],
   );
   // The sparse dimensions: single-select controls over multi-value state,
-  // reading through sparseSelection and writing through presetValues. A lone
-  // `unclassified` selection needs its option appended client-side — it is
-  // never a payload option, and the input resolves its label from `options`.
-  let gameFormatSelection = $derived(sparseSelection('gameFormats', filters.gameFormats));
-  let productionStatusSelection = $derived(
-    sparseSelection('productionStatuses', filters.productionStatuses),
+  // reading through sparseSelection and writing through presetValues, with the
+  // default slug taken from the facet payload. A lone `unclassified` selection
+  // needs its option appended client-side — it is never a payload option, and
+  // the input resolves its label from `options`.
+  let gameFormatSelection = $derived(
+    sparseSelection(filterOptions?.game_format.default_slug, filters.game_format),
   );
-  let cabinetSelection = $derived(sparseSelection('cabinets', filters.cabinets));
+  let productionStatusSelection = $derived(
+    sparseSelection(filterOptions?.production_status.default_slug, filters.production_status),
+  );
+  let cabinetSelection = $derived(
+    sparseSelection(filterOptions?.cabinet.default_slug, filters.cabinet),
+  );
 
   function sparseOptions(
     opts: FacetOptionSchema[] | undefined,
@@ -77,14 +82,16 @@
     return options;
   }
 
-  let gameFormatOptions = $derived(sparseOptions(filterOptions?.game_format, gameFormatSelection));
-  let productionStatusOptions = $derived(
-    sparseOptions(filterOptions?.production_status, productionStatusSelection),
+  let gameFormatOptions = $derived(
+    sparseOptions(filterOptions?.game_format.options, gameFormatSelection),
   );
-  let cabinetOptions = $derived(sparseOptions(filterOptions?.cabinet, cabinetSelection));
+  let productionStatusOptions = $derived(
+    sparseOptions(filterOptions?.production_status.options, productionStatusSelection),
+  );
+  let cabinetOptions = $derived(sparseOptions(filterOptions?.cabinet.options, cabinetSelection));
 
   function setSparse(field: SparseField, value: string | null) {
-    filters[field] = value == null ? [] : presetValues(field, value);
+    filters[field] = value == null ? [] : presetValues(filterOptions?.[field].default_slug, value);
   }
 
   let techGenOptions = $derived(
@@ -96,7 +103,7 @@
   let seriesOptions = $derived(filterOptions ? toOptions(filterOptions.series) : []);
 
   // Player count: server returns {value, count} buckets; ChipGroup wants string
-  // values, and `filters.playerCount` is number|null. The "6+" bucket renders
+  // values, and `filters.player_count` is number|null. The "6+" bucket renders
   // under value 6. Guarded for the undefined-options window like the others —
   // this builds its own buckets (not via `toOptions`), so it needs its own guard.
   let playerCountChipOptions = $derived(
@@ -108,10 +115,12 @@
         }))
       : [],
   );
-  let playerCountValue = $derived(filters.playerCount != null ? String(filters.playerCount) : null);
+  let playerCountValue = $derived(
+    filters.player_count != null ? String(filters.player_count) : null,
+  );
 
   function setPlayerCount(value: string | null) {
-    filters.playerCount = value ? Number(value) : null;
+    filters.player_count = value ? Number(value) : null;
   }
 
   let anyActive = $derived(hasActiveFilters(filters));
@@ -131,7 +140,7 @@
 
   <div class="filter-section">
     <span class="filter-label">Year</span>
-    <YearRangeInput bind:min={filters.yearMin} bind:max={filters.yearMax} {disabled} />
+    <YearRangeInput bind:min={filters.year_min} bind:max={filters.year_max} {disabled} />
   </div>
 
   <div class="filter-section">
@@ -163,7 +172,7 @@
       compact
       label="Theme"
       options={themeOptions}
-      bind:selected={filters.themes}
+      bind:selected={filters.theme}
       multi
       {disabled}
       placeholder="Search themes..."
@@ -176,7 +185,7 @@
       compact
       label="Feature"
       options={featureOptions}
-      bind:selected={filters.features}
+      bind:selected={filters.gameplay_feature}
       multi
       {disabled}
       placeholder="Search features..."
@@ -189,7 +198,7 @@
       compact
       label="Reward Type"
       options={rewardTypeOptions}
-      bind:selected={filters.rewardTypes}
+      bind:selected={filters.reward_type}
       multi
       {disabled}
       placeholder="Search reward types..."
@@ -202,7 +211,7 @@
       compact
       label="Relationship"
       options={edgeOptions}
-      bind:selected={filters.edges}
+      bind:selected={filters.edge}
       multi
       {disabled}
       placeholder="Search relationships..."
@@ -215,7 +224,7 @@
       compact
       label="Game format"
       options={gameFormatOptions}
-      bind:selected={() => gameFormatSelection, (v) => setSparse('gameFormats', v)}
+      bind:selected={() => gameFormatSelection, (v) => setSparse('game_format', v)}
       {disabled}
       placeholder="Search game formats..."
       emptyMessage="No game formats match your other filters"
@@ -227,7 +236,7 @@
       compact
       label="Production status"
       options={productionStatusOptions}
-      bind:selected={() => productionStatusSelection, (v) => setSparse('productionStatuses', v)}
+      bind:selected={() => productionStatusSelection, (v) => setSparse('production_status', v)}
       {disabled}
       placeholder="Search production statuses..."
       emptyMessage="No production statuses match your other filters"
@@ -239,7 +248,7 @@
       compact
       label="Cabinet"
       options={cabinetOptions}
-      bind:selected={() => cabinetSelection, (v) => setSparse('cabinets', v)}
+      bind:selected={() => cabinetSelection, (v) => setSparse('cabinet', v)}
       {disabled}
       placeholder="Search cabinets..."
       emptyMessage="No cabinets match your other filters"
@@ -250,7 +259,7 @@
     <ChipGroup
       label="Tech generation"
       options={techGenOptions}
-      bind:selected={filters.techGeneration}
+      bind:selected={filters.technology_generation}
       {disabled}
     />
   </div>
@@ -259,7 +268,7 @@
     <ChipGroup
       label="Display type"
       options={displayTypeOptions}
-      bind:selected={filters.displayType}
+      bind:selected={filters.display_type}
       {disabled}
     />
   </div>

@@ -16,12 +16,12 @@ const { parse, serialize, canonical } = mfrFilterCodec;
  * the field gets a value here; the emptiness guard keeps the value meaningful.
  */
 const FULL_STATE: MfrFilterState = {
-  query: 'test',
+  q: 'test',
   location: 'usa',
-  yearMin: 1990,
-  yearMax: 2000,
+  year_min: 1990,
+  year_max: 2000,
   person: 'pat-lawlor',
-  techGeneration: 'solid-state',
+  technology_generation: 'solid-state',
 };
 
 // ---------------------------------------------------------------------------
@@ -31,17 +31,17 @@ const FULL_STATE: MfrFilterState = {
 describe('hasActiveMfrFilters', () => {
   it('is false for the empty state and for a query-only state', () => {
     expect(hasActiveMfrFilters(emptyMfrFilterState())).toBe(false);
-    // `query` is deliberately excluded — the search box has its own clear control.
-    expect(hasActiveMfrFilters({ ...emptyMfrFilterState(), query: 'williams' })).toBe(false);
+    // `q` is deliberately excluded — the search box has its own clear control.
+    expect(hasActiveMfrFilters({ ...emptyMfrFilterState(), q: 'williams' })).toBe(false);
   });
 
   it('is true when any structured dimension is set', () => {
     expect(hasActiveMfrFilters({ ...emptyMfrFilterState(), location: 'usa' })).toBe(true);
-    expect(hasActiveMfrFilters({ ...emptyMfrFilterState(), yearMin: 1990 })).toBe(true);
+    expect(hasActiveMfrFilters({ ...emptyMfrFilterState(), year_min: 1990 })).toBe(true);
     expect(hasActiveMfrFilters({ ...emptyMfrFilterState(), person: 'pat-lawlor' })).toBe(true);
-    expect(hasActiveMfrFilters({ ...emptyMfrFilterState(), techGeneration: 'solid-state' })).toBe(
-      true,
-    );
+    expect(
+      hasActiveMfrFilters({ ...emptyMfrFilterState(), technology_generation: 'solid-state' }),
+    ).toBe(true);
   });
 });
 
@@ -65,8 +65,8 @@ describe('mfrFilterCodec', () => {
     const sp = serialize({
       ...emptyMfrFilterState(),
       location: 'usa',
-      yearMin: 1990,
-      techGeneration: 'solid-state',
+      year_min: 1990,
+      technology_generation: 'solid-state',
     });
     expect(sp.get('location')).toBe('usa');
     expect(sp.get('year_min')).toBe('1990');
@@ -80,13 +80,13 @@ describe('mfrFilterCodec', () => {
   it('reads partial params', () => {
     const f = parse(new URLSearchParams('location=usa&technology_generation=solid-state'));
     expect(f.location).toBe('usa');
-    expect(f.techGeneration).toBe('solid-state');
+    expect(f.technology_generation).toBe('solid-state');
     expect(f.person).toBeNull();
   });
 
   it('coerces a non-finite numeric param to null (no NaN seeding)', () => {
     const f = parse(new URLSearchParams('year_min=abc'));
-    expect(f.yearMin).toBeNull();
+    expect(f.year_min).toBeNull();
   });
 
   it('canonical is stable: equal states serialize to equal strings', () => {
