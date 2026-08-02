@@ -22,6 +22,15 @@ class FacetOptionDict(TypedDict):
     count: int
 
 
+class SparseFacetDict(TypedDict):
+    """The JSON-serializable twin of a sparse dimension's facet payload —
+    ``games.SparseFacetSchema`` as a plain dict (same rationale as
+    :class:`FacetOptionDict`)."""
+
+    options: list[FacetOptionDict]
+    default_slug: str
+
+
 class HasModelCount(Protocol):
     model_count: int
 

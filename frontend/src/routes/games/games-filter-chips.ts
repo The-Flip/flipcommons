@@ -32,8 +32,8 @@ export function gameFilterChips(
   const single = (
     value: string | null,
     field:
-      | 'techGeneration'
-      | 'displayType'
+      | 'technology_generation'
+      | 'display_type'
       | 'manufacturer'
       | 'person'
       | 'system'
@@ -51,7 +51,7 @@ export function gameFilterChips(
 
   const multi = (
     values: string[],
-    field: 'themes' | 'features' | 'rewardTypes',
+    field: 'theme' | 'gameplay_feature' | 'reward_type',
     opts: FacetOptionSchema[],
   ) => {
     for (const slug of values) {
@@ -69,12 +69,13 @@ export function gameFilterChips(
    * removable chip per raw value — the chip row is the only surface that
    * state shows on.
    */
-  const sparse = (field: SparseField, opts: FacetOptionSchema[]) => {
+  const sparse = (field: SparseField) => {
     const values = filters[field];
     if (values.length === 0) return;
+    const facet = options[field];
     const labelOf = (v: string): string =>
-      v === UNCLASSIFIED ? UNCLASSIFIED_LABEL : nameOf(opts, v);
-    const selection = sparseSelection(field, values);
+      v === UNCLASSIFIED ? UNCLASSIFIED_LABEL : nameOf(facet.options, v);
+    const selection = sparseSelection(facet.default_slug, values);
     if (selection != null) {
       chips.push({
         key: `${field}:${selection}`,
@@ -92,45 +93,45 @@ export function gameFilterChips(
     }
   };
 
-  single(filters.techGeneration, 'techGeneration', options.technology_generation);
-  single(filters.displayType, 'displayType', options.display_type);
+  single(filters.technology_generation, 'technology_generation', options.technology_generation);
+  single(filters.display_type, 'display_type', options.display_type);
   single(filters.manufacturer, 'manufacturer', options.manufacturer);
   single(filters.person, 'person', options.person);
-  multi(filters.themes, 'themes', options.theme);
-  multi(filters.features, 'features', options.gameplay_feature);
-  multi(filters.rewardTypes, 'rewardTypes', options.reward_type);
-  sparse('gameFormats', options.game_format);
-  sparse('productionStatuses', options.production_status);
-  sparse('cabinets', options.cabinet);
+  multi(filters.theme, 'theme', options.theme);
+  multi(filters.gameplay_feature, 'gameplay_feature', options.gameplay_feature);
+  multi(filters.reward_type, 'reward_type', options.reward_type);
+  sparse('game_format');
+  sparse('production_status');
+  sparse('cabinet');
   // Edge labels come from the relationship vocabulary, not the option names —
   // the payload's option names are the wire values.
-  for (const value of filters.edges) {
+  for (const value of filters.edge) {
     chips.push({
-      key: `edges:${value}`,
+      key: `edge:${value}`,
       label: edgeFilterLabel(value),
-      remove: () => (filters.edges = filters.edges.filter((s) => s !== value)),
+      remove: () => (filters.edge = filters.edge.filter((s) => s !== value)),
     });
   }
   single(filters.system, 'system', options.system);
   single(filters.franchise, 'franchise', options.franchise);
   single(filters.series, 'series', options.series);
 
-  if (filters.playerCount != null) {
+  if (filters.player_count != null) {
     chips.push({
-      key: `playerCount:${filters.playerCount}`,
-      label: `${filters.playerCount >= 6 ? '6+' : filters.playerCount} players`,
-      remove: () => (filters.playerCount = null),
+      key: `player_count:${filters.player_count}`,
+      label: `${filters.player_count >= 6 ? '6+' : filters.player_count} players`,
+      remove: () => (filters.player_count = null),
     });
   }
-  if (filters.yearMin != null || filters.yearMax != null) {
-    const lo = filters.yearMin != null ? String(filters.yearMin) : '';
-    const hi = filters.yearMax != null ? String(filters.yearMax) : '';
+  if (filters.year_min != null || filters.year_max != null) {
+    const lo = filters.year_min != null ? String(filters.year_min) : '';
+    const hi = filters.year_max != null ? String(filters.year_max) : '';
     chips.push({
       key: 'year',
       label: `Year: ${lo}–${hi}`,
       remove: () => {
-        filters.yearMin = null;
-        filters.yearMax = null;
+        filters.year_min = null;
+        filters.year_max = null;
       },
     });
   }

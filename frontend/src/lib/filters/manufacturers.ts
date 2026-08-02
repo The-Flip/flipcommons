@@ -1,59 +1,52 @@
 /**
  * The /manufacturers filter query as a value: its state shape
  * (`MfrFilterState`), the URL codec (`mfrFilterCodec`) and the SSR API-query
- * projection (`apiQueryFromUrl`) — one vocabulary end to end (URL params ==
- * `ManufacturerFilterQuerySchema` fields). Mirrors `games.ts` for the smaller
- * manufacturer vocabulary: all facets are single-value, and there are no
- * hidden dimensions. No Svelte imports — framework-agnostic and testable.
+ * projection (`apiQueryFromUrl`) — one vocabulary end to end (state fields ==
+ * URL params == `ManufacturerFilterQuerySchema` fields). Mirrors `games.ts`
+ * for the smaller manufacturer vocabulary: all facets are single-value, and
+ * there are no hidden or sparse dimensions. No Svelte imports —
+ * framework-agnostic and testable.
  */
 
 import type { ManufacturerFilterQuerySchema } from '$lib/api/schema';
 import {
+  hasActiveParams,
   parseParams,
   serializeParams,
-  toNum,
+  stripEmpties,
   type Complete,
   type FilterCodec,
-  type ParamSpec,
+  type ParamKinds,
 } from './params';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface MfrFilterState {
-  query: string;
-  location: string | null;
-  yearMin: number | null;
-  yearMax: number | null;
-  person: string | null;
-  techGeneration: string | null;
-}
+/**
+ * The /manufacturers filter state: field names and types straight from the
+ * generated schema. `null` and the empty string mean "absent".
+ */
+export type MfrFilterState = Required<ManufacturerFilterQuerySchema>;
 
 export function emptyMfrFilterState(): MfrFilterState {
   return {
-    query: '',
+    q: '',
     location: null,
-    yearMin: null,
-    yearMax: null,
+    year_min: null,
+    year_max: null,
     person: null,
-    techGeneration: null,
+    technology_generation: null,
   };
 }
 
 /**
  * Whether any structured filter is active — every dimension **except** the
- * free-text `query` (the search box has its own clear control). Drives the
+ * free-text `q` (the search box has its own clear control). Drives the
  * sidebar's "Clear all" affordance.
  */
 export function hasActiveMfrFilters(f: MfrFilterState): boolean {
-  return (
-    f.location != null ||
-    f.yearMin != null ||
-    f.yearMax != null ||
-    f.person != null ||
-    f.techGeneration != null
-  );
+  return hasActiveParams(f);
 }
 
 // ---------------------------------------------------------------------------
@@ -61,27 +54,18 @@ export function hasActiveMfrFilters(f: MfrFilterState): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * URL ⇄ MfrFilterState mapping, keyed by wire param name (one vocabulary end
- * to end — URL params == `ManufacturerFilterQuerySchema` fields) and typed
- * against the generated schema, so a dimension added to the backend is a
- * compile error here (after `make codegen`) until it gets a spec.
+ * The param declaration: every wire param's kind, keyed and kind-checked
+ * against `MfrFilterState` (itself the generated schema's field set), so a
+ * dimension added to the backend is a compile error here (after
+ * `make codegen`) until it is declared.
  */
-const MFR_PARAMS: Record<keyof ManufacturerFilterQuerySchema, ParamSpec<MfrFilterState>> = {
-  q: { get: (f) => f.query || null, set: (f, v) => (f.query = v) },
-  location: { get: (f) => f.location, set: (f, v) => (f.location = v) },
-  year_min: {
-    get: (f) => (f.yearMin != null ? String(f.yearMin) : null),
-    set: (f, v) => (f.yearMin = toNum(v)),
-  },
-  year_max: {
-    get: (f) => (f.yearMax != null ? String(f.yearMax) : null),
-    set: (f, v) => (f.yearMax = toNum(v)),
-  },
-  person: { get: (f) => f.person, set: (f, v) => (f.person = v) },
-  technology_generation: {
-    get: (f) => f.techGeneration,
-    set: (f, v) => (f.techGeneration = v),
-  },
+const MFR_PARAMS: ParamKinds<MfrFilterState> = {
+  q: 'string',
+  location: 'string',
+  year_min: 'number',
+  year_max: 'number',
+  person: 'string',
+  technology_generation: 'string',
 };
 
 /** The /manufacturers URL codec: committed filter state ⇄ the URL's search params. */
@@ -102,25 +86,7 @@ export const mfrFilterCodec: FilterCodec<MfrFilterState> = {
  */
 export type MfrApiQuery = Complete<ManufacturerFilterQuerySchema>;
 
-/**
- * Read the full API query from a request URL. Numeric coercion shares the
- * codec's `toNum`; the correspondence test pins the rest of the reading to
- * what the codec writes.
- */
+/** Read the full API query from a request URL: the codec's parse, empties stripped. */
 export function apiQueryFromUrl(url: URL): MfrApiQuery {
-  const sp = url.searchParams;
-  const str = (p: string): string | undefined => sp.get(p) || undefined;
-  const num = (p: string): number | undefined => {
-    const v = sp.get(p);
-    return v == null ? undefined : (toNum(v) ?? undefined);
-  };
-
-  return {
-    q: str('q'),
-    location: str('location'),
-    person: str('person'),
-    technology_generation: str('technology_generation'),
-    year_min: num('year_min'),
-    year_max: num('year_max'),
-  };
+  return stripEmpties(mfrFilterCodec.parse(url.searchParams));
 }

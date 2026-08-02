@@ -68,7 +68,7 @@
 
   <div class="filter-section">
     <span class="filter-label">Year</span>
-    <YearRangeInput bind:min={filters.yearMin} bind:max={filters.yearMax} {disabled} />
+    <YearRangeInput bind:min={filters.year_min} bind:max={filters.year_max} {disabled} />
   </div>
 
   <div class="filter-section">
@@ -87,7 +87,7 @@
     <ChipGroup
       label="Tech generation"
       options={techGenOptions}
-      bind:selected={filters.techGeneration}
+      bind:selected={filters.technology_generation}
       {disabled}
     />
   </div>

@@ -3,9 +3,9 @@
   import Sidebar from './FacetedCatalogListing.fixtureSidebar.svelte';
   import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
   import type { CatalogEntityKey } from '$lib/entities/entity-meta';
-  import { parseParams, serializeParams, type ParamSpec } from '$lib/filters/params';
+  import { parseParams, serializeParams, type ParamKinds } from '$lib/filters/params';
 
-  type F = { query: string; foo: string | null };
+  type F = { q: string; foo: string | null };
   type O = { foo: { public_id: string; name: string; count: number }[] };
   type Item = { slug: string; name: string };
   type Q = { q?: string };
@@ -26,12 +26,9 @@
     fetchPage?: (page: number) => Promise<{ items: Item[]; count: number }>;
   } = $props();
 
-  const params: Record<string, ParamSpec<F>> = {
-    q: { get: (f) => f.query || null, set: (f, v) => (f.query = v) },
-    foo: { get: (f) => f.foo, set: (f, v) => (f.foo = v) },
-  };
+  const params: ParamKinds<F> = { q: 'string', foo: 'string' };
   const engine = {
-    parse: (sp: URLSearchParams): F => parseParams(sp, { query: '', foo: null }, params),
+    parse: (sp: URLSearchParams): F => parseParams(sp, { q: '', foo: null }, params),
     serialize: (f: F) => serializeParams(f, params),
     canonical: (f: F) => serializeParams(f, params).toString(),
   };

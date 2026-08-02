@@ -379,6 +379,14 @@ class TestGamesFacetsPage:
         }
         assert data["query_count"] is None
 
+    def test_sparse_facets_carry_default_slug(self, client, db):
+        """The sparse dimensions nest their option list with the default slug a
+        null field reads as — the payload is the frontend's only source for it."""
+        opts = client.get("/api/pages/games").json()["filter_options"]
+        assert opts["cabinet"] == {"options": [], "default_slug": "floor"}
+        assert opts["game_format"] == {"options": [], "default_slug": "pinball"}
+        assert opts["production_status"] == {"options": [], "default_slug": "produced"}
+
     def test_facet_option_shape(self, client, db, williams_entity):
         t = Title.objects.create(name="Shape", slug="shape")
         make_machine_model(

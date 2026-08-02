@@ -3,7 +3,7 @@
   // in the FacetedCatalogListing shell test. Exposes its disabled state and the
   // current `filters.foo` so the test can observe the shell's filter loop, and a
   // button that mutates `filters` to exercise the filters→URL navigation.
-  type F = { query: string; foo: string | null };
+  type F = { q: string; foo: string | null };
   type O = { foo: { public_id: string; name: string; count: number }[] };
 
   let {
