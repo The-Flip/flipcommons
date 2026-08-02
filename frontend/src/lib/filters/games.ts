@@ -26,26 +26,24 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * The dimensions filterable by URL but without a sidebar control —
- * `/games?tag=x` must filter the results, so `apiQueryFromUrl` reads them. The
- * codec neither parses nor serializes them: the first sidebar interaction
- * rebuilds the URL without them, so URL and results agree at every moment and
- * no filter persists without a visible, removable control.
+ * The dimensions filterable by URL but without a sidebar control
+ * (`/games?tag=x` — hand-crafted or external URLs; no facet payload, so no
+ * option list). They live in `FilterState` like every other dimension and
+ * persist across interactions; their only UI is the chip row, which labels
+ * them by raw slug.
  */
-type HiddenGameParam = 'display_subtype' | 'tag' | 'technology_subgeneration' | 'corporate_entity';
-
-/** The surfaced param vocabulary: every wire field the sidebar can drive. */
-type SurfacedGameParam = Exclude<keyof GameFilterQuerySchema, HiddenGameParam>;
+export type ChipOnlyGameParam =
+  'display_subtype' | 'tag' | 'technology_subgeneration' | 'corporate_entity';
 
 /**
- * The /games filter state: the surfaced wire vocabulary, field names and
+ * The /games filter state: the full wire vocabulary, field names and
  * types straight from the generated schema. `null`, the empty string and the
  * empty array all mean "absent". The sparse dimensions (`SparseField`) hold
  * raw wire values — vocabulary slugs plus the reserved `unclassified` —
  * because one UI selection can be two values (`presetValues`); the shown
  * selection derives via `sparseSelection`.
  */
-export type FilterState = Required<Pick<GameFilterQuerySchema, SurfacedGameParam>>;
+export type FilterState = Required<GameFilterQuerySchema>;
 
 /**
  * The reserved sparse-dimension wire value: "the field is unset". Never a
@@ -116,6 +114,10 @@ export function emptyFilterState(): FilterState {
     system: null,
     franchise: null,
     series: null,
+    display_subtype: null,
+    tag: null,
+    technology_subgeneration: null,
+    corporate_entity: null,
   };
 }
 
@@ -135,9 +137,9 @@ export function hasActiveFilters(f: FilterState): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * The param declaration: every surfaced wire param's kind. Keyed and
- * kind-checked against `FilterState` (itself the generated schema's field
- * set), so a dimension added to the backend is a compile error here (after
+ * The param declaration: every wire param's kind. Keyed and kind-checked
+ * against `FilterState` (itself the generated schema's field set), so a
+ * dimension added to the backend is a compile error here (after
  * `make codegen`) until it is declared. Multi-value dimensions are
  * **repeated** params (`theme=a&theme=b`), read natively by the backend's
  * `list[str]` — not comma-joined.
@@ -161,6 +163,10 @@ const GAME_PARAMS: ParamKinds<FilterState> = {
   system: 'string',
   franchise: 'string',
   series: 'string',
+  display_subtype: 'string',
+  tag: 'string',
+  technology_subgeneration: 'string',
+  corporate_entity: 'string',
 };
 
 /** The /games URL codec: committed filter state ⇄ the URL's search params. */
@@ -183,16 +189,8 @@ export type GamesApiQuery = Complete<GameFilterQuerySchema>;
 
 /**
  * Read the full API query from a request URL: the codec's parse, empties
- * stripped, plus the hidden dimensions.
+ * stripped.
  */
 export function apiQueryFromUrl(url: URL): GamesApiQuery {
-  const sp = url.searchParams;
-  const hidden = (p: HiddenGameParam): string | undefined => sp.get(p) || undefined;
-  return {
-    ...stripEmpties(gameFilterCodec.parse(sp)),
-    display_subtype: hidden('display_subtype'),
-    tag: hidden('tag'),
-    technology_subgeneration: hidden('technology_subgeneration'),
-    corporate_entity: hidden('corporate_entity'),
-  };
+  return stripEmpties(gameFilterCodec.parse(url.searchParams));
 }

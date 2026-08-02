@@ -61,8 +61,13 @@
       busy?: boolean;
       filters: F;
     }>;
-    /** Builds the active-filter chips from the live filters + the resolved server options. */
-    chips: (filters: F, options: O) => FilterChipSpec[];
+    /**
+     * Builds the active-filter chips from the live filters + the resolved
+     * server options — called with `undefined` options while the facet stream
+     * is pending or failed, so the chip row (the only removal affordance for
+     * chip-only dimensions) never depends on the facet payload.
+     */
+    chips: (filters: F, options: O | undefined) => FilterChipSpec[];
     /** Streamed facet option lists with live counts; resolves to `undefined` on error (the load `.catch`es). */
     filterOptions: Promise<O | undefined>;
     /** Streamed query-only match count (ignores facets); drives the create prompt. */
@@ -204,9 +209,7 @@
     </FilterDrawer>
 
     <main class="results">
-      {#if facets.value}
-        <ActiveFilterChips chips={chips(filters, facets.value)} />
-      {/if}
+      <ActiveFilterChips chips={chips(filters, facets.value)} />
 
       <p class="count">
         {initial.count.toLocaleString()}

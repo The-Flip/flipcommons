@@ -73,7 +73,7 @@ describe('/games +page.server load', () => {
     expect(result.query.edge).toEqual(['copy', 'bootleg:in']);
   });
 
-  it('honors the hidden dimensions from the URL', async () => {
+  it('honors the chip-only dimensions from the URL', async () => {
     // No sidebar control exists for these, but a URL carrying one must filter
     // the results — otherwise the page renders unfiltered cards under a URL
     // that claims otherwise.

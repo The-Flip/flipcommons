@@ -37,6 +37,10 @@ const FULL_STATE: FilterState = {
   system: 'wpc-95',
   franchise: 'star-wars',
   series: 'castle',
+  display_subtype: 'alphanumeric',
+  tag: 'widebody',
+  technology_subgeneration: 'wpc',
+  corporate_entity: 'wms-industries',
 };
 
 // ---------------------------------------------------------------------------
@@ -159,12 +163,8 @@ describe('apiQueryFromUrl', () => {
     expect(Object.values(q).every((v) => v === undefined)).toBe(true);
   });
 
-  it('reads the same vocabulary the codec writes, plus the hidden dimensions', () => {
+  it('reads the same vocabulary the codec writes', () => {
     const sp = serialize(FULL_STATE);
-    sp.set('display_subtype', 'alphanumeric');
-    sp.set('tag', 'classic');
-    sp.set('technology_subgeneration', 'wpc');
-    sp.set('corporate_entity', 'wms-industries');
     const q = apiQueryFromUrl(new URL(`http://localhost/games?${sp}`));
     const expected: GamesApiQuery = {
       q: 'medieval',
@@ -186,7 +186,7 @@ describe('apiQueryFromUrl', () => {
       production_status: ['produced'],
       cabinet: ['floor'],
       display_subtype: 'alphanumeric',
-      tag: 'classic',
+      tag: 'widebody',
       technology_subgeneration: 'wpc',
       corporate_entity: 'wms-industries',
     };

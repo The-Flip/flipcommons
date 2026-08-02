@@ -4,7 +4,7 @@
  * projection (`apiQueryFromUrl`) — one vocabulary end to end (state fields ==
  * URL params == `ManufacturerFilterQuerySchema` fields). Mirrors `games.ts`
  * for the smaller manufacturer vocabulary: all facets are single-value, and
- * there are no hidden or sparse dimensions. No Svelte imports —
+ * there are no chip-only or sparse dimensions. No Svelte imports —
  * framework-agnostic and testable.
  */
 

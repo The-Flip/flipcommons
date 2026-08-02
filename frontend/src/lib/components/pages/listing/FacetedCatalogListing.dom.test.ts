@@ -159,6 +159,22 @@ describe('FacetedCatalogListing', () => {
     expect(await screen.findByText('Foo: bar')).toBeInTheDocument();
   });
 
+  it('renders active chips while the facet stream is pending, and when it has failed', async () => {
+    // The chip row is the only removal affordance for chip-only dimensions, so
+    // it must not wait for (or lose) the streamed facet payload.
+    pageState.url = new URL('http://localhost/manufacturers?foo=bar');
+    const { unmount } = render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 }, filterOptions: new Promise<never>(() => {}) },
+    });
+    expect(await screen.findByText('Foo: bar')).toBeInTheDocument();
+    unmount();
+
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 }, filterOptions: Promise.resolve(undefined) },
+    });
+    expect(await screen.findByText('Foo: bar')).toBeInTheDocument();
+  });
+
   it('shows the create prompt only when the query-only count is zero and the user is authed', async () => {
     render(FacetedCatalogListingFixture, {
       props: {
