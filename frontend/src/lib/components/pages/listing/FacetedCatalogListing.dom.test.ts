@@ -164,7 +164,7 @@ describe('FacetedCatalogListing', () => {
     // it must not wait for (or lose) the streamed facet payload.
     pageState.url = new URL('http://localhost/manufacturers?foo=bar');
     const { unmount } = render(FacetedCatalogListingFixture, {
-      props: { initial: { items: ITEMS, count: 2 }, filterOptions: new Promise(() => {}) },
+      props: { initial: { items: ITEMS, count: 2 }, filterOptions: new Promise<never>(() => {}) },
     });
     expect(await screen.findByText('Foo: bar')).toBeInTheDocument();
     unmount();
