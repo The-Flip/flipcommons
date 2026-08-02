@@ -13,7 +13,7 @@ from .gameplay_feature import (
     MachineModelGameplayFeature,
 )
 from .location import CorporateEntityLocation, Location, LocationAlias
-from .machine_model import MachineModel, ModelAbbreviation
+from .machine_model import MachineModel, ModelAbbreviation, SelfFkRole
 from .manufacturer import (
     CorporateEntity,
     CorporateEntityAlias,

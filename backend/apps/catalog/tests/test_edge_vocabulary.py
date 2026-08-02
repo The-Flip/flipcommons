@@ -5,10 +5,12 @@ per-key membership predicates, including the deliberate liveness asymmetry
 from __future__ import annotations
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 
 from apps.catalog.api._edge_vocabulary import (
     EDGE_KEYS,
     EdgeSelection,
+    _lineage_field_names,
     edge_q,
     edge_wire_value,
     parse_edge_value,
@@ -17,6 +19,7 @@ from apps.catalog.models import (
     LicenseStatus,
     MachineModel,
     RelationshipType,
+    SelfFkRole,
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
@@ -37,8 +40,9 @@ def _matches(value: str) -> set[str]:
 
 class TestRegistry:
     def test_the_closed_key_set(self):
-        """The whole vocabulary, pinned. A new RelationshipType member or a
-        new lineage self-FK lands here automatically — this test failing is
+        """The whole vocabulary, pinned — what the public API actually ships.
+        A new RelationshipType member lands here automatically, and a self-FK
+        classified as lineage lands here once classified; this test failing is
         the prompt to decide its filter labels and facet entry, not a bug."""
         assert set(EDGE_KEYS) == {
             "variant_of",
@@ -56,6 +60,53 @@ class TestRegistry:
         """The type keys are iterated from the enum, so a new type reaches
         the vocabulary without being described a second time."""
         assert {t.value for t in RelationshipType} <= set(EDGE_KEYS)
+
+    @pytest.mark.parametrize(
+        ("roles", "named"),
+        [
+            (
+                {"variant_of": SelfFkRole.LINEAGE, "remake_of": SelfFkRole.LINEAGE},
+                "export_edition_of",
+            ),
+            (
+                {
+                    "variant_of": SelfFkRole.LINEAGE,
+                    "remake_of": SelfFkRole.LINEAGE,
+                    "export_edition_of": SelfFkRole.LINEAGE,
+                    "merged_into": SelfFkRole.ADMINISTRATIVE,
+                },
+                "merged_into",
+            ),
+        ],
+        ids=["undeclared", "stale"],
+    )
+    def test_the_roles_must_match_the_model(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        roles: dict[str, SelfFkRole],
+        named: str,
+    ):
+        """The gate: filterability is a product decision, so a self-FK with no
+        verdict — or a verdict for a field that no longer exists — fails by
+        name instead of silently entering the published filter vocabulary."""
+        monkeypatch.setattr(MachineModel, "self_fk_roles", roles)
+        with pytest.raises(ImproperlyConfigured, match=named):
+            _lineage_field_names()
+
+    def test_an_administrative_self_fk_is_not_a_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The negative verdict is the point of the declaration: an
+        administrative self-reference stays out of the vocabulary."""
+        monkeypatch.setattr(
+            MachineModel,
+            "self_fk_roles",
+            {
+                **MachineModel.self_fk_roles,
+                "export_edition_of": SelfFkRole.ADMINISTRATIVE,
+            },
+        )
+        assert "export_edition_of" not in _lineage_field_names()
 
 
 class TestParsing:

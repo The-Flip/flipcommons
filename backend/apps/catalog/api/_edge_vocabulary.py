@@ -10,8 +10,9 @@ out-edge, ``bootleg:in`` the Models such an edge points at.
 
 Nearly everything is introspected rather than described a second time: the
 lineage keys walk ``MachineModel._meta`` for the self-FKs, the type keys
-iterate ``RelationshipType``. The composites are the only irreducible
-declaration — no introspection yields the word "bootleg" for
+iterate ``RelationshipType``. Two declarations remain:
+``MachineModel.self_fk_roles``, which says which self-FKs are lineage, and the
+composites — no introspection yields the word "bootleg" for
 ``(copy, unlicensed)``.
 
 Liveness is asymmetric by design. An **outbound** predicate tests only that
@@ -35,11 +36,18 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final, Literal, NamedTuple, assert_never, get_args
 
+from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Exists, OuterRef, Q
 
 from apps.core.models import active_status_q
 
-from ..models import LicenseStatus, MachineModel, ModelRelationship, RelationshipType
+from ..models import (
+    LicenseStatus,
+    MachineModel,
+    ModelRelationship,
+    RelationshipType,
+    SelfFkRole,
+)
 
 EdgeDirection = Literal["out", "in"]
 
@@ -80,12 +88,28 @@ _COMPOSITES: Final[dict[str, TypedEdge]] = {
 
 
 def _lineage_field_names() -> tuple[str, ...]:
-    """The lineage self-FK names, from ``_meta`` (concrete fields only)."""
-    return tuple(
+    """The filterable lineage self-FK names, in model declaration order.
+
+    Which fields *are* self-FKs comes from ``_meta`` (concrete fields only);
+    which of those are lineage comes from the :class:`SelfFkRole` verdicts in
+    ``MachineModel.self_fk_roles``. A self-FK with no verdict fails here.
+    """
+    self_fks = tuple(
         f.name
         for f in MachineModel._meta.fields
         if f.is_relation and f.related_model is MachineModel
     )
+    roles = MachineModel.self_fk_roles
+    if set(self_fks) != set(roles):
+        undeclared = sorted(set(self_fks) - set(roles))
+        stale = sorted(set(roles) - set(self_fks))
+        raise ImproperlyConfigured(
+            "MachineModel.self_fk_roles does not match the model's self-FKs — "
+            f"undeclared: {undeclared or 'none'}; stale: {stale or 'none'}. "
+            "Classify every self-FK as SelfFkRole.LINEAGE (it becomes a public "
+            "`edge=` filter key and a facet entry) or SelfFkRole.ADMINISTRATIVE."
+        )
+    return tuple(n for n in self_fks if roles[n] is SelfFkRole.LINEAGE)
 
 
 def _build_registry() -> dict[str, EdgeSpec]:
