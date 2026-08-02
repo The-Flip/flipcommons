@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UNCLASSIFIED, emptyFilterState } from '$lib/facet-engine';
+import { UNCLASSIFIED, emptyFilterState } from '$lib/filters/games';
 import type { GameFilterOptionsSchema } from '$lib/api/schema';
 import { gameFilterChips } from './games-filter-chips';
 

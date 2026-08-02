@@ -4,7 +4,7 @@ import {
   sparseSelection,
   type FilterState,
   type SparseField,
-} from '$lib/facet-engine';
+} from '$lib/filters/games';
 import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
 import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
 import { edgeFilterLabel } from '$lib/entities/relationship-phrase';

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import ManufacturerFilterSidebarFixture from './ManufacturerFilterSidebar.fixture.svelte';
-import { emptyMfrFilterState } from '$lib/manufacturer-facet-engine';
+import { emptyMfrFilterState } from '$lib/filters/manufacturers';
 
 async function selectFirstSearchableOption(
   user: ReturnType<typeof userEvent.setup>,

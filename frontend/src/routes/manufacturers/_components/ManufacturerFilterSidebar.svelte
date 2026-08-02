@@ -6,7 +6,7 @@
     emptyMfrFilterState,
     hasActiveMfrFilters,
     type MfrFilterState,
-  } from '$lib/manufacturer-facet-engine';
+  } from '$lib/filters/manufacturers';
   import type { FacetOptionSchema, ManufacturerFilterOptionsSchema } from '$lib/api/schema';
 
   let {

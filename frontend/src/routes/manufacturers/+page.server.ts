@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { createServerClient } from '$lib/api/server';
-import { queryFromUrl } from './manufacturers-query';
+import { apiQueryFromUrl } from '$lib/filters/manufacturers';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -12,7 +12,7 @@ import type { PageServerLoad } from './$types';
  */
 export const load: PageServerLoad = async ({ fetch, url, request }) => {
   const client = createServerClient(fetch, url, request);
-  const query = queryFromUrl(url);
+  const query = apiQueryFromUrl(url);
 
   const cards = await client.GET('/api/manufacturers/', {
     params: { query: { ...query, page: 1 } },

@@ -4,14 +4,10 @@
   import FacetedCatalogListing from '$lib/components/pages/listing/FacetedCatalogListing.svelte';
   import ManufacturerFilterSidebar from './_components/ManufacturerFilterSidebar.svelte';
   import ManufacturerCard from '$lib/components/collections/cards/ManufacturerCard.svelte';
-  import { mfrFiltersFromParams, mfrFiltersToParams } from '$lib/manufacturer-facet-engine';
+  import { mfrFilterCodec } from '$lib/filters/manufacturers';
   import { manufacturerFilterChips } from './manufacturer-filter-chips';
 
   let { data } = $props();
-
-  // Stable identity (defined once, not per render) so the shell's filters→URL
-  // effect doesn't re-run on every load.
-  const engine = { fromParams: mfrFiltersFromParams, toParams: mfrFiltersToParams };
 
   // Typed page fetcher: the `/api/manufacturers/` path literal is baked in here so
   // the response stays typed (`ManufacturerCardSchema`), then flows generically
@@ -24,7 +20,7 @@
 
 <FacetedCatalogListing
   catalogKey="manufacturer"
-  {engine}
+  engine={mfrFilterCodec}
   Sidebar={ManufacturerFilterSidebar}
   chips={manufacturerFilterChips}
   filterOptions={data.filter_options}

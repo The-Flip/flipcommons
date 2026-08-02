@@ -5,14 +5,10 @@
   import FacetedCatalogListing from '$lib/components/pages/listing/FacetedCatalogListing.svelte';
   import GameFilterSidebar from './_components/GameFilterSidebar.svelte';
   import GameCard from '$lib/components/collections/cards/GameCard.svelte';
-  import { filtersFromParams, filtersToParams } from '$lib/facet-engine';
+  import { gameFilterCodec } from '$lib/filters/games';
   import { gameFilterChips } from './games-filter-chips';
 
   let { data } = $props();
-
-  // Stable identity (defined once, not per render) so the shell's filters→URL
-  // effect doesn't re-run on every load.
-  const engine = { fromParams: filtersFromParams, toParams: filtersToParams };
 
   // Typed page fetcher: the `/api/games/` path literal is baked in here so the
   // response stays typed (`GameCardSchema`), then flows generically through
@@ -25,7 +21,7 @@
 
 <FacetedCatalogListing
   catalogKey="title"
-  {engine}
+  engine={gameFilterCodec}
   Sidebar={GameFilterSidebar}
   chips={gameFilterChips}
   filterOptions={data.filter_options}

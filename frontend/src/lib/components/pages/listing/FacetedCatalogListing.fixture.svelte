@@ -3,6 +3,7 @@
   import Sidebar from './FacetedCatalogListing.fixtureSidebar.svelte';
   import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
   import type { CatalogEntityKey } from '$lib/entities/entity-meta';
+  import { parseParams, serializeParams, type ParamSpec } from '$lib/filters/params';
 
   type F = { query: string; foo: string | null };
   type O = { foo: { public_id: string; name: string; count: number }[] };
@@ -25,13 +26,14 @@
     fetchPage?: (page: number) => Promise<{ items: Item[]; count: number }>;
   } = $props();
 
+  const params: Record<string, ParamSpec<F>> = {
+    q: { get: (f) => f.query || null, set: (f, v) => (f.query = v) },
+    foo: { get: (f) => f.foo, set: (f, v) => (f.foo = v) },
+  };
   const engine = {
-    fromParams: (sp: URLSearchParams): F => ({ query: sp.get('q') ?? '', foo: sp.get('foo') }),
-    toParams: (f: F, sp: URLSearchParams) => {
-      if (f.query) sp.set('q', f.query);
-      if (f.foo) sp.set('foo', f.foo);
-      return sp;
-    },
+    parse: (sp: URLSearchParams): F => parseParams(sp, { query: '', foo: null }, params),
+    serialize: (f: F) => serializeParams(f, params),
+    canonical: (f: F) => serializeParams(f, params).toString(),
   };
 
   const chips = (f: F): FilterChipSpec[] =>

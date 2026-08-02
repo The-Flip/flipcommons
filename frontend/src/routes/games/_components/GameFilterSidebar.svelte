@@ -12,7 +12,7 @@
     sparseSelection,
     type FilterState,
     type SparseField,
-  } from '$lib/facet-engine';
+  } from '$lib/filters/games';
   import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
   import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
 
