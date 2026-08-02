@@ -39,7 +39,7 @@ from typing import Final, Literal, NamedTuple, assert_never, get_args
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Exists, OuterRef, Q
 
-from apps.core.models import active_status_q
+from apps.core.models import active_status_q, self_fk_field_names
 
 from ..models import (
     LicenseStatus,
@@ -90,15 +90,11 @@ _COMPOSITES: Final[dict[str, TypedEdge]] = {
 def _lineage_field_names() -> tuple[str, ...]:
     """The filterable lineage self-FK names, in model declaration order.
 
-    Which fields *are* self-FKs comes from ``_meta`` (concrete fields only);
-    which of those are lineage comes from the :class:`SelfFkRole` verdicts in
+    Which fields *are* self-FKs comes from :func:`self_fk_field_names`; which
+    of those are lineage comes from the :class:`SelfFkRole` verdicts in
     ``MachineModel.self_fk_roles``. A self-FK with no verdict fails here.
     """
-    self_fks = tuple(
-        f.name
-        for f in MachineModel._meta.fields
-        if f.is_relation and f.related_model is MachineModel
-    )
+    self_fks = self_fk_field_names(MachineModel)
     roles = MachineModel.self_fk_roles
     if set(self_fks) != set(roles):
         undeclared = sorted(set(self_fks) - set(roles))

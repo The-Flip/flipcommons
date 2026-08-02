@@ -83,6 +83,48 @@ def meta_unique_fields(model_class: type[models.Model]) -> set[str]:
     return names
 
 
+def self_fk_field_names(model_class: type[models.Model]) -> tuple[str, ...]:
+    """Names of *model_class*'s concrete self-referential FKs, in field order.
+
+    Structural, not semantic: this answers "does this field point back at its
+    own model", which Django already knows. What such a reference *means*
+    (lineage, bookkeeping) is a separate question no introspection can settle
+    — see ``MachineModel.self_fk_roles``.
+
+    The single source of truth for the self-FK set: the ``not_self`` constraint
+    audit, the API self-reference guard and the edge vocabulary all read it
+    here, so a newly added self-FK reaches every one of them at once.
+    """
+    return tuple(
+        f.name
+        for f in model_class._meta.fields
+        if f.is_relation and f.related_model is model_class
+    )
+
+
+def self_fk_not_self(field_name: str, *, message: str) -> models.CheckConstraint:
+    """CHECK constraint: a self-referential FK is NULL or points elsewhere.
+
+    Every self-FK in the system carries one — ``test_self_fk_constraints``
+    walks the app registry and fails if a new one doesn't. *message* is the
+    reader-facing wording and is required: "cannot be its own variant" and
+    "cannot be a remake of itself" are not derivable from the field name.
+
+    ``violation_error_code`` is load-bearing, not decoration. The claim
+    resolver validates exactly those CheckConstraints that carry one
+    (``apps.catalog.resolve``), which is what turns a self-reference into a
+    clean 422 naming the field instead of a raw ``IntegrityError`` reported
+    as a unique-constraint violation.
+    """
+    return models.CheckConstraint(
+        condition=models.Q(**{f"{field_name}__isnull": True})
+        | ~models.Q(**{field_name: models.F("pk")}),
+        name=f"%(app_label)s_%(class)s_{field_name}_not_self",
+        violation_error_message=message,
+        violation_error_code="cross_field",
+    )
+
+
 def nullable_id_not_empty(field_name: str) -> models.CheckConstraint:
     """CHECK constraint: nullable string ID is NULL or non-empty.
 

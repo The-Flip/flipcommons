@@ -14,6 +14,7 @@ from apps.core.models import (
     active_status_q,
     field_lowercase,
     field_not_blank,
+    self_fk_not_self,
     status_valid,
 )
 from apps.core.validators import validate_no_mojibake
@@ -124,12 +125,9 @@ class Location(CatalogModel, TimeStampedModel):
             field_lowercase("slug"),
             field_lowercase("location_path"),
             status_valid(),
-            models.CheckConstraint(
-                condition=models.Q(parent__isnull=True)
-                | ~models.Q(parent=models.F("pk")),
-                name="catalog_location_parent_not_self",
-                violation_error_message="A location cannot be its own parent.",
-                violation_error_code="cross_field",
+            self_fk_not_self(
+                "parent",
+                message="A location cannot be its own parent.",
             ),
             models.UniqueConstraint(
                 fields=["parent", "slug"],

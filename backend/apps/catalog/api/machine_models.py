@@ -1,7 +1,7 @@
 """Models (machine models) router — list, detail, and claim-patch endpoints."""
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Final
 
 from django.db.models import F, Prefetch, QuerySet
 from django.http import HttpRequest
@@ -24,7 +24,7 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredValidationError
 from apps.core.licensing import get_minimum_display_rank
-from apps.core.models import active_status_q, is_deleted
+from apps.core.models import active_status_q, is_deleted, self_fk_field_names
 from apps.core.schemas import (
     ErrorDetailSchema,
     RateLimitErrorSchema,
@@ -727,9 +727,12 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
     )
 
 
-_SELF_REF_FIELDS: frozenset[str] = frozenset(
-    {"variant_of", "remake_of", "export_edition_of"}
-)
+# Every self-FK, not just the lineage ones: a model is no more its own merge
+# target or its own supersessor than it is its own variant. A self-FK that
+# genuinely may point at itself (a canonical-representative pointer, say) would
+# be the first exception and needs this guard narrowed rather than a field
+# quietly omitted.
+_SELF_REF_FIELDS: Final[frozenset[str]] = frozenset(self_fk_field_names(MachineModel))
 
 
 @models_router.patch(

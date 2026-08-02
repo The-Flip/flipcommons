@@ -16,6 +16,7 @@ from apps.core.models import (
     active_status_q,
     field_not_blank,
     nullable_id_not_empty,
+    self_fk_not_self,
     slug_lowercase,
     slug_not_blank,
     status_valid,
@@ -435,29 +436,18 @@ class MachineModel(
                 violation_error_message="month requires year.",
                 violation_error_code="cross_field",
             ),
-            # Self-referential anti-cycle
-            models.CheckConstraint(
-                condition=models.Q(variant_of__isnull=True)
-                | ~models.Q(variant_of=models.F("pk")),
-                name="catalog_machinemodel_variant_of_not_self",
-                violation_error_message="A machine model cannot be its own variant.",
-                violation_error_code="cross_field",
+            # One per self-FK — test_self_fk_constraints enforces the set.
+            self_fk_not_self(
+                "variant_of",
+                message="A machine model cannot be its own variant.",
             ),
-            models.CheckConstraint(
-                condition=models.Q(remake_of__isnull=True)
-                | ~models.Q(remake_of=models.F("pk")),
-                name="catalog_machinemodel_remake_of_not_self",
-                violation_error_message="A machine model cannot be a remake of itself.",
-                violation_error_code="cross_field",
+            self_fk_not_self(
+                "remake_of",
+                message="A machine model cannot be a remake of itself.",
             ),
-            models.CheckConstraint(
-                condition=models.Q(export_edition_of__isnull=True)
-                | ~models.Q(export_edition_of=models.F("pk")),
-                name="catalog_machinemodel_export_edition_of_not_self",
-                violation_error_message=(
-                    "A machine model cannot be an export edition of itself."
-                ),
-                violation_error_code="cross_field",
+            self_fk_not_self(
+                "export_edition_of",
+                message="A machine model cannot be an export edition of itself.",
             ),
         ]
         indexes = [
