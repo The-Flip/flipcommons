@@ -37,6 +37,7 @@ from apps.core.models import (
     field_lowercase,
     field_not_blank,
     nullable_id_not_empty,
+    self_fk_not_self,
 )
 from apps.core.types import CitationSourceId
 from apps.core.validators import (
@@ -255,13 +256,9 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
                 condition=models.Q(source_type__in=list(SourceType.values)),
                 name="citation_citationsource_source_type_valid",
             ),
-            # Prevent self-referencing
-            models.CheckConstraint(
-                condition=models.Q(parent__isnull=True)
-                | ~models.Q(parent=models.F("pk")),
-                name="citation_citationsource_parent_not_self",
-                violation_error_message="A citation source cannot be its own parent.",
-                violation_error_code="cross_field",
+            self_fk_not_self(
+                "parent",
+                message="A citation source cannot be its own parent.",
             ),
             # Year range
             models.CheckConstraint(

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from enum import Enum, auto
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 from django.contrib.contenttypes.fields import GenericRelation
@@ -15,6 +16,7 @@ from apps.core.models import (
     active_status_q,
     field_not_blank,
     nullable_id_not_empty,
+    self_fk_not_self,
     slug_lowercase,
     slug_not_blank,
     status_valid,
@@ -36,7 +38,7 @@ from .model_relationship import (
     ModelRelationship,
 )
 
-__all__ = ["MachineModel", "ModelAbbreviation"]
+__all__ = ["MachineModel", "ModelAbbreviation", "SelfFkRole"]
 
 if TYPE_CHECKING:
     from .gameplay_feature import GameplayFeature, MachineModelGameplayFeature
@@ -58,12 +60,26 @@ FLIPPER_COUNT_MIN, FLIPPER_COUNT_MAX = 0, 20
 RATING_MIN, RATING_MAX = 0, 10
 EXTERNAL_ID_MIN = 1
 
-# The "first model" ordering — the single spelling of the rule
-# :meth:`MachineModel.first_model_candidates` applies (and
-# :meth:`MachineModel.first_models_by_title` prefixes with ``title_id``). Never
-# re-spell it at a call site: a caller that drops the leading subordination term
-# silently disagrees with every other reader of the rule.
+# The "first model" ordering
 _FIRST_MODEL_ORDER: tuple[str, ...] = ("_is_subordinate_copy", "year", "name")
+
+
+class SelfFkRole(Enum):
+    """What a ``MachineModel`` self-reference means to a reader.
+
+    The schema can't tell the roles apart, so every self-FK must be classified
+    in :attr:`MachineModel.self_fk_roles` and the edge vocabulary refuses to
+    build otherwise — a new self-reference can't reach the published API just
+    by existing.
+    """
+
+    LINEAGE = auto()
+    """Product-facing: a relationship people filter and browse by, so the field
+    becomes a public ``edge=`` filter key and a facet entry."""
+
+    ADMINISTRATIVE = auto()
+    """Bookkeeping: a merge target, a supersession pointer. Real data, but not
+    a way anyone asks to see the catalog, so it stays out of the vocabulary."""
 
 
 class MachineModel(
@@ -90,8 +106,7 @@ class MachineModel(
     # soft-deleted: the edge row itself has no lifecycle (so the PROTECT pass
     # skips it), but the owning source model would display a link to a 404.
     # The blocker walks through the edge to that source model — the same
-    # channel Tag uses for its member models, and the referential semantics
-    # the retired converted_from FK used to enforce.
+    # channel Tag uses for its member models.
     soft_delete_usage_blockers: ClassVar[frozenset[str]] = frozenset(
         {"inbound_relationship_sources"}
     )
@@ -142,9 +157,6 @@ class MachineModel(
         validators=[validate_no_mojibake],
         help_text="Pinside.com game id slug for this machine.",
     )
-    # Unlike the external-site IDs above, this is the manufacturer's own
-    # identifier for the model (e.g. a Stern part descriptor). Not unique:
-    # manufacturers assign these independently of each other.
     manufacturer_model_identifier = models.CharField(
         max_length=100,
         null=True,
@@ -161,6 +173,12 @@ class MachineModel(
         related_name="machine_models",
         help_text="Title this machine belongs to.",
     )
+    # Every self-FK below must be classified — see SelfFkRole.
+    self_fk_roles: ClassVar[Mapping[str, SelfFkRole]] = {
+        "variant_of": SelfFkRole.LINEAGE,
+        "remake_of": SelfFkRole.LINEAGE,
+        "export_edition_of": SelfFkRole.LINEAGE,
+    }
     variant_of = models.ForeignKey(
         "self",
         on_delete=models.PROTECT,
@@ -347,7 +365,7 @@ class MachineModel(
 
     # Free-form staging area for source-specific data that doesn't have a
     # dedicated column yet. Claims provide provenance but no validation is
-    # applied. Promote keys to real fields when needed.
+    # applied. Promote keys to real fields when used by the actual product.
     extra_data = models.JSONField(default=dict, blank=True)
 
     # Reverse access to provenance claims for this model.
@@ -418,29 +436,18 @@ class MachineModel(
                 violation_error_message="month requires year.",
                 violation_error_code="cross_field",
             ),
-            # Self-referential anti-cycle
-            models.CheckConstraint(
-                condition=models.Q(variant_of__isnull=True)
-                | ~models.Q(variant_of=models.F("pk")),
-                name="catalog_machinemodel_variant_of_not_self",
-                violation_error_message="A machine model cannot be its own variant.",
-                violation_error_code="cross_field",
+            # One per self-FK — test_self_fk_constraints enforces the set.
+            self_fk_not_self(
+                "variant_of",
+                message="A machine model cannot be its own variant.",
             ),
-            models.CheckConstraint(
-                condition=models.Q(remake_of__isnull=True)
-                | ~models.Q(remake_of=models.F("pk")),
-                name="catalog_machinemodel_remake_of_not_self",
-                violation_error_message="A machine model cannot be a remake of itself.",
-                violation_error_code="cross_field",
+            self_fk_not_self(
+                "remake_of",
+                message="A machine model cannot be a remake of itself.",
             ),
-            models.CheckConstraint(
-                condition=models.Q(export_edition_of__isnull=True)
-                | ~models.Q(export_edition_of=models.F("pk")),
-                name="catalog_machinemodel_export_edition_of_not_self",
-                violation_error_message=(
-                    "A machine model cannot be an export edition of itself."
-                ),
-                violation_error_code="cross_field",
+            self_fk_not_self(
+                "export_edition_of",
+                message="A machine model cannot be an export edition of itself.",
             ),
         ]
         indexes = [

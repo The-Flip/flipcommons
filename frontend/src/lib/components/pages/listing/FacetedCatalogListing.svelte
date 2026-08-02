@@ -35,8 +35,7 @@
    * and the card `children` snippet.
    *
    * Catalog-coupled by design: it resolves `catalogKey` through `ENTITY_META`
-   * rather than taking title/label props. The streamed facet options/counts are
-   * unchanged from the per-page versions; this is a pure structural extraction.
+   * rather than taking title/label props.
    */
   let {
     catalogKey,
@@ -119,10 +118,11 @@
   // svelte-ignore state_referenced_locally
   const seed = engine.fromParams(new URLSearchParams(page.url.search));
   let filters = $state<F>(seed);
-  // SearchBox binds here; debounced into `filters.query` so typing doesn't fire a
-  // server navigation per keystroke. A writable `$derived` so it mirrors the
-  // committed query when that changes from outside the input (Clear all,
-  // popstate, the seed) but is still reassignable while typing.
+  // Debounced into `filters.query` so typing doesn't fire a server navigation
+  // per keystroke, and mirrors it back when it changes from outside (Clear all,
+  // popstate, the seed). Mirroring is safe only because that commit is local
+  // state landing in the same tick — a box whose commit round-trips through the
+  // URL must use `searchDraft`, or a landing rewinds the box mid-word.
   let queryInput = $derived(filters.query);
   let lastSyncedSearch = canonical(seed);
 

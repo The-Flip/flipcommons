@@ -1,9 +1,13 @@
 """Tests for PATCH /api/models/{public_id}/claims/ endpoint."""
 
+import json
+
 import pytest
 from django.contrib.auth import get_user_model
 
+from apps.catalog.models import MachineModel
 from apps.catalog.tests.conftest import make_machine_model
+from apps.core.models import self_fk_field_names
 from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.test_factories import (
     make_claim,
@@ -96,6 +100,70 @@ class TestPatchClaimsValidation:
         # ``loc`` is ("body", "gameplay_features", 0, "count") — leaf wins.
         assert "count" in detail["field_errors"]
         assert "gameplay_features" not in detail["field_errors"]
+
+
+@pytest.mark.django_db
+class TestPatchClaimsSelfReference:
+    """Pointing a self-referential FK at the subject itself.
+
+    Parametrized over the live self-FK set, so a self-FK added later is
+    covered here without being listed a second time.
+    """
+
+    @pytest.mark.parametrize("field_name", self_fk_field_names(MachineModel))
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            pytest.param(lambda pm: pm.slug, id="slug"),
+            # The FK resolver trims before looking the target up, and accepts a
+            # bare PK from internal callers, so "this model" has more than one
+            # accepted spelling — all of them have to reach the same error.
+            pytest.param(lambda pm: f"  {pm.slug}  ", id="padded-slug"),
+            pytest.param(lambda pm: pm.pk, id="pk"),
+        ],
+    )
+    def test_self_reference_is_a_field_level_422(
+        self, client, user, pm, field_name, spelling
+    ):
+        client.force_login(user)
+        resp = client.patch(
+            f"/api/models/{pm.slug}/claims/",
+            data=json.dumps({"fields": {field_name: spelling(pm)}}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 422
+        # Field-scoped, not merely form-level: the editor highlights the input
+        # that caused it. The DB constraint would also catch this, but only as
+        # a form-level error with no field to attach to.
+        assert field_name in resp.json()["detail"]["field_errors"]
+
+    @pytest.mark.parametrize("field_name", self_fk_field_names(MachineModel))
+    def test_no_claim_is_written(self, client, user, pm, field_name):
+        """The guard rejects before ``execute_claims``, so nothing is recorded."""
+        client.force_login(user)
+        client.patch(
+            f"/api/models/{pm.slug}/claims/",
+            data=json.dumps({"fields": {field_name: pm.slug}}),
+            content_type="application/json",
+        )
+        assert not pm.claims.filter(field_name=field_name).exists()
+
+    @pytest.mark.parametrize("field_name", self_fk_field_names(MachineModel))
+    def test_pointing_at_another_model_is_accepted(
+        self, client, user, pm, bootstrap_source, field_name
+    ):
+        """The guard rejects self-reference only — an ordinary target still saves."""
+        other = make_machine_model(name="Attack from Mars", slug="attack-from-mars")
+        make_claim(other, "name", "Attack from Mars", ingest_source=bootstrap_source)
+        client.force_login(user)
+        resp = client.patch(
+            f"/api/models/{pm.slug}/claims/",
+            data=json.dumps({"fields": {field_name: other.slug}}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        pm.refresh_from_db()
+        assert getattr(pm, f"{field_name}_id") == other.pk
 
 
 @pytest.mark.django_db

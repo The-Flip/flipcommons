@@ -118,6 +118,23 @@ describe('GamesSection', () => {
       expect(box).toHaveValue('godzi');
     });
 
+    // Back/forward outranks an uncommitted draft — the `searchDraft` contract.
+    it('lets back/forward override a draft whose commit is still pending', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(GamesSection, { props: props('whirl') });
+      const box = screen.getByRole('searchbox');
+
+      await user.type(box, 'wind');
+      expect(box).toHaveValue('whirlwind');
+
+      await rerender(props('gorgar'));
+      expect(box).toHaveValue('gorgar');
+
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(box).toHaveValue('gorgar');
+      expect(goto).not.toHaveBeenCalled();
+    });
+
     it('adopts a committed q that changes with nothing pending', async () => {
       const { rerender } = render(GamesSection, { props: props('god') });
       expect(screen.getByRole('searchbox')).toHaveValue('god');
