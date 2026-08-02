@@ -2,6 +2,7 @@ import {
   UNCLASSIFIED,
   UNCLASSIFIED_LABEL,
   sparseSelection,
+  type ChipOnlyGameParam,
   type FilterState,
   type SparseField,
 } from '$lib/filters/games';
@@ -13,21 +14,25 @@ import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
  * Build the active-filter chips for /games from the current filter state.
  *
  * `options` are the streamed facet lists, used only to resolve slug → display
- * name; the chips' `remove` closures mutate the passed `filters` object (the
- * page's bindable `$state`), so clicking a chip clears that filter reactively.
+ * name — `undefined` while the stream is pending or failed, when labels
+ * degrade to raw slugs (the chip row must render regardless: it is the only
+ * removal affordance for the chip-only dimensions). The chips' `remove`
+ * closures mutate the passed `filters` object (the page's bindable `$state`),
+ * so clicking a chip clears that filter reactively.
  *
  * Pure and component-free so the chip set — labels, ordering, and what each
- * `remove` clears — can be unit-tested directly. Three shapes: single-select
+ * `remove` clears — can be unit-tested directly. Four shapes: single-select
  * fields (one chip, cleared to null), multi-select fields (one chip per value),
- * and the bespoke scalar filters (player count, year range).
+ * the bespoke scalar filters (player count, year range), and the chip-only
+ * dimensions (no sidebar control; dimension-prefixed raw-slug labels).
  */
 export function gameFilterChips(
   filters: FilterState,
-  options: GameFilterOptionsSchema,
+  options: GameFilterOptionsSchema | undefined,
 ): FilterChipSpec[] {
   const chips: FilterChipSpec[] = [];
-  const nameOf = (opts: FacetOptionSchema[], slug: string): string =>
-    opts.find((o) => o.public_id === slug)?.name ?? slug;
+  const nameOf = (opts: FacetOptionSchema[] | undefined, slug: string): string =>
+    opts?.find((o) => o.public_id === slug)?.name ?? slug;
 
   const single = (
     value: string | null,
@@ -39,7 +44,7 @@ export function gameFilterChips(
       | 'system'
       | 'franchise'
       | 'series',
-    opts: FacetOptionSchema[],
+    opts: FacetOptionSchema[] | undefined,
   ) => {
     if (!value) return;
     chips.push({
@@ -52,7 +57,7 @@ export function gameFilterChips(
   const multi = (
     values: string[],
     field: 'theme' | 'gameplay_feature' | 'reward_type',
-    opts: FacetOptionSchema[],
+    opts: FacetOptionSchema[] | undefined,
   ) => {
     for (const slug of values) {
       chips.push({
@@ -72,10 +77,10 @@ export function gameFilterChips(
   const sparse = (field: SparseField) => {
     const values = filters[field];
     if (values.length === 0) return;
-    const facet = options[field];
+    const facet = options?.[field];
     const labelOf = (v: string): string =>
-      v === UNCLASSIFIED ? UNCLASSIFIED_LABEL : nameOf(facet.options, v);
-    const selection = sparseSelection(facet.default_slug, values);
+      v === UNCLASSIFIED ? UNCLASSIFIED_LABEL : nameOf(facet?.options, v);
+    const selection = sparseSelection(facet?.default_slug, values);
     if (selection != null) {
       chips.push({
         key: `${field}:${selection}`,
@@ -93,13 +98,27 @@ export function gameFilterChips(
     }
   };
 
-  single(filters.technology_generation, 'technology_generation', options.technology_generation);
-  single(filters.display_type, 'display_type', options.display_type);
-  single(filters.manufacturer, 'manufacturer', options.manufacturer);
-  single(filters.person, 'person', options.person);
-  multi(filters.theme, 'theme', options.theme);
-  multi(filters.gameplay_feature, 'gameplay_feature', options.gameplay_feature);
-  multi(filters.reward_type, 'reward_type', options.reward_type);
+  /**
+   * A chip-only dimension's single chip: no sidebar control and no facet
+   * payload, so the label is the dimension name plus the raw slug.
+   */
+  const chipOnly = (field: ChipOnlyGameParam, dimensionLabel: string) => {
+    const value = filters[field];
+    if (!value) return;
+    chips.push({
+      key: `${field}:${value}`,
+      label: `${dimensionLabel}: ${value}`,
+      remove: () => (filters[field] = null),
+    });
+  };
+
+  single(filters.technology_generation, 'technology_generation', options?.technology_generation);
+  single(filters.display_type, 'display_type', options?.display_type);
+  single(filters.manufacturer, 'manufacturer', options?.manufacturer);
+  single(filters.person, 'person', options?.person);
+  multi(filters.theme, 'theme', options?.theme);
+  multi(filters.gameplay_feature, 'gameplay_feature', options?.gameplay_feature);
+  multi(filters.reward_type, 'reward_type', options?.reward_type);
   sparse('game_format');
   sparse('production_status');
   sparse('cabinet');
@@ -112,9 +131,9 @@ export function gameFilterChips(
       remove: () => (filters.edge = filters.edge.filter((s) => s !== value)),
     });
   }
-  single(filters.system, 'system', options.system);
-  single(filters.franchise, 'franchise', options.franchise);
-  single(filters.series, 'series', options.series);
+  single(filters.system, 'system', options?.system);
+  single(filters.franchise, 'franchise', options?.franchise);
+  single(filters.series, 'series', options?.series);
 
   if (filters.player_count != null) {
     chips.push({
@@ -135,6 +154,11 @@ export function gameFilterChips(
       },
     });
   }
+
+  chipOnly('display_subtype', 'Display subtype');
+  chipOnly('tag', 'Tag');
+  chipOnly('technology_subgeneration', 'Technology subgeneration');
+  chipOnly('corporate_entity', 'Corporate entity');
 
   return chips;
 }

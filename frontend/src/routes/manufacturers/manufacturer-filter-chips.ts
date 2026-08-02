@@ -6,23 +6,24 @@ import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveF
  * Build the active-filter chips for /manufacturers from the current filter state.
  *
  * `options` are the streamed facet lists, used only to resolve public_id → display
- * name; the chips' `remove` closures mutate the passed `filters` object (the page's
- * bindable `$state`), so clicking a chip clears that filter reactively. Pure and
- * component-free so the chip set can be unit-tested directly. Mirrors
+ * name — `undefined` while the stream is pending or failed, when labels degrade to
+ * raw slugs. The chips' `remove` closures mutate the passed `filters` object (the
+ * page's bindable `$state`), so clicking a chip clears that filter reactively.
+ * Pure and component-free so the chip set can be unit-tested directly. Mirrors
  * `games-filter-chips`; all manufacturer facets are single-select plus a year range.
  */
 export function manufacturerFilterChips(
   filters: MfrFilterState,
-  options: ManufacturerFilterOptionsSchema,
+  options: ManufacturerFilterOptionsSchema | undefined,
 ): FilterChipSpec[] {
   const chips: FilterChipSpec[] = [];
-  const nameOf = (opts: FacetOptionSchema[], id: string): string =>
-    opts.find((o) => o.public_id === id)?.name ?? id;
+  const nameOf = (opts: FacetOptionSchema[] | undefined, id: string): string =>
+    opts?.find((o) => o.public_id === id)?.name ?? id;
 
   const single = (
     value: string | null,
     field: 'location' | 'person' | 'technology_generation',
-    opts: FacetOptionSchema[],
+    opts: FacetOptionSchema[] | undefined,
   ) => {
     if (!value) return;
     chips.push({
@@ -32,9 +33,9 @@ export function manufacturerFilterChips(
     });
   };
 
-  single(filters.location, 'location', options.location);
-  single(filters.person, 'person', options.person);
-  single(filters.technology_generation, 'technology_generation', options.technology_generation);
+  single(filters.location, 'location', options?.location);
+  single(filters.person, 'person', options?.person);
+  single(filters.technology_generation, 'technology_generation', options?.technology_generation);
 
   if (filters.year_min != null || filters.year_max != null) {
     const lo = filters.year_min != null ? String(filters.year_min) : '';

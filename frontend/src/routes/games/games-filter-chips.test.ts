@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UNCLASSIFIED, emptyFilterState } from '$lib/filters/games';
+import { UNCLASSIFIED, emptyFilterState, type FilterState } from '$lib/filters/games';
 import type { GameFilterOptionsSchema } from '$lib/api/schema';
 import { gameFilterChips } from './games-filter-chips';
 
@@ -183,5 +183,83 @@ describe('gameFilterChips', () => {
       'theme:sci-fi',
       'player_count:4',
     ]);
+  });
+
+  it('labels chip-only dimensions with the dimension name and raw slug, and clears on remove', () => {
+    const filters = {
+      ...emptyFilterState(),
+      display_subtype: 'alphanumeric',
+      tag: 'widebody',
+      technology_subgeneration: 'wpc',
+      corporate_entity: 'wms-industries',
+    };
+    const chips = gameFilterChips(filters, options());
+
+    expect(chips.map((c) => c.label)).toEqual([
+      'Display subtype: alphanumeric',
+      'Tag: widebody',
+      'Technology subgeneration: wpc',
+      'Corporate entity: wms-industries',
+    ]);
+
+    chips[1].remove();
+    expect(filters.tag).toBeNull();
+  });
+
+  it('builds every chip without the facet payload, degrading labels to raw slugs', () => {
+    // The chip row is the only removal affordance for chip-only dimensions, so
+    // it must not depend on the streamed (and failable) facet payload.
+    const filters = {
+      ...emptyFilterState(),
+      manufacturer: 'stern',
+      game_format: ['bingo-pinball'],
+      tag: 'widebody',
+    };
+    const chips = gameFilterChips(filters, undefined);
+
+    expect(chips.map((c) => c.label)).toEqual(['stern', 'bingo-pinball', 'Tag: widebody']);
+    chips[0].remove();
+    expect(filters.manufacturer).toBeNull();
+  });
+
+  it('represents every dimension: a full state leaves no field without a chip', () => {
+    // The builder enumerates fields by hand, so the compiler can't force a new
+    // dimension to grow a chip — this fixture can: the `FilterState` type makes
+    // it a compile error to omit the new field, and the loop below fails until
+    // the builder emits a chip for it.
+    const fullState: FilterState = {
+      q: 'medieval',
+      technology_generation: 'solid-state',
+      year_min: 1990,
+      year_max: 2000,
+      manufacturer: 'williams',
+      person: 'pat-lawlor',
+      theme: ['medieval'],
+      gameplay_feature: ['multiball'],
+      reward_type: ['replay'],
+      edge: ['copy'],
+      game_format: ['bingo-pinball'],
+      production_status: ['produced'],
+      cabinet: ['cocktail'],
+      display_type: 'dmd',
+      player_count: 4,
+      system: 'wpc-95',
+      franchise: 'star-wars',
+      series: 'castle',
+      display_subtype: 'alphanumeric',
+      tag: 'widebody',
+      technology_subgeneration: 'wpc',
+      corporate_entity: 'wms-industries',
+    };
+    const keys = gameFilterChips(fullState, options()).map((c) => c.key);
+
+    for (const field of Object.keys(fullState)) {
+      if (field === 'q') continue; // the search box, not a chip
+      const covered =
+        field === 'year_min' || field === 'year_max'
+          ? keys.includes('year')
+          : keys.some((k) => k.startsWith(`${field}:`));
+      expect(covered, `no chip for ${field}`).toBe(true);
+    }
   });
 });
