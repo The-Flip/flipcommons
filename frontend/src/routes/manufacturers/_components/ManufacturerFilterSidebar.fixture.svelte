@@ -1,6 +1,6 @@
 <script lang="ts">
   import ManufacturerFilterSidebar from './ManufacturerFilterSidebar.svelte';
-  import { emptyMfrFilterState, type MfrFilterState } from '$lib/manufacturer-facet-engine';
+  import { emptyMfrFilterState, type MfrFilterState } from '$lib/filters/manufacturers';
   import type { ManufacturerFilterOptionsSchema } from '$lib/api/schema';
 
   const FILTER_OPTIONS: ManufacturerFilterOptionsSchema = {

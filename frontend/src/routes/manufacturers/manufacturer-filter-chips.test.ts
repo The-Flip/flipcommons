@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyMfrFilterState } from '$lib/manufacturer-facet-engine';
+import { emptyMfrFilterState } from '$lib/filters/manufacturers';
 import type { ManufacturerFilterOptionsSchema } from '$lib/api/schema';
 import { manufacturerFilterChips } from './manufacturer-filter-chips';
 

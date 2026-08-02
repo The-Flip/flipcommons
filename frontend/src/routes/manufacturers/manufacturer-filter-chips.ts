@@ -1,4 +1,4 @@
-import type { MfrFilterState } from '$lib/manufacturer-facet-engine';
+import type { MfrFilterState } from '$lib/filters/manufacturers';
 import type { FacetOptionSchema, ManufacturerFilterOptionsSchema } from '$lib/api/schema';
 import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
 

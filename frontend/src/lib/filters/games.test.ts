@@ -1,14 +1,43 @@
 import { describe, it, expect } from 'vitest';
 import {
   UNCLASSIFIED,
+  apiQueryFromUrl,
   emptyFilterState,
-  filtersFromParams,
-  filtersToParams,
+  gameFilterCodec,
   hasActiveFilters,
   presetValues,
   sparseSelection,
   type FilterState,
-} from './facet-engine';
+  type GamesApiQuery,
+} from './games';
+
+const { parse, serialize, canonical } = gameFilterCodec;
+
+/**
+ * A state setting every field, so the round-trip below exercises every param.
+ * Adding a `FilterState` field makes this literal a compile error until the
+ * field gets a value here; the emptiness guard keeps the value meaningful.
+ */
+const FULL_STATE: FilterState = {
+  query: 'medieval',
+  techGeneration: 'solid-state',
+  yearMin: 1990,
+  yearMax: 2000,
+  manufacturer: 'williams',
+  person: 'pat-lawlor',
+  themes: ['medieval', 'sports'],
+  features: ['multiball'],
+  rewardTypes: ['replay'],
+  edges: ['copy', 'bootleg:in'],
+  gameFormats: ['pinball', UNCLASSIFIED],
+  productionStatuses: ['produced'],
+  cabinets: ['floor'],
+  displayType: 'dmd',
+  playerCount: 4,
+  system: 'wpc-95',
+  franchise: 'star-wars',
+  series: 'castle',
+};
 
 // ---------------------------------------------------------------------------
 // hasActiveFilters — any structured filter except the free-text query
@@ -31,17 +60,16 @@ describe('hasActiveFilters', () => {
 // URL <-> FilterState round-trip
 // ---------------------------------------------------------------------------
 
-describe('filtersFromParams', () => {
+describe('gameFilterCodec.parse', () => {
   it('returns empty state for empty params', () => {
-    const sp = new URLSearchParams();
-    expect(filtersFromParams(sp)).toEqual(emptyFilterState());
+    expect(parse(new URLSearchParams())).toEqual(emptyFilterState());
   });
 
   it('parses all param types', () => {
     const sp = new URLSearchParams(
       'q=medieval&technology_generation=solid-state&year_min=1990&year_max=2000&manufacturer=williams&person=pat-lawlor&theme=medieval&theme=sports&edge=copy&edge=bootleg:in&display_type=dmd&player_count=4&system=wpc-95&franchise=star-wars&series=castle',
     );
-    const f = filtersFromParams(sp);
+    const f = parse(sp);
     expect(f.query).toBe('medieval');
     expect(f.techGeneration).toBe('solid-state');
     expect(f.yearMin).toBe(1990);
@@ -59,8 +87,8 @@ describe('filtersFromParams', () => {
 
   it('drops non-numeric numeric params instead of seeding NaN', () => {
     // Only reachable via a hand-edited URL, but must stay consistent with
-    // queryFromUrl's server-side guard so the two parsers can't diverge.
-    const f = filtersFromParams(new URLSearchParams('year_min=abc&player_count='));
+    // apiQueryFromUrl's guard so the two readers can't diverge.
+    const f = parse(new URLSearchParams('year_min=abc&player_count='));
     expect(f.yearMin).toBeNull();
     expect(f.playerCount).toBeNull();
   });
@@ -72,35 +100,20 @@ describe('filtersFromParams', () => {
       features: ['multiball'],
       edges: ['copy', 'variant_of:in'],
     };
-    const sp = filtersToParams(state, new URLSearchParams());
+    const sp = serialize(state);
     expect(sp.getAll('theme')).toEqual(['medieval', 'sports']);
     expect(sp.getAll('gameplay_feature')).toEqual(['multiball']);
     expect(sp.getAll('edge')).toEqual(['copy', 'variant_of:in']);
     // and back
-    expect(filtersFromParams(sp).themes).toEqual(['medieval', 'sports']);
-    expect(filtersFromParams(sp).features).toEqual(['multiball']);
-    expect(filtersFromParams(sp).edges).toEqual(['copy', 'variant_of:in']);
+    expect(parse(sp).themes).toEqual(['medieval', 'sports']);
+    expect(parse(sp).features).toEqual(['multiball']);
+    expect(parse(sp).edges).toEqual(['copy', 'variant_of:in']);
   });
 });
 
-describe('filtersToParams', () => {
+describe('gameFilterCodec.serialize', () => {
   it('produces empty params for empty state', () => {
-    const sp = filtersToParams(emptyFilterState(), new URLSearchParams());
-    expect(sp.toString()).toBe('');
-  });
-
-  it('round-trips through filtersFromParams', () => {
-    const original: FilterState = {
-      ...emptyFilterState(),
-      query: 'test',
-      techGeneration: 'solid-state',
-      yearMin: 1990,
-      themes: ['medieval', 'sports'],
-      playerCount: 4,
-    };
-    const sp = filtersToParams(original, new URLSearchParams());
-    const restored = filtersFromParams(sp);
-    expect(restored).toEqual(original);
+    expect(serialize(emptyFilterState()).toString()).toBe('');
   });
 
   it('round-trips the sparse dimensions as repeated raw wire values', () => {
@@ -110,11 +123,80 @@ describe('filtersToParams', () => {
       productionStatuses: [UNCLASSIFIED],
       cabinets: ['cocktail'],
     };
-    const sp = filtersToParams(original, new URLSearchParams());
+    const sp = serialize(original);
     expect(sp.getAll('game_format')).toEqual(['pinball', UNCLASSIFIED]);
     expect(sp.getAll('production_status')).toEqual([UNCLASSIFIED]);
     expect(sp.getAll('cabinet')).toEqual(['cocktail']);
-    expect(filtersFromParams(sp)).toEqual(original);
+    expect(parse(sp)).toEqual(original);
+  });
+});
+
+describe('gameFilterCodec round-trip over the full vocabulary', () => {
+  it('the full state actually sets every field (guards the fixture itself)', () => {
+    for (const [field, value] of Object.entries(FULL_STATE)) {
+      const empty = value == null || value === '' || (Array.isArray(value) && value.length === 0);
+      expect(empty, `FULL_STATE.${field} must be set`).toBe(false);
+    }
+  });
+
+  it('parse ∘ serialize is identity on the full state', () => {
+    expect(parse(serialize(FULL_STATE))).toEqual(FULL_STATE);
+  });
+
+  it('canonical is stable: equal states serialize to equal strings', () => {
+    expect(canonical({ ...FULL_STATE })).toBe(canonical(FULL_STATE));
+    expect(canonical(FULL_STATE)).not.toBe(canonical(emptyFilterState()));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// URL -> API query (the SSR reader)
+// ---------------------------------------------------------------------------
+
+describe('apiQueryFromUrl', () => {
+  it('reads nothing from a bare URL', () => {
+    const q = apiQueryFromUrl(new URL('http://localhost/games'));
+    expect(Object.values(q).every((v) => v === undefined)).toBe(true);
+  });
+
+  it('reads the same vocabulary the codec writes, plus the hidden dimensions', () => {
+    const sp = serialize(FULL_STATE);
+    sp.set('display_subtype', 'alphanumeric');
+    sp.set('tag', 'classic');
+    sp.set('technology_subgeneration', 'wpc');
+    sp.set('corporate_entity', 'wms-industries');
+    const q = apiQueryFromUrl(new URL(`http://localhost/games?${sp}`));
+    const expected: GamesApiQuery = {
+      q: 'medieval',
+      manufacturer: 'williams',
+      person: 'pat-lawlor',
+      technology_generation: 'solid-state',
+      display_type: 'dmd',
+      system: 'wpc-95',
+      franchise: 'star-wars',
+      series: 'castle',
+      player_count: 4,
+      year_min: 1990,
+      year_max: 2000,
+      theme: ['medieval', 'sports'],
+      gameplay_feature: ['multiball'],
+      reward_type: ['replay'],
+      edge: ['copy', 'bootleg:in'],
+      game_format: ['pinball', UNCLASSIFIED],
+      production_status: ['produced'],
+      cabinet: ['floor'],
+      display_subtype: 'alphanumeric',
+      tag: 'classic',
+      technology_subgeneration: 'wpc',
+      corporate_entity: 'wms-industries',
+    };
+    expect(q).toEqual(expected);
+  });
+
+  it('coerces numbers and drops non-finite input, matching the codec', () => {
+    const q = apiQueryFromUrl(new URL('http://localhost/games?year_min=1990&player_count=abc'));
+    expect(q.year_min).toBe(1990);
+    expect(q.player_count).toBeUndefined();
   });
 });
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import GameFilterSidebar from './GameFilterSidebar.svelte';
-  import { emptyFilterState } from '$lib/facet-engine';
+  import { emptyFilterState } from '$lib/filters/games';
 
   // Cold-load state: options still streaming, so `filterOptions` is undefined. Exercises
   // every guarded derivation — including `playerCountChipOptions`, which builds its own

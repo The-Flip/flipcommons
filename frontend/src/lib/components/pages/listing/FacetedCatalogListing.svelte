@@ -19,6 +19,7 @@
     type ListingJsonLdItem,
   } from '$lib/entities/schema-org';
   import { decideCreatePrompt } from '$lib/create-prompt';
+  import type { FilterCodec } from '$lib/filters/params';
   import { listingPath } from '$lib/entities/listing-path';
   import { streamed } from '$lib/streamed.svelte';
   import { resolveHref } from '$lib/utils';
@@ -51,11 +52,8 @@
   }: {
     /** Catalog entity key; the heading, base path and singular/plural labels come from `ENTITY_META`. */
     catalogKey: CatalogEntityKey;
-    /** URL⇄filter-state serialization for this entity's filter shape `F`. */
-    engine: {
-      fromParams: (sp: URLSearchParams) => F;
-      toParams: (f: F, sp: URLSearchParams) => URLSearchParams;
-    };
+    /** The entity's filter codec: URL⇄filter-state serialization for its filter shape `F`. */
+    engine: FilterCodec<F>;
     /** The entity's filter sidebar — rendered with `bind:filters`, so its `filters` prop must be `$bindable()`. */
     Sidebar: Component<{
       filterOptions: O | undefined;
@@ -108,15 +106,11 @@
   // +page.server.ts (cards awaited, facets re-streamed). A filter change is a
   // plain client-side navigation — no client facet engine.
   // ---------------------------------------------------------------------
-  function canonical(f: F): string {
-    return engine.toParams(f, new URLSearchParams()).toString();
-  }
-
   // Seed from the request URL so a filtered URL renders the search box and
   // selected filters in the SSR HTML (page.url is the real URL on the server).
   // `engine` is a static per-page prop, so reading it once at construction is intended.
   // svelte-ignore state_referenced_locally
-  const seed = engine.fromParams(new URLSearchParams(page.url.search));
+  const seed = engine.parse(new URLSearchParams(page.url.search));
   let filters = $state<F>(seed);
   // Debounced into `filters.query` so typing doesn't fire a server navigation
   // per keystroke, and mirrors it back when it changes from outside (Clear all,
@@ -124,7 +118,8 @@
   // state landing in the same tick — a box whose commit round-trips through the
   // URL must use `searchDraft`, or a landing rewinds the box mid-word.
   let queryInput = $derived(filters.query);
-  let lastSyncedSearch = canonical(seed);
+  // svelte-ignore state_referenced_locally
+  let lastSyncedSearch = engine.canonical(seed);
 
   // Any navigation that lands on a URL our state doesn't match adopts the URL
   // as the source of truth — back/forward, and link navigations to this same
@@ -132,10 +127,10 @@
   // `filters` would otherwise stay stale). Our own goto landings and the
   // initial navigation compare equal and fall through.
   afterNavigate(() => {
-    const f = engine.fromParams(new URLSearchParams(page.url.search));
-    if (canonical(f) === lastSyncedSearch) return;
+    const f = engine.parse(new URLSearchParams(page.url.search));
+    if (engine.canonical(f) === lastSyncedSearch) return;
     filters = f;
-    lastSyncedSearch = canonical(f);
+    lastSyncedSearch = engine.canonical(f);
   });
 
   // Debounce typing → committed query (one server navigation per pause).
@@ -151,7 +146,7 @@
   // filters → URL navigation. Skipped when the URL already matches (the initial
   // seed, a popstate resync, or the landing of our own goto).
   $effect(() => {
-    const search = canonical(filters);
+    const search = engine.canonical(filters);
     if (search === lastSyncedSearch) return;
     lastSyncedSearch = search;
     void goto(`${resolveHref(navPath)}${search ? `?${search}` : ''}`, {
