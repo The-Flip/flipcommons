@@ -782,11 +782,17 @@ def patch_model_claims(
         else []
     )
 
-    for field_name, value in data.fields.items():
-        if field_name in _SELF_REF_FIELDS and value == public_id:
+    # Against the planned specs, not the raw payload: planning has resolved
+    # each FK to its target's PK, so every accepted spelling of "this model"
+    # (padded slug, bare PK) compares equal here. Matching on the submitted
+    # string would catch only the spelling that happens to equal the URL, and
+    # let the rest through to the DB constraint — which rejects the write, but
+    # as a form-level error with no field for the editor to highlight.
+    for spec in specs:
+        if spec.field_name in _SELF_REF_FIELDS and spec.value == pm.pk:
             raise StructuredValidationError(
                 message="A model cannot reference itself.",
-                field_errors={field_name: "A model cannot reference itself."},
+                field_errors={spec.field_name: "A model cannot reference itself."},
             )
 
     if data.themes is not None:

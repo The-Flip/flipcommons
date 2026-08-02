@@ -111,11 +111,24 @@ class TestPatchClaimsSelfReference:
     """
 
     @pytest.mark.parametrize("field_name", self_fk_field_names(MachineModel))
-    def test_self_reference_is_a_field_level_422(self, client, user, pm, field_name):
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            pytest.param(lambda pm: pm.slug, id="slug"),
+            # The FK resolver trims before looking the target up, and accepts a
+            # bare PK from internal callers, so "this model" has more than one
+            # accepted spelling — all of them have to reach the same error.
+            pytest.param(lambda pm: f"  {pm.slug}  ", id="padded-slug"),
+            pytest.param(lambda pm: pm.pk, id="pk"),
+        ],
+    )
+    def test_self_reference_is_a_field_level_422(
+        self, client, user, pm, field_name, spelling
+    ):
         client.force_login(user)
         resp = client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data=json.dumps({"fields": {field_name: pm.slug}}),
+            data=json.dumps({"fields": {field_name: spelling(pm)}}),
             content_type="application/json",
         )
         assert resp.status_code == 422
