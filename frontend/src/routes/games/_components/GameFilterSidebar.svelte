@@ -13,6 +13,7 @@
     type FilterState,
     type SparseField,
   } from '$lib/filters/games';
+  import { fieldPatch } from '$lib/filters/params';
   import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
   import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
 
@@ -20,7 +21,8 @@
     filterOptions,
     disabled = false,
     busy = false,
-    filters = $bindable(),
+    filters,
+    onchange,
   }: {
     /**
      * Server-computed option lists with live N-1 counts (public_id, name, count).
@@ -32,7 +34,10 @@
     disabled?: boolean;
     /** A refetch is in flight (sets `aria-busy` for screen readers; not visually disabled). */
     busy?: boolean;
+    /** The rendered filter state. Read-only here: changes go through `onchange`. */
     filters: FilterState;
+    /** Request a filter change; the patch is applied onto the current state. */
+    onchange: (patch: Partial<FilterState>) => void;
   } = $props();
 
   /** Backend `{public_id, name, count}` → the `{value, label, count}` the controls take. */
@@ -91,7 +96,12 @@
   let cabinetOptions = $derived(sparseOptions(filterOptions?.cabinet.options, cabinetSelection));
 
   function setSparse(field: SparseField, value: string | null) {
-    filters[field] = value == null ? [] : presetValues(filterOptions?.[field].default_slug, value);
+    onchange(
+      fieldPatch(
+        field,
+        value == null ? [] : presetValues(filterOptions?.[field].default_slug, value),
+      ),
+    );
   }
 
   let techGenOptions = $derived(
@@ -120,13 +130,13 @@
   );
 
   function setPlayerCount(value: string | null) {
-    filters.player_count = value ? Number(value) : null;
+    onchange({ player_count: value ? Number(value) : null });
   }
 
   let anyActive = $derived(hasActiveFilters(filters));
 
   function clearAll() {
-    filters = emptyFilterState();
+    onchange(emptyFilterState());
   }
 </script>
 
@@ -140,7 +150,11 @@
 
   <div class="filter-section">
     <span class="filter-label">Year</span>
-    <YearRangeInput bind:min={filters.year_min} bind:max={filters.year_max} {disabled} />
+    <YearRangeInput
+      bind:min={() => filters.year_min, (v) => onchange({ year_min: v })}
+      bind:max={() => filters.year_max, (v) => onchange({ year_max: v })}
+      {disabled}
+    />
   </div>
 
   <div class="filter-section">
@@ -148,7 +162,7 @@
       compact
       label="Manufacturer"
       options={manufacturerOptions}
-      bind:selected={filters.manufacturer}
+      bind:selected={() => filters.manufacturer, (v) => onchange({ manufacturer: v })}
       {disabled}
       placeholder="Search manufacturers..."
       emptyMessage="No manufacturers match your other filters"
@@ -160,7 +174,7 @@
       compact
       label="Person"
       options={personOptions}
-      bind:selected={filters.person}
+      bind:selected={() => filters.person, (v) => onchange({ person: v })}
       {disabled}
       placeholder="Search people..."
       emptyMessage="No people match your other filters"
@@ -172,7 +186,7 @@
       compact
       label="Theme"
       options={themeOptions}
-      bind:selected={filters.theme}
+      bind:selected={() => filters.theme, (v) => onchange({ theme: v })}
       multi
       {disabled}
       placeholder="Search themes..."
@@ -185,7 +199,7 @@
       compact
       label="Feature"
       options={featureOptions}
-      bind:selected={filters.gameplay_feature}
+      bind:selected={() => filters.gameplay_feature, (v) => onchange({ gameplay_feature: v })}
       multi
       {disabled}
       placeholder="Search features..."
@@ -198,7 +212,7 @@
       compact
       label="Reward Type"
       options={rewardTypeOptions}
-      bind:selected={filters.reward_type}
+      bind:selected={() => filters.reward_type, (v) => onchange({ reward_type: v })}
       multi
       {disabled}
       placeholder="Search reward types..."
@@ -211,7 +225,7 @@
       compact
       label="Relationship"
       options={edgeOptions}
-      bind:selected={filters.edge}
+      bind:selected={() => filters.edge, (v) => onchange({ edge: v })}
       multi
       {disabled}
       placeholder="Search relationships..."
@@ -259,7 +273,9 @@
     <ChipGroup
       label="Tech generation"
       options={techGenOptions}
-      bind:selected={filters.technology_generation}
+      bind:selected={
+        () => filters.technology_generation, (v) => onchange({ technology_generation: v })
+      }
       {disabled}
     />
   </div>
@@ -268,7 +284,7 @@
     <ChipGroup
       label="Display type"
       options={displayTypeOptions}
-      bind:selected={filters.display_type}
+      bind:selected={() => filters.display_type, (v) => onchange({ display_type: v })}
       {disabled}
     />
   </div>
@@ -288,7 +304,7 @@
       compact
       label="System"
       options={systemOptions}
-      bind:selected={filters.system}
+      bind:selected={() => filters.system, (v) => onchange({ system: v })}
       {disabled}
       placeholder="Search systems..."
       emptyMessage="No systems match your other filters"
@@ -300,7 +316,7 @@
       compact
       label="Franchise"
       options={franchiseOptions}
-      bind:selected={filters.franchise}
+      bind:selected={() => filters.franchise, (v) => onchange({ franchise: v })}
       {disabled}
       placeholder="Search franchises..."
       emptyMessage="No franchises match your other filters"
@@ -312,7 +328,7 @@
       compact
       label="Series"
       options={seriesOptions}
-      bind:selected={filters.series}
+      bind:selected={() => filters.series, (v) => onchange({ series: v })}
       {disabled}
       placeholder="Search series..."
       emptyMessage="No series match your other filters"

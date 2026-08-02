@@ -127,6 +127,17 @@ export function stripEmpties<F extends Record<string, ParamValue>>(
 }
 
 /**
+ * A one-field filter patch built by indexed assignment, so a union-typed
+ * `field` stays type-checked against its value (an object literal with a
+ * computed key would widen to a string index signature).
+ */
+export function fieldPatch<F, K extends keyof F>(field: K, value: F[K]): Partial<F> {
+  const patch: Partial<F> = {};
+  patch[field] = value;
+  return patch;
+}
+
+/**
  * Whether any structured filter is active — every field **except** the
  * free-text `q`. The per-family `hasActive*` exports put a name and a doc on
  * this for their consumers.

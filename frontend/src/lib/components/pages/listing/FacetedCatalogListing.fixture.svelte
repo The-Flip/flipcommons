@@ -5,7 +5,7 @@
   import type { CatalogEntityKey } from '$lib/entities/entity-meta';
   import { parseParams, serializeParams, type ParamKinds } from '$lib/filters/params';
 
-  type F = { q: string; foo: string | null };
+  type F = { q: string; foo: string | null; bar: string | null };
   type O = { foo: { public_id: string; name: string; count: number }[] };
   type Item = { slug: string; name: string };
   type Q = { q?: string };
@@ -26,15 +26,21 @@
     fetchPage?: (page: number) => Promise<{ items: Item[]; count: number }>;
   } = $props();
 
-  const params: ParamKinds<F> = { q: 'string', foo: 'string' };
+  const params: ParamKinds<F> = { q: 'string', foo: 'string', bar: 'string' };
   const engine = {
-    parse: (sp: URLSearchParams): F => parseParams(sp, { q: '', foo: null }, params),
+    parse: (sp: URLSearchParams): F => parseParams(sp, { q: '', foo: null, bar: null }, params),
     serialize: (f: F) => serializeParams(f, params),
     canonical: (f: F) => serializeParams(f, params).toString(),
   };
 
-  const chips = (f: F): FilterChipSpec[] =>
-    f.foo ? [{ key: `foo:${f.foo}`, label: `Foo: ${f.foo}`, remove: () => (f.foo = null) }] : [];
+  const chips = (
+    f: F,
+    _options: O | undefined,
+    apply: (patch: Partial<F>) => void,
+  ): FilterChipSpec[] =>
+    f.foo
+      ? [{ key: `foo:${f.foo}`, label: `Foo: ${f.foo}`, remove: () => apply({ foo: null }) }]
+      : [];
 </script>
 
 <FacetedCatalogListing

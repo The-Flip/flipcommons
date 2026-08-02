@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyMfrFilterState } from '$lib/filters/manufacturers';
+import { emptyMfrFilterState, type MfrFilterState } from '$lib/filters/manufacturers';
 import type { ManufacturerFilterOptionsSchema } from '$lib/api/schema';
 import { manufacturerFilterChips } from './manufacturer-filter-chips';
 
@@ -15,43 +15,55 @@ function options(
   };
 }
 
+/** Records the patches the chips' remove closures request. */
+function recorder() {
+  const patches: Partial<MfrFilterState>[] = [];
+  return { patches, apply: (p: Partial<MfrFilterState>) => patches.push(p) };
+}
+
 describe('manufacturerFilterChips', () => {
   it('returns no chips when nothing is filtered', () => {
-    expect(manufacturerFilterChips(emptyMfrFilterState(), options())).toEqual([]);
+    expect(manufacturerFilterChips(emptyMfrFilterState(), options(), () => {})).toEqual([]);
   });
 
   it('labels a single-select chip from the option list and clears it on remove', () => {
-    const filters = { ...emptyMfrFilterState(), location: 'usa' };
+    const { patches, apply } = recorder();
     const chips = manufacturerFilterChips(
-      filters,
+      { ...emptyMfrFilterState(), location: 'usa' },
       options({ location: [{ public_id: 'usa', name: 'USA', count: 3 }] }),
+      apply,
     );
 
     expect(chips).toHaveLength(1);
     expect(chips[0]).toMatchObject({ key: 'location:usa', label: 'USA' });
 
     chips[0].remove();
-    expect(filters.location).toBeNull();
+    expect(patches).toEqual([{ location: null }]);
   });
 
   it('falls back to the public_id when the option list lacks a name', () => {
     const chips = manufacturerFilterChips(
       { ...emptyMfrFilterState(), person: 'mystery' },
       options(),
+      () => {},
     );
     expect(chips[0].label).toBe('mystery');
   });
 
-  it('builds one year-range chip and clears both bounds on remove', () => {
-    const filters = { ...emptyMfrFilterState(), year_min: 1990, year_max: 2000 };
-    const chips = manufacturerFilterChips(filters, options());
+  it('builds one year-range chip and clears both bounds in one patch', () => {
+    const { patches, apply } = recorder();
+    const chips = manufacturerFilterChips(
+      { ...emptyMfrFilterState(), year_min: 1990, year_max: 2000 },
+      options(),
+      apply,
+    );
 
     expect(chips).toHaveLength(1);
     expect(chips[0]).toMatchObject({ key: 'year', label: 'Year: 1990–2000' });
 
     chips[0].remove();
-    expect(filters.year_min).toBeNull();
-    expect(filters.year_max).toBeNull();
+    // One patch (one navigation), both bounds cleared together.
+    expect(patches).toEqual([{ year_min: null, year_max: null }]);
   });
 
   it('keeps a stable order across mixed dimensions', () => {
@@ -69,6 +81,7 @@ describe('manufacturerFilterChips', () => {
         person: [{ public_id: 'pat-lawlor', name: 'Pat Lawlor', count: 1 }],
         technology_generation: [{ public_id: 'solid-state', name: 'Solid State', count: 1 }],
       }),
+      () => {},
     );
     expect(chips.map((c) => c.key)).toEqual([
       'location:usa',

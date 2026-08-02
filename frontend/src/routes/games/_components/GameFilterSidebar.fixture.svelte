@@ -8,4 +8,9 @@
   let filters = $state(emptyFilterState());
 </script>
 
-<GameFilterSidebar filterOptions={undefined} disabled bind:filters />
+<GameFilterSidebar
+  filterOptions={undefined}
+  disabled
+  {filters}
+  onchange={(patch) => (filters = { ...filters, ...patch })}
+/>

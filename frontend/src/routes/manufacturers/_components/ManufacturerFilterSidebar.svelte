@@ -1,3 +1,4 @@
+<!-- @component Filter sidebar for the /manufacturers listing: every surfaced facet control. -->
 <script lang="ts">
   import ChipGroup from '$lib/components/ui/ChipGroup.svelte';
   import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
@@ -13,7 +14,8 @@
     filterOptions,
     disabled = false,
     busy = false,
-    filters = $bindable(),
+    filters,
+    onchange,
   }: {
     /**
      * Server-computed option lists with live N-1 counts (public_id, name, count).
@@ -25,7 +27,10 @@
     disabled?: boolean;
     /** A refetch is in flight (sets `aria-busy` for screen readers; not visually disabled). */
     busy?: boolean;
+    /** The rendered filter state. Read-only here: changes go through `onchange`. */
     filters: MfrFilterState;
+    /** Request a filter change; the patch is applied onto the current state. */
+    onchange: (patch: Partial<MfrFilterState>) => void;
   } = $props();
 
   /** Backend `{public_id, name, count}` → the `{value, label, count}` the controls take. */
@@ -42,7 +47,7 @@
   let anyActive = $derived(hasActiveMfrFilters(filters));
 
   function clearAll() {
-    filters = emptyMfrFilterState();
+    onchange(emptyMfrFilterState());
   }
 </script>
 
@@ -59,7 +64,7 @@
       compact
       label="Location"
       options={locationOptions}
-      bind:selected={filters.location}
+      bind:selected={() => filters.location, (v) => onchange({ location: v })}
       {disabled}
       placeholder="Search locations..."
       emptyMessage="No locations match your other filters"
@@ -68,7 +73,11 @@
 
   <div class="filter-section">
     <span class="filter-label">Year</span>
-    <YearRangeInput bind:min={filters.year_min} bind:max={filters.year_max} {disabled} />
+    <YearRangeInput
+      bind:min={() => filters.year_min, (v) => onchange({ year_min: v })}
+      bind:max={() => filters.year_max, (v) => onchange({ year_max: v })}
+      {disabled}
+    />
   </div>
 
   <div class="filter-section">
@@ -76,7 +85,7 @@
       compact
       label="Person"
       options={personOptions}
-      bind:selected={filters.person}
+      bind:selected={() => filters.person, (v) => onchange({ person: v })}
       {disabled}
       placeholder="Search people..."
       emptyMessage="No people match your other filters"
@@ -87,7 +96,9 @@
     <ChipGroup
       label="Tech generation"
       options={techGenOptions}
-      bind:selected={filters.technology_generation}
+      bind:selected={
+        () => filters.technology_generation, (v) => onchange({ technology_generation: v })
+      }
       {disabled}
     />
   </div>

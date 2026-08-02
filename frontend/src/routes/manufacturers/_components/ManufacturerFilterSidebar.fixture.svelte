@@ -45,5 +45,6 @@
   filterOptions={noOptions ? undefined : FILTER_OPTIONS}
   {disabled}
   {busy}
-  bind:filters
+  {filters}
+  onchange={(patch) => (filters = { ...filters, ...patch })}
 />

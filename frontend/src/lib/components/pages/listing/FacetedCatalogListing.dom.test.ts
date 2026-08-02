@@ -2,25 +2,29 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { goto, invalidateAll, afterNavigateCb, authMock, pageState } = vi.hoisted(() => ({
-  goto: vi.fn(),
-  invalidateAll: vi.fn(),
-  // Capture the afterNavigate callback so a test can fire a synthetic popstate.
-  afterNavigateCb: { current: undefined as ((nav: { type: string }) => void) | undefined },
-  authMock: { isAuthenticated: true, load: () => Promise.resolve() },
-  // Mutable so a test can change the URL before invoking the popstate callback;
-  // the shell seeds its filter state from `page.url` (unlike the row-list
-  // controller, which seeds from a `q` prop).
-  pageState: { url: new URL('http://localhost/manufacturers') },
-}));
-vi.mock('$app/navigation', () => ({
-  goto,
-  invalidateAll,
-  afterNavigate: (cb: (nav: { type: string }) => void) => {
-    afterNavigateCb.current = cb;
-  },
-}));
-vi.mock('$app/state', () => ({ page: pageState }));
+import { resetPageState } from './FacetedCatalogListing.testState.svelte';
+
+const { goto, gotoCalls, invalidateAll, authMock } = vi.hoisted(() => {
+  // Each goto returns a promise the test settles by hand: `land()` adopts the
+  // target into the page URL then resolves (a navigation that landed), a bare
+  // `resolve()` without a URL change is a navigation that settled without
+  // landing (blocked, or aborted by an invalidation).
+  const gotoCalls: { href: string; resolve: () => void }[] = [];
+  const goto = vi.fn(
+    (href: string) => new Promise<void>((resolve) => gotoCalls.push({ href, resolve })),
+  );
+  return {
+    goto,
+    gotoCalls,
+    invalidateAll: vi.fn(),
+    authMock: { isAuthenticated: true, load: () => Promise.resolve() },
+  };
+});
+vi.mock('$app/navigation', () => ({ goto, invalidateAll }));
+vi.mock('$app/state', async () => {
+  const { pageState } = await import('./FacetedCatalogListing.testState.svelte');
+  return { page: pageState };
+});
 vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));
 
 import FacetedCatalogListingFixture from './FacetedCatalogListing.fixture.svelte';
@@ -30,12 +34,21 @@ const ITEMS = [
   { slug: 'stern', name: 'Stern' },
 ];
 
+/** Land a goto: the URL updates to its target, then its promise settles. */
+async function land(call: { href: string; resolve: () => void }) {
+  resetPageState(new URL(call.href, 'http://localhost').href);
+  call.resolve();
+  // Let the settlement's `.finally` clear the pending intent.
+  await new Promise<void>((r) => setTimeout(r, 0));
+}
+
 describe('FacetedCatalogListing', () => {
   beforeEach(() => {
     goto.mockClear();
+    gotoCalls.length = 0;
     invalidateAll.mockClear();
     authMock.isAuthenticated = true;
-    pageState.url = new URL('http://localhost/manufacturers');
+    resetPageState();
   });
 
   it('renders the seeded SSR page 1 without re-fetching it', () => {
@@ -71,6 +84,21 @@ describe('FacetedCatalogListing', () => {
     expect(goto.mock.calls[0][0]).toContain('/manufacturers');
   });
 
+  it('keeps the draft in the box when its own commit lands', async () => {
+    const user = userEvent.setup();
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+
+    await user.type(screen.getByRole('searchbox'), 'will');
+    await waitFor(() => expect(goto).toHaveBeenCalledTimes(1));
+
+    await land(gotoCalls[0]);
+
+    expect(screen.getByRole('searchbox')).toHaveValue('will');
+    expect(goto).toHaveBeenCalledTimes(1);
+  });
+
   it('navigates when a sidebar filter changes', async () => {
     const user = userEvent.setup();
     render(FacetedCatalogListingFixture, {
@@ -84,45 +112,160 @@ describe('FacetedCatalogListing', () => {
   });
 
   it('seeds filters from the request URL', async () => {
-    pageState.url = new URL('http://localhost/manufacturers?foo=seeded');
+    resetPageState('http://localhost/manufacturers?foo=seeded');
     render(FacetedCatalogListingFixture, {
       props: { initial: { items: ITEMS, count: 2 } },
     });
     expect(await screen.findByTestId('sb-foo')).toHaveTextContent('seeded');
   });
 
-  it('re-seeds filters from the URL on a popstate navigation', async () => {
+  it('adopts the URL on a popstate navigation', async () => {
     render(FacetedCatalogListingFixture, {
       props: { initial: { items: ITEMS, count: 2 } },
     });
     expect(await screen.findByTestId('sb-foo')).toHaveTextContent('none');
 
-    // Back/forward: the URL changed, then afterNavigate fires with a popstate.
-    pageState.url = new URL('http://localhost/manufacturers?foo=back');
-    afterNavigateCb.current?.({ type: 'popstate' });
+    // Back/forward: the framework updates `page.url`; the derivation re-runs.
+    resetPageState('http://localhost/manufacturers?foo=back');
 
     await waitFor(() => expect(screen.getByTestId('sb-foo')).toHaveTextContent('back'));
-    // Re-seeding adopts the URL; it must NOT trigger an outbound navigation.
+    // Adopting the URL must NOT trigger an outbound navigation.
     expect(goto).not.toHaveBeenCalled();
   });
 
-  it('re-seeds filters when a link navigation lands on a different URL', async () => {
+  it('adopts the URL when a link navigation lands on a different URL', async () => {
     // Top-nav "Games"/"Manufacturers" while filtered: SvelteKit keeps the
     // component instance (same route id), so only the URL changes.
-    pageState.url = new URL('http://localhost/manufacturers?foo=bar');
+    resetPageState('http://localhost/manufacturers?foo=bar');
     render(FacetedCatalogListingFixture, {
       props: { initial: { items: ITEMS, count: 2 } },
     });
     expect(await screen.findByTestId('sb-foo')).toHaveTextContent('bar');
     expect(await screen.findByText('Foo: bar')).toBeInTheDocument();
 
-    pageState.url = new URL('http://localhost/manufacturers');
-    afterNavigateCb.current?.({ type: 'link' });
+    resetPageState('http://localhost/manufacturers');
 
     await waitFor(() => expect(screen.getByTestId('sb-foo')).toHaveTextContent('none'));
     expect(screen.queryByText('Foo: bar')).not.toBeInTheDocument();
     // Adopting the URL must not bounce a navigation back out.
     expect(goto).not.toHaveBeenCalled();
+  });
+
+  it('replaces the search draft when the committed query arrives from outside', async () => {
+    const user = userEvent.setup();
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+
+    // Mid-draft (nothing committed yet), a back/forward landing carries a new q.
+    await user.type(screen.getByRole('searchbox'), 'wi');
+    resetPageState('http://localhost/manufacturers?q=back');
+
+    await waitFor(() => expect(screen.getByRole('searchbox')).toHaveValue('back'));
+    // The replaced draft's scheduled commit is abandoned: no navigation fires.
+    await new Promise<void>((r) => setTimeout(r, 400));
+    expect(goto).not.toHaveBeenCalled();
+  });
+
+  it('renders the requested state while its navigation is in flight', async () => {
+    const user = userEvent.setup();
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+
+    await user.click(await screen.findByTestId('sb-set'));
+
+    // Before the landing: the sidebar and chips already show the intent.
+    await waitFor(() => expect(screen.getByTestId('sb-foo')).toHaveTextContent('bar'));
+    expect(screen.getByText('Foo: bar')).toBeInTheDocument();
+
+    await land(gotoCalls[0]);
+    expect(screen.getByTestId('sb-foo')).toHaveTextContent('bar');
+    expect(goto).toHaveBeenCalledTimes(1);
+  });
+
+  it('composes a second intent on the pending target of the first', async () => {
+    const user = userEvent.setup();
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+
+    await user.click(await screen.findByTestId('sb-set'));
+    await user.click(await screen.findByTestId('sb-set-bar'));
+
+    await waitFor(() => expect(goto).toHaveBeenCalledTimes(2));
+    // The second target carries BOTH fields — composed on the first intent's
+    // requested state, not on the stale committed URL.
+    expect(goto.mock.calls[1][0]).toContain('foo=bar');
+    expect(goto.mock.calls[1][0]).toContain('bar=baz');
+  });
+
+  it('keeps the newer intent pending when a superseded goto settles', async () => {
+    const user = userEvent.setup();
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+
+    await user.click(await screen.findByTestId('sb-set'));
+    await user.click(await screen.findByTestId('sb-set-bar'));
+    await waitFor(() => expect(goto).toHaveBeenCalledTimes(2));
+
+    // The superseded first goto settles without landing (SvelteKit aborts it).
+    gotoCalls[0].resolve();
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(screen.getByTestId('sb-foo')).toHaveTextContent('bar');
+    expect(screen.getByTestId('sb-bar')).toHaveTextContent('baz');
+
+    await land(gotoCalls[1]);
+    expect(screen.getByTestId('sb-foo')).toHaveTextContent('bar');
+    expect(screen.getByTestId('sb-bar')).toHaveTextContent('baz');
+  });
+
+  it('snaps back to the committed URL when a navigation settles without landing', async () => {
+    const user = userEvent.setup();
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+
+    await user.click(await screen.findByTestId('sb-set'));
+    await waitFor(() => expect(screen.getByTestId('sb-foo')).toHaveTextContent('bar'));
+
+    // Settle without a URL change: blocked, or aborted by an invalidation.
+    gotoCalls[0].resolve();
+
+    await waitFor(() => expect(screen.getByTestId('sb-foo')).toHaveTextContent('none'));
+  });
+
+  it('commits a mid-debounce draft on top of an externally landed filter', async () => {
+    const user = userEvent.setup();
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+
+    // Draft typed but not yet committed when a navigation lands a filter change
+    // that leaves q untouched (e.g. another surface navigated).
+    await user.type(screen.getByRole('searchbox'), 'wi');
+    resetPageState('http://localhost/manufacturers?foo=bar');
+
+    // The draft survives (its committed value didn't change) and its commit
+    // composes on the landed state.
+    await waitFor(() => expect(goto).toHaveBeenCalledTimes(1));
+    expect(goto.mock.calls[0][0]).toContain('foo=bar');
+    expect(goto.mock.calls[0][0]).toContain('q=wi');
+  });
+
+  it('removes a chip through a single navigation clearing that field', async () => {
+    resetPageState('http://localhost/manufacturers?foo=bar&q=will');
+    const user = userEvent.setup();
+    render(FacetedCatalogListingFixture, {
+      props: { initial: { items: ITEMS, count: 2 } },
+    });
+
+    await user.click(await screen.findByRole('button', { name: /remove filter/i }));
+
+    await waitFor(() => expect(goto).toHaveBeenCalledTimes(1));
+    expect(goto.mock.calls[0][0]).not.toContain('foo=');
+    expect(goto.mock.calls[0][0]).toContain('q=will');
   });
 
   it('renders the sidebar disabled while the facet stream is pending, enabled once it lands', async () => {
@@ -152,7 +295,7 @@ describe('FacetedCatalogListing', () => {
   });
 
   it('renders active chips from the resolved options', async () => {
-    pageState.url = new URL('http://localhost/manufacturers?foo=bar');
+    resetPageState('http://localhost/manufacturers?foo=bar');
     render(FacetedCatalogListingFixture, {
       props: { initial: { items: ITEMS, count: 2 } },
     });
@@ -162,7 +305,7 @@ describe('FacetedCatalogListing', () => {
   it('renders active chips while the facet stream is pending, and when it has failed', async () => {
     // The chip row is the only removal affordance for chip-only dimensions, so
     // it must not wait for (or lose) the streamed facet payload.
-    pageState.url = new URL('http://localhost/manufacturers?foo=bar');
+    resetPageState('http://localhost/manufacturers?foo=bar');
     const { unmount } = render(FacetedCatalogListingFixture, {
       props: { initial: { items: ITEMS, count: 2 }, filterOptions: new Promise<never>(() => {}) },
     });
@@ -213,7 +356,7 @@ describe('FacetedCatalogListing', () => {
   // document load.
   describe('catalogKey="title" (the games listing)', () => {
     it('filter navigation targets /games, not the entity plural', async () => {
-      pageState.url = new URL('http://localhost/games');
+      resetPageState('http://localhost/games');
       const user = userEvent.setup();
       render(FacetedCatalogListingFixture, {
         props: { catalogKey: 'title' as const, initial: { items: ITEMS, count: 2 } },
@@ -226,7 +369,7 @@ describe('FacetedCatalogListing', () => {
     });
 
     it('the create prompt still targets /titles/new', async () => {
-      pageState.url = new URL('http://localhost/games?q=nonesuch');
+      resetPageState('http://localhost/games?q=nonesuch');
       render(FacetedCatalogListingFixture, {
         props: {
           catalogKey: 'title' as const,
