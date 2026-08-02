@@ -16,6 +16,7 @@ own mechanism, so the server load re-runs and reseeds. -->
   import PaginatedCardLoader from '$lib/components/pages/listing/PaginatedCardLoader.svelte';
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import { unwrapPage } from '$lib/paginated-loader.svelte';
+  import { searchDraft } from '$lib/search-draft.svelte';
 
   /** The listing query params for pages 2+. */
   type GamesQuery = NonNullable<paths['/api/games/']['get']['parameters']['query']>;
@@ -49,43 +50,15 @@ own mechanism, so the server load re-runs and reseeds. -->
     return unwrapPage(data);
   };
 
-  // SearchBox binds here. The draft is its own state, not a mirror of `q`:
-  // the committed value changes exactly when a debounced navigation lands,
-  // which is exactly when a still-typing user has a longer draft in the box.
-  // svelte-ignore state_referenced_locally
-  let queryInput = $state(q);
-
-  /** The scheduled commit of the current draft; `undefined` when the draft has
-   * nothing left to commit, i.e. the user is not ahead of the committed `q`. */
-  let qTimer: ReturnType<typeof setTimeout> | undefined;
-
-  // Adopt the committed value, but only when the user isn't ahead of it, so a
-  // navigation landing mid-word leaves the draft alone. Back/forward and other
-  // outside changes have no commit scheduled, so the box follows the URL.
-  // Ordered before the debounce below, which re-arms on a committed change and
-  // would otherwise make every such change look like the user typing.
-  $effect(() => {
-    const committed = q;
-    if (qTimer !== undefined) return;
-    queryInput = committed;
-  });
-
-  // Debounce typing → one `goto ?q=` per pause on the page's own path. The
-  // navigation re-runs the server load, which reseeds `games` and `q`.
-  $effect(() => {
-    const next = queryInput.trim();
-    if (next === q) return;
-    clearTimeout(qTimer);
-    qTimer = setTimeout(() => {
-      qTimer = undefined;
+  // Commits go to the page's own path, so the server load re-runs and reseeds
+  // `games` and `q`.
+  const queryDraft = searchDraft(
+    () => q,
+    (next) => {
       const href = `${page.url.pathname}${next ? `?q=${encodeURIComponent(next)}` : ''}`;
       void goto(href, { keepFocus: true, noScroll: true });
-    }, 250);
-    return () => {
-      clearTimeout(qTimer);
-      qTimer = undefined;
-    };
-  });
+    },
+  );
 
   // Appears once the set is big enough to need it, or whenever a query is
   // active (so a narrowed result set keeps its box). Server count, not page 1.
@@ -99,7 +72,7 @@ own mechanism, so the server load re-runs and reseeds. -->
   <h2>Games ({games.count})</h2>
 
   {#if showSearch}
-    <SearchBox bind:value={queryInput} placeholder="Search games..." />
+    <SearchBox bind:value={queryDraft.value} placeholder="Search games..." />
   {/if}
 
   {#if games.count === 0}

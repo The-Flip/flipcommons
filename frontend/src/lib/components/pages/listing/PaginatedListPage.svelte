@@ -12,6 +12,7 @@
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import { SEARCH_THRESHOLD } from '$lib/components/collections/grid/search-threshold';
+  import { searchDraft } from '$lib/search-draft.svelte';
   import { resolveHref } from '$lib/utils';
 
   /**
@@ -89,10 +90,15 @@
 
   let entityLabel = $derived(title.toLowerCase());
 
-  // SearchBox binds here. A writable `$derived` so it mirrors the committed `q`
-  // when that changes from outside the input (a popstate, the seed, our goto's
-  // landing) yet stays reassignable while typing.
-  let queryInput = $derived(q);
+  // Commits preserve any active extra filter, so they go through the single
+  // navigator below rather than building their own URL. Back/forward needs no
+  // `afterNavigate` resync: `q` and `extraParams` arrive as props, so a re-run
+  // load feeds the draft and `gridKey` on its own — unlike `FacetedCatalogListing`,
+  // whose local filter state must be re-read from the URL.
+  const queryDraft = searchDraft(
+    () => q,
+    (next) => navigate(next, extraParams),
+  );
 
   // Stable string view of the committed extra params, for the remount key.
   let extraParamsKey = $derived(
@@ -128,6 +134,10 @@
     return `${resolveHref(basePath)}${pairs.length ? `?${pairs.join('&')}` : ''}`;
   }
   function navigate(nextQ: string, nextExtra: Record<string, string>): void {
+    // `setExtra` reaches here without going through the draft, so record the
+    // committed `q` either way — otherwise that landing reads as an outside
+    // change and wipes whatever the user has half-typed.
+    queryDraft.markCommitted(nextQ);
     void goto(buildHref(nextQ, nextExtra), { keepFocus: true, noScroll: true });
   }
 
@@ -136,23 +146,6 @@
   function setExtra(extra: Record<string, string>): void {
     navigate(q.trim(), { ...extraParams, ...extra });
   }
-
-  // Back/forward re-runs the server load, so `q` (hence `queryInput`/`gridKey`)
-  // adopts the URL reactively via the props — no `afterNavigate` resync needed
-  // (unlike titles, whose local filter state must be re-read from the URL).
-
-  // Debounce typing → one `goto ?q=` per pause, preserving any active extra
-  // filter. Skipped when the input already matches the committed `q` (seed /
-  // popstate / our goto's landing, each of which resets `queryInput` via the
-  // `$derived(q)` above), so no echo loop.
-  let qTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    const next = queryInput.trim();
-    if (next === q) return;
-    clearTimeout(qTimer);
-    qTimer = setTimeout(() => navigate(next, extraParams), 250);
-    return () => clearTimeout(qTimer);
-  });
 
   // Search box appears once the set is big enough to need it, or whenever a
   // query is active (so a narrowed result set keeps its box). Based on the
@@ -206,7 +199,7 @@
   </PageHeader>
 
   {#if showSearch}
-    <SearchBox bind:value={queryInput} placeholder={`Search ${entityLabel}...`} />
+    <SearchBox bind:value={queryDraft.value} placeholder={`Search ${entityLabel}...`} />
   {/if}
 
   <!-- Rendered independently of the search box: an extra filter (e.g.

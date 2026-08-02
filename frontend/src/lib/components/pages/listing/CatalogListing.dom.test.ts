@@ -69,6 +69,59 @@ describe('CatalogListing', () => {
     expect(goto.mock.calls[0][0]).toContain('q=star');
   });
 
+  // The box holds a draft that a landing navigation must not rewind. The commit
+  // is a `goto` whose server load reseeds `q` a round-trip later — by which time
+  // a still-typing user is ahead of the committed value.
+  describe('search box', () => {
+    const props = (q: string) => ({ initial: { items: ROWS, count: 12 }, q });
+
+    it('keeps a draft typed ahead of a landing navigation', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(CatalogListingFixture, { props: props('') });
+      const box = screen.getByRole('searchbox');
+
+      // Type, pause: the debounce commits `?q=star` and the navigation starts.
+      await user.type(box, 'star');
+      await waitFor(() => expect(goto).toHaveBeenCalledTimes(1));
+      expect(goto.mock.calls[0][0]).toContain('q=star');
+
+      // The user types on while that navigation is still in flight, then it
+      // lands and the server load reseeds the committed `q`.
+      await user.type(box, 'fi');
+      await rerender(props('star'));
+
+      expect(box).toHaveValue('starfi');
+    });
+
+    // Back/forward outranks an uncommitted draft — the `searchDraft` contract.
+    it('lets back/forward override a draft whose commit is still pending', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(CatalogListingFixture, { props: props('star') });
+      const box = screen.getByRole('searchbox');
+
+      await user.type(box, 'fi');
+      expect(box).toHaveValue('starfi');
+
+      await rerender(props('addams'));
+      expect(box).toHaveValue('addams');
+
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(box).toHaveValue('addams');
+      expect(goto).not.toHaveBeenCalled();
+    });
+
+    it('adopts a committed q that changes with nothing pending', async () => {
+      const { rerender } = render(CatalogListingFixture, { props: props('star') });
+      expect(screen.getByRole('searchbox')).toHaveValue('star');
+
+      // Back/forward: the committed value changes from outside the box, and
+      // the user has no draft in flight — the box follows the URL.
+      await rerender(props('addams'));
+
+      expect(screen.getByRole('searchbox')).toHaveValue('addams');
+    });
+  });
+
   it('shows the create prompt when a search yields zero and the user can create', () => {
     render(CatalogListingFixture, {
       props: { initial: { items: [], count: 0 }, q: 'nonesuch', canCreate: true },
