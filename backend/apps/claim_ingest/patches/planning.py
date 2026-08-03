@@ -855,7 +855,6 @@ def _validate_plan_wide(results: list[_EntryResult]) -> None:
             deferred_members[tkey] |= c.deferred_member_ids
             removed_members[tkey].update(c.removed_members)
 
-    # Decision 5: a delete footprint is exclusive over root + cascade.
     for tkey, deleting in is_delete.items():
         if deleting and entry_count[tkey] > 1:
             raise PatchError(

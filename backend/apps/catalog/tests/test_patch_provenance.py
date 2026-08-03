@@ -212,8 +212,8 @@ claims:
 
 
 def test_same_field_two_entries_rejected(flipcommons_catalog, pm):
-    # Decision 2: two entries asserting the SAME field on one entity would
-    # collapse to a single claim in _build_claims — rejected as non-disjoint.
+    # Two entries asserting the SAME field on one entity would collapse to a
+    # single claim in _build_claims — rejected as non-disjoint.
     text = """
 attribution: flipcommons-catalog
 claims:
@@ -228,8 +228,8 @@ claims:
 
 
 def test_same_field_retracted_twice_rejected(flipcommons_catalog, pm):
-    # Decision 2 (retractions): two entries retracting the same field collapse to
-    # one deactivation, dropping one entry's note — rejected.
+    # Two entries retracting the same field collapse to one deactivation,
+    # dropping one entry's note — rejected.
     make_claim(pm, "year", 1998, ingest_source=flipcommons_catalog)
     text = """
 attribution: flipcommons-catalog
@@ -246,8 +246,8 @@ claims:
 
 
 def test_same_deferred_member_two_entries_rejected(flipcommons_catalog, pm):
-    # Decision 2 (deferred member): two entries adding the SAME same-patch-created
-    # tag to one model collapse to one membership claim — rejected.
+    # Two entries adding the SAME same-patch-created tag to one model collapse
+    # to one membership claim — rejected.
     text = """
 attribution: flipcommons-catalog
 claims:
@@ -441,8 +441,8 @@ claims:
 
 
 def test_create_companion_same_field_rejected(flipcommons_catalog):
-    # Decision 2 spans the create + its companions: the same field asserted by the
-    # create and a companion edit would collapse to one claim — rejected.
+    # Disjointness spans a create and its companions: the same field asserted by
+    # the create and a companion edit would collapse to one claim — rejected.
     text = """
 attribution: flipcommons-catalog
 claims:
@@ -474,8 +474,8 @@ claims:
 
 
 def test_create_companion_same_deferred_member_rejected(flipcommons_catalog):
-    # Decision 2 (deferred member) across a create + companion: both assert the
-    # same same-patch parent on the created record → one membership claim → rejected.
+    # Deferred members across a create + companion: both assert the same
+    # same-patch parent on the created record → one membership claim → rejected.
     text = """
 attribution: flipcommons-catalog
 claims:
@@ -495,9 +495,9 @@ claims:
 
 
 def test_edit_above_create_rejected(flipcommons_catalog):
-    # Decision 6: a create must precede the edits that refine it. An edit above its
-    # create resolves nowhere (the registry is single-pass) and the pre-scan names
-    # the below-file create in the diagnostic.
+    # A create must precede the edits that refine it. An edit above its create
+    # resolves nowhere (the registry is single-pass) and the pre-scan names the
+    # below-file create in the diagnostic.
     text = """
 attribution: flipcommons-catalog
 claims:
