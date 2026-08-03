@@ -84,14 +84,16 @@ describe('/games +page.server load', () => {
       }),
     );
 
-    const result = await load(event(fetch, '?tag=classic&display_subtype=alphanumeric'));
+    const result = await load(
+      event(fetch, '?technology_subgeneration=wpc&display_subtype=alphanumeric'),
+    );
     if (!result) throw new Error('expected load to return page data');
-    expect(result.query.tag).toBe('classic');
+    expect(result.query.technology_subgeneration).toBe('wpc');
     expect(result.query.display_subtype).toBe('alphanumeric');
     const cardCall = fetch.mock.calls.find(
       (c) => new URL((c[0] as Request).url).pathname === '/api/games/',
     );
-    expect((cardCall![0] as Request).url).toContain('tag=classic');
+    expect((cardCall![0] as Request).url).toContain('technology_subgeneration=wpc');
   });
 
   it('throws instead of degrading to empty when the card fetch fails', async () => {

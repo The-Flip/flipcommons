@@ -368,6 +368,7 @@ class TestGamesFacetsPage:
             "system",
             "reward_type",
             "edge",
+            "tag",
             "cabinet",
             "game_format",
             "production_status",

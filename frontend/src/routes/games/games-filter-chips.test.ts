@@ -12,6 +12,7 @@ function options(overrides: Partial<GameFilterOptionsSchema> = {}): GameFilterOp
     system: [],
     reward_type: [],
     edge: [],
+    tag: [],
     cabinet: { options: [], default_slug: 'floor' },
     game_format: { options: [], default_slug: 'pinball' },
     production_status: { options: [], default_slug: 'produced' },
@@ -215,7 +216,6 @@ describe('gameFilterChips', () => {
       {
         ...emptyFilterState(),
         display_subtype: 'alphanumeric',
-        tag: 'widebody',
         technology_subgeneration: 'wpc',
         corporate_entity: 'wms-industries',
       },
@@ -225,13 +225,12 @@ describe('gameFilterChips', () => {
 
     expect(chips.map((c) => c.label)).toEqual([
       'Display subtype: alphanumeric',
-      'Tag: widebody',
       'Technology subgeneration: wpc',
       'Corporate entity: wms-industries',
     ]);
 
     chips[1].remove();
-    expect(patches).toEqual([{ tag: null }]);
+    expect(patches).toEqual([{ technology_subgeneration: null }]);
   });
 
   it('builds every chip without the facet payload, degrading labels to raw slugs', () => {
@@ -244,12 +243,18 @@ describe('gameFilterChips', () => {
         manufacturer: 'stern',
         game_format: ['bingo-pinball'],
         tag: 'widebody',
+        display_subtype: 'alphanumeric',
       },
       undefined,
       apply,
     );
 
-    expect(chips.map((c) => c.label)).toEqual(['stern', 'bingo-pinball', 'Tag: widebody']);
+    expect(chips.map((c) => c.label)).toEqual([
+      'stern',
+      'bingo-pinball',
+      'widebody',
+      'Display subtype: alphanumeric',
+    ]);
     chips[0].remove();
     expect(patches).toEqual([{ manufacturer: null }]);
   });

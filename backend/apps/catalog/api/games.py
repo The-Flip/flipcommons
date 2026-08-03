@@ -327,6 +327,7 @@ class GameFilterOptionsSchema(Schema):
     # Edge options' public_id/name are both the wire value (`copy`, `copy:in`);
     # reader-facing labels are the frontend's relationship vocabulary.
     edge: list[FacetOptionSchema] = []
+    tag: list[FacetOptionSchema] = []
     cabinet: SparseFacetSchema
     game_format: SparseFacetSchema
     production_status: SparseFacetSchema
@@ -611,6 +612,7 @@ def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
             "system": _facet_option_dicts(opts.system),
             "reward_type": _facet_option_dicts(opts.reward_type),
             "edge": _facet_option_dicts(opts.edge),
+            "tag": _facet_option_dicts(opts.tag),
             "cabinet": _sparse_facet_dict("cabinet", opts.cabinet),
             "game_format": _sparse_facet_dict("game_format", opts.game_format),
             "production_status": _sparse_facet_dict(

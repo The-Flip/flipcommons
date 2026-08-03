@@ -340,6 +340,7 @@ FACET_FILTER_FIELD: dict[str, str] = {
     "system": "system",
     "reward_type": "reward_types",
     "edge": "edge",
+    "tag": "tag",
     "cabinet": "cabinet",
     "game_format": "game_format",
     "production_status": "production_status",
@@ -377,6 +378,7 @@ NARROWERS: dict[str, Callable[[GameFilters, str], GameFilters]] = {
     "system": lambda f, v: replace(f, system=v),
     "reward_type": lambda f, v: replace(f, reward_types=_add(f.reward_types, v)),
     "edge": lambda f, v: replace(f, edge=_add(f.edge, v)),
+    "tag": lambda f, v: replace(f, tag=v),
     "cabinet": lambda f, v: replace(f, cabinet=_sparse_click("cabinet", v)),
     "game_format": lambda f, v: replace(f, game_format=_sparse_click("game_format", v)),
     "production_status": lambda f, v: replace(
@@ -416,6 +418,9 @@ def _build_catalog() -> None:
         features=("multiball",),
         reward_types=("replay",),
         persons=("lawlor",),
+        # A tag on one of Alpha's two Models, so an active tag="widebody"
+        # state spans two Titles and the other facets produce options under it.
+        tags=("widebody",),
         # Alpha mixes formats, so the default-bucket click shatters it.
         game_format="pinball",
     )
@@ -449,6 +454,7 @@ def _build_catalog() -> None:
         features=("multiball", "ramps"),
         reward_types=("replay", "extra-ball"),
         persons=("lawlor",),
+        tags=("widebody",),
         # Explicit default beside a null: both land in the floor bucket.
         cabinet="floor",
     )
@@ -464,6 +470,7 @@ def _build_catalog() -> None:
         features=("multiball",),
         reward_types=("replay",),
         persons=("lawlor",),
+        tags=("widebody",),
         variant_of=parent,
     )
     _model(
@@ -524,6 +531,7 @@ def _build_catalog() -> None:
             features=("ramps",),
             reward_types=("replay",),
             persons=("trudeau",),
+            tags=("prototype",),
         )
         _edge(twin, alpha_stern, RelationshipType.COPY)
     # Beta's parent and its Variant carry the same edge key, so absorption
@@ -554,6 +562,11 @@ class TestBadgeEqualsResultCount:
         GameFilters(edge=("copy",)),
         GameFilters(edge=("bootleg", "conversion")),
         GameFilters(edge=("copy:in",), q="Alpha"),
+        # The one single-select over a multivalued join: facet_exclude("tag")
+        # drops an M2M path from a facet base, a combination no other
+        # dimension reaches (the other M2Ms accumulate, the other
+        # single-selects are FKs).
+        GameFilters(tag="widebody"),
         # The sparse states: the canonical preset pair, a lone true-null
         # selection, a minority value, and the preset composed with another
         # dimension.

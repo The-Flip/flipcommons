@@ -45,7 +45,8 @@ export function gameFilterChips(
       | 'person'
       | 'system'
       | 'franchise'
-      | 'series',
+      | 'series'
+      | 'tag',
     opts: FacetOptionSchema[] | undefined,
   ) => {
     if (!value) return;
@@ -165,9 +166,9 @@ export function gameFilterChips(
       remove: () => apply({ year_min: null, year_max: null }),
     });
   }
+  single(filters.tag, 'tag', options?.tag);
 
   chipOnly('display_subtype', 'Display subtype');
-  chipOnly('tag', 'Tag');
   chipOnly('technology_subgeneration', 'Technology subgeneration');
   chipOnly('corporate_entity', 'Corporate entity');
 

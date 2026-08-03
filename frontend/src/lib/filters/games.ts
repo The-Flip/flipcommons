@@ -27,13 +27,12 @@ import {
 
 /**
  * The dimensions filterable by URL but without a sidebar control
- * (`/games?tag=x` — hand-crafted or external URLs; no facet payload, so no
- * option list). They live in `FilterState` like every other dimension and
- * persist across interactions; their only UI is the chip row, which labels
- * them by raw slug.
+ * (`/games?corporate_entity=x` — hand-crafted or external URLs; no facet
+ * payload, so no option list). They live in `FilterState` like every other
+ * dimension and persist across interactions; their only UI is the chip row,
+ * which labels them by raw slug.
  */
-export type ChipOnlyGameParam =
-  'display_subtype' | 'tag' | 'technology_subgeneration' | 'corporate_entity';
+export type ChipOnlyGameParam = 'display_subtype' | 'technology_subgeneration' | 'corporate_entity';
 
 /**
  * The /games filter state: the full wire vocabulary, field names and

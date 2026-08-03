@@ -10,8 +10,9 @@ facet fan-out at card grain in ``_game_facets.py``, both built on this
 module's two sets and rungs. The filter vocabulary is the full listing set,
 by semantics class:
 
-- ``manufacturer`` / ``person`` / ``technology_generation`` / ``display_type`` / ``system``
-  — single-valued Model-only
+- ``manufacturer`` / ``person`` / ``technology_generation`` / ``display_type`` /
+  ``system`` / ``tag`` — single-valued Model-only (``tag`` over the M2M: any
+  of a Model's tags may match)
 - ``player_count`` — bucketed Model-only (``6`` means "6 or more", via the
   shared ``_bucket_q``)
 - ``themes`` / ``gameplay_features`` — multi-select Model-only (AND of ORs,
@@ -24,7 +25,7 @@ by semantics class:
 - ``franchise`` / ``series`` — Title-only, binding all of a Title's Models
 - ``q`` — the record-local shared class (name + abbreviations), tested on the
   record being decided and propagating in neither direction
-- ``display_subtype`` / ``tag`` / ``technology_subgeneration`` /
+- ``display_subtype`` / ``technology_subgeneration`` /
   ``corporate_entity`` — single-valued Model-only, **hidden**
   (``surfaced=False``): honored from the query string with full roll-up
   semantics, but no sidebar control and no facet counts.
@@ -38,9 +39,9 @@ by semantics class:
 The two-set split is the engine's load-bearing invariant: **unanimity is
 measured over** :func:`model_only_models` **(Model-only dimensions alone),
 never over** :func:`carding_models` **(that plus the shared class)**. Feeding
-``carding`` into the unanimity count silently inverts the product doc's worked
-examples (``q=Ice Fever`` would return the Ice Fever Model where the Title
-card is specified) — a plausible-looking wrong answer, not an error.
+``carding`` into the unanimity count silently inverts the intended grain
+(``q=Ice Fever`` would return the Ice Fever Model where the Title card is
+specified) — a plausible-looking wrong answer, not an error.
 
 Rows come from :func:`game_rows_merged` — two queries merged and ordered in
 Python (the ``_count_manufacturer`` precedent: ~7k-row scan + rollup). Two
@@ -150,8 +151,8 @@ ModelDimension = Literal[
     "gameplay_features",
     "reward_types",
     "edge",
-    "display_subtype",
     "tag",
+    "display_subtype",
     "technology_subgeneration",
     "cabinet",
     "game_format",
@@ -343,8 +344,8 @@ class FilterDimension:
     # ``None`` — no counted option list (``year`` is a range with bounds UI).
     facet: FacetBinding | None = None
     # Whether the /games sidebar offers a control for this dimension. A
-    # non-surfaced dimension is still honored from the query string (the
-    # product doc's Hidden dimensions — the detail-page pin dimensions).
+    # non-surfaced dimension is still honored from the query string — it
+    # exists so a dimension detail page can pin the listing.
     surfaced: bool = True
     # How several selections in this dimension combine — ``"and"`` (each
     # selection narrows further: themes, edge) or ``"or"`` (the selection is a
@@ -527,21 +528,21 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             facet=EdgeFacet("edge"),
             combine="and",
         ),
-        # The hidden dimensions (the product doc's Hidden dimensions): honored
-        # from the query string so a dimension detail page can pin the listing,
-        # but surfaced=False — no sidebar control — and facet=None — no counts.
+        FilterDimension(
+            key="tag",
+            active=lambda f: bool(f.tag),
+            narrow=lambda qs, f, expansion: qs.filter(tags__slug=f.tag),
+            facet=PathFacet("tag", "tags__slug", "tags__name"),
+        ),
+        # The hidden dimensions: honored from the query string so a dimension
+        # detail page can pin the listing, but surfaced=False — no sidebar
+        # control — and facet=None — no counts.
         FilterDimension(
             key="display_subtype",
             active=lambda f: bool(f.display_subtype),
             narrow=lambda qs, f, expansion: qs.filter(
                 display_subtype__slug=f.display_subtype
             ),
-            surfaced=False,
-        ),
-        FilterDimension(
-            key="tag",
-            active=lambda f: bool(f.tag),
-            narrow=lambda qs, f, expansion: qs.filter(tags__slug=f.tag),
             surfaced=False,
         ),
         FilterDimension(
