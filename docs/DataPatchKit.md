@@ -9,10 +9,12 @@ It exists because the scaffolding around a generated patch — YAML escaping, th
 A campaign is **two files** in flippatch's `campaigns/<patch>/`, and the split is the design:
 
 ```text
-flippatch/patches/
-  0181-bingo-years.yaml               # the shipped patch
-  authoring/
+flippatch/
+  patches/
+    0181-bingo-years.yaml             # the shipped patch
+  scripts/
     patchkit.py                       # the shared helper
+  campaigns/
     0181-bingo-years/
       years.sql                       # the analysis: detect, classify, gate, extract quotes
       gen.py                          # the emitter: one view -> patch YAML
@@ -52,7 +54,7 @@ The worked examples to copy are **`0177-exports`**, **`0178-gameplay-features`**
 
 ## `patchkit` API
 
-`gen.py` puts the campaign dir on `sys.path` (`sys.path.insert(0, <authoring>)`) and imports `patchkit as pk`.
+`gen.py` puts flippatch's `scripts/` on `sys.path` (`sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))`) and imports `patchkit as pk`.
 
 | function                                                                                                                                                                          | purpose                                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -65,7 +67,7 @@ The worked examples to copy are **`0177-exports`**, **`0178-gameplay-features`**
 | `clean_ipdb_quote(text, limit=240)`                                                                                                                                               | additionally strips IPDB's run-on header and `…: "<passage>` framing               |
 | `yamlq` / `clean_text`                                                                                                                                                            | the escaper / the typography normalizer, if you need them directly                 |
 
-**Escaping is solved — use it.** Notes go through `yamlq` (single-quoted YAML: literal except `'`, which doubles), which carries both the double quotes in a quoted excerpt and apostrophes, with no backslashes. Never `yaml.dump`, never `json.dumps` a note, never hand-roll it.
+**Escaping is solved — use it.** Notes and quotes go through `yamlq` (single-quoted YAML: literal except `'`, which doubles), which carries an excerpt's own double quotes and apostrophes alike, with no backslashes. Never `yaml.dump`, never `json.dumps` a note or a quote, never hand-roll it.
 
 **Relationship members.** `entry(...)` takes `relationships={namespace: [members]}` (the general emitter; `tags=` is the `tag` shorthand) and `remove={namespace: [members]}`. Members are escaped, so string members for aliases and abbreviations are safe — `relationships={"manufacturer_alias": ["Stern Pinball", "Stern, Inc"]}`. A `gameplay_feature` member may carry a count as a one-key `{public_id: count}` mapping, and the two forms mix freely in one list.
 
