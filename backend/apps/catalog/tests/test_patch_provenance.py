@@ -51,11 +51,11 @@ def prototype_tag(db):
     return Tag.objects.create(name="Prototype", slug="prototype")
 
 
-def _apply(text: str, *, patch_id: str = "0001-test", dry_run: bool = False):
+def _apply(text: str, *, patch_id: str = "0001-test"):
     doc = load_patch(text)
     source = Source.objects.get(slug=doc.attribution)
     plan = build_plan(doc, source=source, patch_id=patch_id)
-    return apply_plan(plan, dry_run=dry_run)
+    return apply_plan(plan)
 
 
 # ── Parsing ────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ def test_bad_cite_format_rejected(flipcommons_catalog, pm):
 
 def test_unknown_cite_scheme_rejected(flipcommons_catalog, pm):
     # A slug-shaped unknown left segment parses as an authored source ref and
-    # fails the read-phase resolution check — still at build/dry-run, with a
+    # fails the read-phase resolution check — at build, before any write, with a
     # message naming the known schemes (the did-you-mean for a typo'd key).
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: bogus:4443\n      year: 1998\n"
     with pytest.raises(PatchError, match="known schemes are"):
@@ -440,25 +440,6 @@ claims:
     assert website_claim.citation_instances.exists()
 
 
-def test_create_then_companion_edit_dry_run(flipcommons_catalog, ipdb_root):
-    # The create+companion case validates clean at --dry-run: the companion's
-    # handle-targeted assertions route through the planned/sentinel path, and the
-    # empty-diff guard exempts handle assertions (a new record always changes).
-    text = """
-attribution: flipcommons-catalog
-claims:
-  - manufacturer.acme:
-      create: true
-      name: Acme Pinball
-  - manufacturer.acme:
-      note: added the website
-      website: https://acme.example
-"""
-    report = _apply(text, dry_run=True)
-    assert report.asserted  # validated, nothing raised
-    assert not Manufacturer.objects.filter(slug="acme").exists()
-
-
 def test_create_companion_same_field_rejected(flipcommons_catalog):
     # Decision 2 spans the create + its companions: the same field asserted by the
     # create and a companion edit would collapse to one claim — rejected.
@@ -598,10 +579,10 @@ claims:
 
 
 def test_cite_on_unchanged_value_rejected(flipcommons_catalog, ipdb_root, pm):
-    # Decision 3: an already-correct, same-source value diffs as unchanged, so a
-    # cite: would attach to nothing and silently vanish — now a hard error. The
-    # empty-diff guard runs in the apply layer (ValidationError; the command
-    # converts it to a PatchError for the author).
+    # An already-correct, same-source value diffs as unchanged, so a cite:
+    # would attach to nothing and silently vanish — rejected. The empty-diff
+    # guard runs in the apply layer (ValidationError; the command converts it
+    # to a PatchError for the author).
     make_claim(pm, "year", 2000, ingest_source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 2000\n"
     with pytest.raises(ValidationError, match="changes nothing"):
@@ -610,10 +591,10 @@ def test_cite_on_unchanged_value_rejected(flipcommons_catalog, ipdb_root, pm):
 
 
 def test_note_on_unchanged_value_rejected(flipcommons_catalog, pm):
-    # Decision 3: re-asserting an already-active same-source value with a note
-    # diffs as unchanged, which would drop the note — now a hard error. Build time
-    # can't catch this (it depends on the post-diff result), so the apply-layer
-    # empty-diff guard does.
+    # Re-asserting an already-active same-source value with a note diffs as
+    # unchanged, which would drop the note — rejected. Build time can't catch
+    # this (it depends on the post-diff result), so the apply-layer empty-diff
+    # guard does.
     make_claim(pm, "year", 2000, ingest_source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
     with pytest.raises(ValidationError, match="changes nothing"):
@@ -623,34 +604,22 @@ def test_note_on_unchanged_value_rejected(flipcommons_catalog, pm):
     assert not ChangeSet.objects.filter(ingest_run__patch_id="0001-test").exists()
 
 
-def test_empty_diff_rejected_at_dry_run(flipcommons_catalog, pm):
-    # The empty-diff guard must fire at --dry-run too, so an author's pre-flight
-    # check catches the no-op note before apply — not only at apply time.
-    make_claim(pm, "year", 2000, ingest_source=flipcommons_catalog)
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
-    with pytest.raises(ValidationError, match="changes nothing"):
-        _apply(text, dry_run=True)
-
-
-def test_changing_note_entry_passes_dry_run(flipcommons_catalog, pm):
-    # A real change carrying a note validates clean at --dry-run (no false reject).
+def test_changing_note_entry_applies(flipcommons_catalog, pm):
+    # A real change carrying a note applies clean (no false empty-diff reject).
     make_claim(pm, "year", 2000, ingest_source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      year: 1999\n"
-    report = _apply(text, dry_run=True)
+    report = _apply(text)
     assert report.asserted == 1
 
 
-def test_dry_run_invalid_value_reports_validation_not_empty_diff(
-    flipcommons_catalog, pm
-):
-    # An invalid value carrying a note must surface as a validation error at
-    # --dry-run, not be masked by the empty-diff guard as "changes nothing": a
-    # rejected claim never reaches the diff, so the guard would otherwise blame the
-    # entry for a no-op instead of the real problem (year is a positive int).
+def test_invalid_value_reports_validation_not_empty_diff(flipcommons_catalog, pm):
+    # An invalid value carrying a note must surface as a validation error, not
+    # be masked by the empty-diff guard as "changes nothing": a rejected claim
+    # never reaches the diff, so the guard would otherwise blame the entry for a
+    # no-op instead of the real problem (year is a positive int).
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: bumping the year\n      year: -5\n"
-    report = _apply(text, dry_run=True)  # must not raise "changes nothing"
-    assert report.rejected == 1
-    assert report.errors
+    with pytest.raises(ValidationError, match="failed validation"):
+        _apply(text)
 
 
 def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
@@ -947,8 +916,8 @@ def test_cite_list_idempotent_across_applications(flipcommons_catalog, ipdb_root
 def test_patch_plan_missing_entry_index_raises(flipcommons_catalog, pm):
     # Structural guard: a patch_id plan whose assertion lacks an entry_index would
     # silently collapse all ChangeSet grouping. The coupling check rejects it
-    # before the live/dry-run split, so --dry-run catches it too. Internal
-    # invariant (the adapter always stamps) → ValueError, not PatchError.
+    # before any write. Internal invariant (the adapter always stamps) →
+    # ValueError, not PatchError.
     ct = ContentType.objects.get_for_model(MachineModel)
     plan = IngestPlan(
         source=flipcommons_catalog, input_fingerprint="fp", patch_id="0001-bad"
@@ -962,13 +931,13 @@ def test_patch_plan_missing_entry_index_raises(flipcommons_catalog, pm):
         )  # entry_index left unset
     )
     with pytest.raises(ValueError, match="without an entry_index"):
-        apply_plan(plan, dry_run=True)
+        apply_plan(plan)
 
 
 def test_retract_note_on_already_inactive_field_rejected(flipcommons_catalog, pm):
-    # Decision 3 (retraction note): a retract: + note: on a field this source does
-    # not actively claim emits no RetractEntry, so the note would vanish. Caught at
-    # build time — a no-op retraction carries nothing.
+    # A retract: + note: on a field this source does not actively claim emits
+    # no RetractEntry, so the note would vanish. Caught at build time — a no-op
+    # retraction carries nothing.
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: removing a year we never claimed\n      retract: [year]\n"
     with pytest.raises(PatchError, match="note has nothing to attach to"):
         _apply(text)

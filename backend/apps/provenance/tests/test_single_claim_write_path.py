@@ -92,7 +92,7 @@ _SPECS = [
         "Claim construction",
         "Claim",
         _construction_calls,
-        frozenset({"claim_ingest/apply/claims.py", "claim_ingest/apply/dry_run.py"}),
+        frozenset({"claim_ingest/apply/claims.py"}),
     ),
     GuardSpec(
         "ChangeSet construction",

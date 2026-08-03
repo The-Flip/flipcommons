@@ -15,7 +15,6 @@ from apps.claim_ingest.plan import (
     PlannedClaimAssert,
     PlannedClaimRetract,
     PlannedEntityCreate,
-    RunReport,
 )
 from apps.provenance.models import ChangeSet, Claim, IngestRun
 from apps.provenance.test_factories import make_ingest_source
@@ -266,40 +265,6 @@ def test_omitted_field_preserved(test_source):
         is_active=True,
     )
     assert website_claim.value == "https://bally.com"
-
-
-# ── Test 6: Dry run ────────────────────────────────────────────────
-
-
-def test_dry_run(test_source):
-    mfr = Manufacturer.objects.create(name="Bally", slug="bally")
-    ct_id = _mfr_ct_id()
-
-    initial_claims = Claim.objects.count()
-    initial_runs = IngestRun.objects.count()
-    initial_cs = ChangeSet.objects.count()
-
-    plan = _plan(
-        source=test_source,
-        input_fingerprint="fp-dry",
-        assertions=[
-            _assert(
-                field_name="description",
-                value="Test",
-                content_type_id=ct_id,
-                object_id=mfr.pk,
-            ),
-        ],
-    )
-    report = apply_plan(plan, dry_run=True)
-
-    assert report.asserted == 1
-    assert report.rejected == 0
-    assert isinstance(report, RunReport)
-    # Nothing written.
-    assert Claim.objects.count() == initial_claims
-    assert IngestRun.objects.count() == initial_runs
-    assert ChangeSet.objects.count() == initial_cs
 
 
 # ── Test 7: Failed apply (exception in resolve) ───────────────────
@@ -610,14 +575,14 @@ def test_duplicate_handle_raises(test_source):
         apply_plan(plan)
 
 
-# ── Test 14: Dry-run rejects malformed targets ─────────────────────
+# ── Test 14: Malformed targets rejected ────────────────────────────
 
 
-def test_dry_run_rejects_missing_target(test_source):
-    """Dry-run should produce the same ValueError as the live path."""
+def test_rejects_missing_target(test_source):
+    """An assertion with neither handle nor ct/obj fails structural validation."""
     plan = _plan(
         source=test_source,
-        input_fingerprint="fp-dry",
+        input_fingerprint="fp-missing-target",
         assertions=[
             _assert(
                 field_name="description",
@@ -627,7 +592,7 @@ def test_dry_run_rejects_missing_target(test_source):
     )
 
     with pytest.raises(ValueError, match="neither a handle nor"):
-        apply_plan(plan, dry_run=True)
+        apply_plan(plan)
 
 
 # ── Test 15: Conflicting assertion target ──────────────────────────
@@ -1083,53 +1048,3 @@ def test_identity_refs_mutual_exclusivity_raises(test_source):
 
     with pytest.raises(ValueError, match=r"both concrete.*and relationship_namespace"):
         apply_plan(plan)
-
-
-# ── Test 24: identity_refs excluded from dry-run validation ──────
-
-
-def test_identity_refs_dry_run(test_source):
-    """Deferred relationship claims are counted but not validated in dry-run."""
-    initial_claims = Claim.objects.count()
-
-    plan = _plan(
-        source=test_source,
-        input_fingerprint="fp-dry",
-        entities=[
-            PlannedEntityCreate(
-                model_class=Theme,
-                kwargs={"name": "Sports", "slug": "sports", "status": "active"},
-                handle="theme:sports",
-            ),
-            PlannedEntityCreate(
-                model_class=Theme,
-                kwargs={"name": "Baseball", "slug": "baseball", "status": "active"},
-                handle="theme:baseball",
-            ),
-        ],
-        assertions=[
-            _assert(field_name="name", value="Sports", handle="theme:sports"),
-            _assert(field_name="slug", value="sports", handle="theme:sports"),
-            _assert(field_name="status", value="active", handle="theme:sports"),
-            _assert(field_name="name", value="Baseball", handle="theme:baseball"),
-            _assert(field_name="slug", value="baseball", handle="theme:baseball"),
-            _assert(field_name="status", value="active", handle="theme:baseball"),
-            # Deferred — would fail validation without real PKs.
-            _assert(
-                field_name="theme_parent",
-                handle="theme:baseball",
-                relationship_namespace="theme_parent",
-                identity={},
-                identity_refs={"parent": "theme:sports"},
-            ),
-        ],
-    )
-    report = apply_plan(plan, dry_run=True)
-
-    assert report.records_created == 2
-    # 6 planned-entity scalar claims + 1 deferred relationship = 7
-    assert report.asserted == 7
-    assert report.rejected == 0
-    # Nothing written.
-    assert Claim.objects.count() == initial_claims
-    assert not Theme.objects.filter(slug="sports").exists()

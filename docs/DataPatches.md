@@ -370,7 +370,7 @@ claims:
 
 - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`, `youtube:O-2BXTXLXIY`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
 - **`isbn:<isbn>`** (`isbn:9781889933023`) — an **already-seeded authored work**: a book edition, cited by the globally-unique ISBN the record itself carries. `isbn` is not a scheme — a scheme's root mints children from URLs, while a book is its own record — so this form never creates anything: it resolves to the one source holding that ISBN, which is what makes every cite of a work land on the shared record. Hyphens are ignored and an ISBN-10 canonicalizes to its 13-digit form, so both spellings cite the one source; a bad check digit fails the patch. An ISBN nothing is seeded with errors — declare the work in this patch's `sources:` block (processed before claims) or an earlier patch. Cite the **edition**, not the work that groups editions: an ISBN belongs to a specific printing, and an ISBN landing on a record that has editions under it is rejected in favor of the edition's own ISBN.
-- **`<root-slug>:<child-slug>`** (`billboard:1945-09-29`, `gameroom-magazine:vol-2`) — an **already-declared child of a slug-addressed source**: a periodical issue, cited by its periodical's authored slug and its own. Like `isbn:`, this form never creates anything — an issue is an editorial record, declared with `slug:`/`parent:` in a `sources:` block (this patch's, processed before claims, or an earlier one); a cite of an undeclared pair fails the patch at dry-run. Both segments use the system-wide slug grammar (lowercase, digits, hyphens). A registered scheme key always wins the left segment, so this form can never shadow `ipdb:4443` — and a typo'd scheme key (`ipddb:4443`) parses as this form and fails resolution with a message naming the known schemes.
+- **`<root-slug>:<child-slug>`** (`billboard:1945-09-29`, `gameroom-magazine:vol-2`) — an **already-declared child of a slug-addressed source**: a periodical issue, cited by its periodical's authored slug and its own. Like `isbn:`, this form never creates anything — an issue is an editorial record, declared with `slug:`/`parent:` in a `sources:` block (this patch's, processed before claims, or an earlier one); a cite of an undeclared pair fails the patch when it applies. Both segments use the system-wide slug grammar (lowercase, digits, hyphens). A registered scheme key always wins the left segment, so this form can never shadow `ipdb:4443` — and a typo'd scheme key (`ipddb:4443`) parses as this form and fails resolution with a message naming the known schemes.
 - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's host must fall under a **seeded website root**'s _recognition domain_ — a root's homepage host becomes its recognition domain when the root is declared in a `sources:` block, and a cite on that host **or any subdomain of it** (`static.example.com` under `example.com`) nests here. The cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no recognition domain matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
 
 `cite:` takes either a bare ref string (as above), or a **mapping** that widens the ref with fields of the minted citation:
@@ -467,10 +467,9 @@ claims:
 
 Re-applying a description with only existing slugs mints nothing and produces byte-identical storage, so it diffs as a no-op — reword one sentence and resubmit with every other citation intact. Generate this shape with [`dump_patch_entry`](DataPatchAuthoring.md#rehydrating-a-description-for-re-edit) rather than hand-copying slugs.
 
-Two limitations to know:
+One limitation to know:
 
-- **`--dry-run` skips validating an assertion that references any new handle** (the slug isn't minted yet, so conversion can't resolve it). Such an assertion is counted but not diffed; its existing-slug portion isn't dry-validated either. Real validation is the snapshot+apply loop ([DataPatchAuthoring.md → Validate via snapshot](DataPatchAuthoring.md#validate-via-snapshot)).
-- **A bad or stale slug fails at apply with a _generic_ message** — `"N claim(s) failed validation"` live, `"Invalid claim: …"` in dry-run. The specific `Cite not found: [[cite:<slug>]]` only reaches the logs, so don't expect a friendly per-marker error.
+- **A bad or stale slug fails at apply with a _generic_ message** — `"N claim(s) failed validation"`. The specific `Cite not found: [[cite:<slug>]]` only reaches the logs, so don't expect a friendly per-marker error.
 
 ### Strict parsing
 
@@ -545,7 +544,7 @@ sources:
 
 Structure-wise this bounds what a patch can cite by `isbn:`. A **standalone** book — one printing, no edition hierarchy — is declarable here with its `isbn:` and citable in the same patch (sources are processed before claims). An **edition under a work** (a volume of a multi-volume set, a revised printing) is a child, so a patch can't declare one; it must already be seeded before a patch cites its ISBN.
 
-The block is **additive get-or-create**: a slug-addressed node is matched by its slug (root) or `(parent, slug)` (issue) — the slug is the identity, so a renamed periodical is found, not duplicated; every other node is matched by recognition host (homepage ∪ `domains:`), else `isbn`, else `(name, source_type)`. A match is reused — missing links and recognition hosts are backfilled — and an existing row is **never overwritten** (a divergent field warns, doesn't fail). So re-applying is a clean no-op and a patch can't clobber a user-created source or dam later patches. Recognition hosts split across two existing roots skip the node with a warning naming both — resolve the duplicate roots first; visible at `--dry-run`. A declared issue whose `name` matches an existing sibling under a different slug warns too (two campaigns inventing `1945-09-29` and `sep-29-1945` for one issue) but still creates — a human merges duplicates later.
+The block is **additive get-or-create**: a slug-addressed node is matched by its slug (root) or `(parent, slug)` (issue) — the slug is the identity, so a renamed periodical is found, not duplicated; every other node is matched by recognition host (homepage ∪ `domains:`), else `isbn`, else `(name, source_type)`. A match is reused — missing links and recognition hosts are backfilled — and an existing row is **never overwritten** (a divergent field warns, doesn't fail). So re-applying is a clean no-op and a patch can't clobber a user-created source or dam later patches. Recognition hosts split across two existing roots skip the node with a warning naming both — resolve the duplicate roots first. A declared issue whose `name` matches an existing sibling under a different slug warns too (two campaigns inventing `1945-09-29` and `sep-29-1945` for one issue) but still creates — a human merges duplicates later.
 
 ## Applying patches
 
@@ -558,10 +557,9 @@ Run `make pull-patches` first to fetch new patch files:
 # (data/ingest_sources/flippatch/patches/):
 make ingest-patches
 
-# That just wraps the management command. Run the mgt cmd directly to preview or
-# point at another directory:
+# That just wraps the management command. Run the mgt cmd directly to point at
+# another directory:
 cd backend
-uv run python manage.py ingest_patches --dry-run          # preview; no writes
 uv run python manage.py ingest_patches --patches-dir DIR  # override the default dir
 ```
 

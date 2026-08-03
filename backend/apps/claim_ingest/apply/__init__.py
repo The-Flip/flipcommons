@@ -19,9 +19,8 @@ Design decisions that look like bugs but aren't:
 Split by pipeline stage, dependencies flowing one way (leaves → composers):
 
 - :mod:`.validate` — structural plan integrity checks (LEAF).
-- :mod:`.claims` — build → validate-values → diff claims, shared by both
-  paths; owns ``RetractEntry`` (LEAF).
-- :mod:`.dry_run` — read-only validate + diff; depends on ``claims``.
+- :mod:`.claims` — build → validate-values → diff claims; owns
+  ``RetractEntry`` (LEAF).
 - :mod:`.persist` — entity creation, citation minting and the claim/ChangeSet
   writes; depends on ``claims``. Holds the only two catalog touchpoints.
 - :mod:`.orchestrate` — ``apply_plan``: transaction structure + run bookkeeping.

@@ -1,16 +1,14 @@
-"""Claim computation — leaf module shared by the live and dry-run paths.
+"""Claim computation — leaf module for the pipeline's middle stage.
 
-The middle of the pipeline: turn planned assertions into unsaved ``Claim`` rows
-(:func:`_build_claims`), validate their values (:func:`_validate_fail_fast` for
-the live path, :func:`_validate_and_collect_errors` for dry-run), and diff them
-against the source's existing active claims (:func:`_diff_claims`). Also resolves
-explicit retractions to live claim PKs (:func:`_process_retractions`) and houses
-the shared provenance empty-diff guard (:func:`_reject_empty_diff_provenance`).
+Turn planned assertions into unsaved ``Claim`` rows (:func:`_build_claims`),
+validate their values (:func:`_validate_claims`), and diff them against the
+source's existing active claims (:func:`_diff_claims`). Also resolves explicit
+retractions to live claim PKs (:func:`_process_retractions`).
 
-These functions are called across the live and dry-run paths (:mod:`.orchestrate`,
-:mod:`.dry_run`, :mod:`.persist`), so they live in a leaf with no intra-package
-dependencies. ``RetractEntry`` — the apply-time carrier ``_process_retractions``
-produces and :mod:`.persist` consumes — is defined here, next to its producer.
+These functions are called from :mod:`.orchestrate` and :mod:`.persist`, so they
+live in a leaf with no intra-package dependencies. ``RetractEntry`` — the
+apply-time carrier ``_process_retractions`` produces and :mod:`.persist`
+consumes — is defined here, next to its producer.
 """
 
 from __future__ import annotations
@@ -22,12 +20,10 @@ from django.core.exceptions import ValidationError
 
 from apps.claim_ingest.plan import (
     EntryIndex,
-    IngestPlan,
     PlannedClaimAssert,
     PlannedClaimRetract,
     RunReport,
 )
-from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import ClaimIdentity
 from apps.provenance.models import Claim, ExistingClaimRow, Source
 from apps.provenance.types import ClaimId
@@ -73,11 +69,16 @@ def _build_claims(
     return list(seen.values())
 
 
-def _validate_fail_fast(
+def _validate_claims(
     all_claims: list[Claim],
     report: RunReport,
 ) -> list[Claim]:
-    """Validate claims.  Raises ``ValidationError`` if any are rejected."""
+    """Validate claims.  Raises ``ValidationError`` if any are rejected.
+
+    Fail-fast but exhaustive: every invalid claim is appended to
+    ``report.errors`` before the raise, so the failed ``IngestRun`` records all
+    data-quality issues in one run.
+    """
     valid, rejected_count = validate_claims_batch(all_claims)
     if rejected_count > 0:
         valid_ids = {id(c) for c in valid}
@@ -89,24 +90,6 @@ def _validate_fail_fast(
                 )
         report.rejected = rejected_count
         raise ValidationError(f"{rejected_count} claim(s) failed validation")
-    return valid
-
-
-def _validate_and_collect_errors(
-    claims: list[Claim],
-    report: RunReport,
-) -> list[Claim]:
-    """Validate claims for dry-run (non-fatal).  Appends errors to report."""
-    valid, rejected_count = validate_claims_batch(claims)
-    if rejected_count > 0:
-        valid_ids = {id(c) for c in valid}
-        for c in claims:
-            if id(c) not in valid_ids:
-                report.errors.append(
-                    f"Invalid claim: {c.field_name} on "
-                    f"ct={c.content_type_id} obj={c.object_id}"
-                )
-        report.rejected += rejected_count
     return valid
 
 
@@ -210,59 +193,3 @@ def _process_retractions(
             )
 
     return retract_entries
-
-
-def _reject_empty_diff_provenance(plan: IngestPlan, changed: set[EntryIndex]) -> None:
-    """Reject a provenance-bearing patch entry absent from *changed* (decision 3).
-
-    A patch entry carrying a ``note``/``cite``/``cites`` (or a ``retract:`` +
-    ``note:``) that diffs to nothing would silently discard that provenance — no
-    ChangeSet is minted for it, so the note/citation just vanishes. Tightening
-    today's silent re-assert no-op into a hard error keeps provenance honest.
-
-    ``changed`` is the set of entry indexes that produced — or, in dry-run, are
-    *assumed* to produce — a real claim change. Both paths share this rejection;
-    they differ only in how ``changed`` is built (the live path diffs every
-    assertion; dry-run can't diff its carve-outs, so it treats new-inline-cite /
-    deferred / FK-to-planned assertions as changed).
-
-    Delete entries are exempt: an idempotent re-delete of an already-deleted
-    entity diffs to a clean no-op by design. A delete emits only ``status``
-    claims, so an entry whose assertions are *all* ``LIFECYCLE_STATUS_FIELD`` is a
-    delete — detected model-drivenly here, since the entry kind isn't threaded
-    into the apply engine.
-
-    Raises ``ValidationError`` (the apply engine is source-agnostic and must not
-    import ``PatchError``); ``_apply_one`` converts it to a clean ``PatchError``.
-    """
-    # Per entry: which carry provenance, and which are a pure delete (all-status,
-    # exempt because an idempotent re-delete is a clean no-op by design).
-    has_provenance: set[EntryIndex] = set()
-    only_status: dict[EntryIndex, bool] = {}
-    for pca in plan.assertions:
-        idx = pca.entry_index
-        assert idx is not None  # patch assertions are always stamped
-        if pca.note or pca.cite_specs or pca.inline_cites:
-            has_provenance.add(idx)
-        is_status = pca.field_name == LIFECYCLE_STATUS_FIELD
-        only_status[idx] = only_status.get(idx, True) and is_status
-    # The ``pcr.note`` branch is defensive: a no-op retraction (already-inactive
-    # field) never reaches here — build-time ``_check_provenance_carrier`` rejects
-    # a ``retract:`` + ``note:`` with no carrier — and a real retraction always
-    # yields a ``RetractEntry``, so its ``entry_index`` is already in ``changed``.
-    # Kept so the rule "a note must attach to a change" holds regardless of layer.
-    for pcr in plan.retractions:
-        idx = pcr.entry_index
-        assert idx is not None
-        if pcr.note:
-            has_provenance.add(idx)
-        only_status[idx] = False  # a retraction means the entry isn't a delete
-
-    for idx in has_provenance:
-        if only_status.get(idx, False) or idx in changed:
-            continue
-        raise ValidationError(
-            f"Patch entry at index {idx} carries a note/citation but changes "
-            f"nothing (its value already matches) — remove the no-op entry or "
-            f"correct its value so the provenance attaches to a real change"
-        )

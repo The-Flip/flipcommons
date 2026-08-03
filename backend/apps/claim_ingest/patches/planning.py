@@ -23,7 +23,6 @@ from django.db import models
 from apps.actors.models import Actor
 from apps.citation.source_node import SourceNode
 from apps.citation.source_upsert import (
-    detect_host_collision,
     ensure_source,
     validate_source_node,
 )
@@ -58,7 +57,6 @@ from apps.claim_ingest.patches.parsing import (
 from apps.claim_ingest.plan import (
     CiteHandle,
     CiteSpec,
-    DryRunPreviewHook,
     Handle,
     IngestPlan,
     Namespace,
@@ -888,19 +886,15 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
     """Validate `sources:` nodes (read phase) and register the upsert hook.
 
     Field-validates each node now — so a bad ``source_type``/date/URL fails as a
-    clean :class:`PatchError` at ``--dry-run`` rather than mid-transaction — then
-    appends a pre-write hook that additively get-or-creates the sources when the
-    plan is applied. The upsert itself never errors on a collision (see
-    ``ensure_source``); only author-controllable shape/value errors raise.
+    clean :class:`PatchError` naming the node, before the batch writes anything,
+    rather than as a raw exception mid-transaction — then appends a pre-write
+    hook that additively get-or-creates the sources when the plan is applied.
+    The upsert itself never errors on a collision (see ``ensure_source``); only
+    author-controllable shape/value errors raise.
 
     A node's ``parent:`` may reference a root declared elsewhere in the same
     block (``declared_root_slugs``), in either file order — the hook processes
     parentless nodes first, so an author may list issues before their periodical.
-
-    Also registers a dry-run preview hook so a host collision (recognition hosts
-    spanning >1 root → a whole-node skip) surfaces as a warning at ``--dry-run``,
-    not only at live apply. The two hooks are mutually exclusive by path, so the
-    collision never double-warns.
     """
     if not sources:
         return
@@ -918,27 +912,20 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
         n for n in sources if "parent" in n
     ]
     plan.pre_write_hooks.append(_make_sources_hook(ordered, plan.source.actor))
-    # The collision preview models the plain-root chain only: a host set
-    # spanning two roots makes THAT path skip the whole node, but a slug node
-    # resolves by slug and handles occupied domains per-host at apply — so a
-    # plain preview over a slug node would claim a skip that never happens.
-    plain = [n for n in ordered if "slug" not in n and "parent" not in n]
-    plan.dry_run_preview_hooks.append(_make_sources_preview_hook(plain))
 
 
 def _validate_source_cite_refs(plan: IngestPlan, sources: list[SourceNode]) -> None:
     """Read-phase resolution of every authored-slug cite ref in the plan.
 
-    ``--dry-run`` never reaches the apply-side resolvers (``_apply_dry_run``
-    deliberately doesn't touch ``persist``), and the slug grammar makes any
-    slug-shaped typo of a scheme key (``ipddb:4443``) parse as a
-    ``SourceCitationRef`` — so without this check such a cite would pass
-    ``--dry-run`` clean and wedge the queue at live apply. Resolving a slug ref
-    is read-only (``get_slug_source`` never mints), so it validates here: each
+    The slug grammar makes any slug-shaped typo of a scheme key (``ipddb:4443``)
+    parse as a ``SourceCitationRef``, and the apply-side resolvers only surface
+    it mid-transaction — this arm names the failing cite as a clean
+    :class:`PatchError` before the batch applies. Resolving a slug ref is
+    read-only (``get_slug_source`` never mints), so it validates here: each
     distinct ref must resolve against committed state or be declared by this
     patch's own ``sources:`` block (a parented node whose ``parent``/``slug``
-    match). The apply-time arm stays as the backstop with the same message —
-    the read-phase/apply pairing ``parent:`` refs already have.
+    match). ``persist`` keeps the same check as the apply-time backstop with the
+    same message — the read-phase/apply pairing ``parent:`` refs already have.
     """
     from apps.citation.extractors import get_slug_source
     from apps.citation.models import CitationSource
@@ -996,26 +983,5 @@ def _make_sources_hook(sources: list[SourceNode], actor: Actor) -> PreWriteHook:
             else:
                 report.sources_skipped += 1
             report.source_links_created += result.links_created
-
-    return hook
-
-
-def _make_sources_preview_hook(sources: list[SourceNode]) -> DryRunPreviewHook:
-    """Build the dry-run preview hook for a patch's **plain** citation sources.
-
-    Read-only counterpart to ``_make_sources_hook``: a pure committed-state
-    ``detect_host_collision`` read per node, appending the spans-two-roots warning
-    so an author sees the whole-node skip at ``--dry-run`` before publishing. The
-    live path runs the authoritative ``_make_sources_hook`` instead, so the
-    collision warns exactly once on each path. The caller passes plain
-    (non-slug) nodes only — a slug node's occupied-domain warnings surface at
-    apply, per the committed-state-preview stance.
-    """
-
-    def hook(report: RunReport) -> None:
-        for node in sources:
-            warning = detect_host_collision(node)
-            if warning is not None:
-                report.warnings.append(warning)
 
     return hook

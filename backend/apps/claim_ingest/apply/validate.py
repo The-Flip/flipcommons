@@ -1,4 +1,4 @@
-"""Structural plan validation — leaf module, run before the live/dry-run split.
+"""Structural plan validation — leaf module, run before any DB writes.
 
 Cheap, DB-light integrity checks over an :class:`IngestPlan`'s shape: handle
 uniqueness and ordering, entity↔claim consistency, assertion targeting, patch
@@ -6,8 +6,7 @@ entry-index stamping. These raise plain ``ValueError`` — they catch *adapter*
 bugs (a malformed plan), not source-data problems, so they fire before any
 ``IngestRun`` is created and leave no audit debris.
 
-Both the live (:mod:`.orchestrate`) and dry-run (:mod:`.dry_run`) paths run
-these, so they live in their own leaf with no intra-package dependencies.
+They live in their own leaf with no intra-package dependencies.
 """
 
 from __future__ import annotations
