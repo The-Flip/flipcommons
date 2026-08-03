@@ -111,6 +111,7 @@
   let systemOptions = $derived(filterOptions ? toOptions(filterOptions.system) : []);
   let franchiseOptions = $derived(filterOptions ? toOptions(filterOptions.franchise) : []);
   let seriesOptions = $derived(filterOptions ? toOptions(filterOptions.series) : []);
+  let tagOptions = $derived(filterOptions ? toOptions(filterOptions.tag) : []);
 
   // Player count: server returns {value, count} buckets; ChipGroup wants string
   // values, and `filters.player_count` is number|null. The "6+" bucket renders
@@ -332,6 +333,18 @@
       {disabled}
       placeholder="Search series..."
       emptyMessage="No series match your other filters"
+    />
+  </div>
+
+  <div class="filter-section">
+    <SearchableSelect
+      compact
+      label="Tag"
+      options={tagOptions}
+      bind:selected={() => filters.tag, (v) => onchange({ tag: v })}
+      {disabled}
+      placeholder="Search tags..."
+      emptyMessage="No tags match your other filters"
     />
   </div>
 </aside>

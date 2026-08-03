@@ -268,6 +268,8 @@ Some dimension detail pages do not paginate. This is an oversight; almost every 
 
 The current `/titles` listing page doesn't contain some dimensions, like display subtypes etc. To consolidate all the taxonomy detail pages on to a single API shape, the API must include those dimensions, but let's continue to hide those dimensions from the /games UI. The `/games` query string can include and honor them (or not, if that's easier), but I don't want their controls showing in the list of filters because they just aren't very useful. If it's easier, show the controls once the page is being filtered by it.
 
+**Exception: `tag` is surfaced.** We reversed the hide call for `tag` only — `display_subtype` and `technology_subgeneration` (and `corporate_entity`) stay hidden. The settled product decisions: a `SearchableSelect` single-select labeled "Tag" at the bottom of the sidebar after Series, sorted like every other facet (ignoring `Tag.display_order`), with count badges and a normal single-select chip. Include-only — an untagged Model means _unrecorded_, not _not widebody_, so there is no default bucket and no exclusion. Because tags are recorded per Model very unevenly, an active tag filter shatters most multi-model Titles into Model cards; that is correct and expected, since tags like `home-use` and `limited-edition` genuinely are facts about a Model within a Title.
+
 ## Sparse dimension fields
 
 Some values for Model fields are sparsely populated:

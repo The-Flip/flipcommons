@@ -60,6 +60,7 @@ from ..models import (
     RewardType,
     Series,
     System,
+    Tag,
     TechnologyGeneration,
     Theme,
     Title,
@@ -120,6 +121,7 @@ class GameFacetOptions:
     system: list[FacetOption] = field(default_factory=list)
     reward_type: list[FacetOption] = field(default_factory=list)
     edge: list[FacetOption] = field(default_factory=list)
+    tag: list[FacetOption] = field(default_factory=list)
     # The sparse dimensions: option lists are real vocabulary values only
     # (never UNCLASSIFIED); the default value's count is the null-folded one.
     cabinet: list[FacetOption] = field(default_factory=list)
@@ -594,6 +596,7 @@ def game_facet_counts(f: GameFilters) -> GameFacetOptions:
         system=with_selected(counted["system"], _selected(f.system), System),
         reward_type=with_selected(counted["reward_type"], f.reward_types, RewardType),
         edge=_with_selected_edges(counted["edge"], f.edge),
+        tag=with_selected(counted["tag"], _selected(f.tag), Tag),
         cabinet=with_selected(counted["cabinet"], _real_slugs(f.cabinet), Cabinet),
         game_format=with_selected(
             counted["game_format"], _real_slugs(f.game_format), GameFormat
