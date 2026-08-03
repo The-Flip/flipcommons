@@ -13,7 +13,7 @@ the apply back end is the only thing that turns it into database writes. That
 IR boundary is what keeps the engine source-agnostic — keep new behavior on the
 front-end/IR side rather than forking ``apply_plan``.
 
-The hook Protocols and the ``RunReport`` result type live here too: they're
+The hook Protocol and the ``RunReport`` result type live here too: they're
 named in the plan's own fields and in ``apply_plan``'s signature. The engine's
 intermediate carriers (``RetractEntry``, the per-entry provenance maps) stay in
 the engine — they're apply-time mechanics, not part of this contract.
@@ -36,21 +36,6 @@ class PreWriteHook(Protocol):
     the data-patch adapter uses it (to additively get-or-create citation sources
     a patch's ``sources:`` block declares); the apply layer stays source-agnostic
     by treating the hook as opaque.
-    """
-
-    def __call__(self, report: RunReport) -> None: ...
-
-
-class DryRunPreviewHook(Protocol):
-    """A read-only check run on the **dry-run** path, surfacing a state conflict.
-
-    Registered in ``IngestPlan.dry_run_preview_hooks`` and handed the run's
-    ``RunReport`` so it can append warnings. The live path runs ``pre_write_hooks``
-    instead, so neither path double-warns. Today only the data-patch adapter uses
-    it — previewing, at ``--dry-run``, a ``sources:`` node whose recognition hosts
-    already span >1 root (a whole-node skip the live upsert would warn on at
-    apply). Committed-state-only and writes nothing; the apply layer treats it as
-    opaque.
     """
 
     def __call__(self, report: RunReport) -> None: ...
@@ -312,11 +297,6 @@ class IngestPlan:
     # Side writes run first inside the apply transaction (before any entity
     # create), each handed the RunReport. Patch-only: citation source upserts.
     pre_write_hooks: list[PreWriteHook] = field(default_factory=list)
-    # Read-only previews run only on the dry-run path, each handed the RunReport
-    # to append warnings. The dry-run analogue of pre_write_hooks: they surface a
-    # committed-state conflict the live hook would warn on at apply (citation
-    # source host collisions), without the live path's writes.
-    dry_run_preview_hooks: list[DryRunPreviewHook] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     # The patch's description, copied to ``IngestRun.note``.
     note: str = ""

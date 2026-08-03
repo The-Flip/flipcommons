@@ -6,11 +6,11 @@ front end today, but it stays source-agnostic by design — new source behavior
 belongs in a front end against the IR, never as a fork here.
 
 Wires the package's stages in order — structural validation (:mod:`.validate`),
-the live/dry-run fork (:mod:`.dry_run`), then for the live path: entity creation +
-claim build/diff (:mod:`.persist`, :mod:`.claims`) and persistence inside one
-transaction, with the ``IngestRun`` audit row created *outside* it so a failure
-survives rollback. This module owns transaction structure and run bookkeeping
-only; the per-stage logic lives in the leaf modules.
+then entity creation + claim build/diff (:mod:`.persist`, :mod:`.claims`) and
+persistence inside one transaction, with the ``IngestRun`` audit row created
+*outside* it so a failure survives rollback. This module owns transaction
+structure and run bookkeeping only; the per-stage logic lives in the leaf
+modules.
 """
 
 from __future__ import annotations
@@ -22,9 +22,8 @@ from apps.claim_ingest.apply.claims import (
     _build_claims,
     _diff_claims,
     _process_retractions,
-    _validate_fail_fast,
+    _validate_claims,
 )
-from apps.claim_ingest.apply.dry_run import _apply_dry_run
 from apps.claim_ingest.apply.persist import (
     _attach_plan_citations,
     _check_empty_diff_entries,
@@ -45,7 +44,7 @@ from apps.claim_ingest.plan import IngestPlan, RunReport
 from apps.provenance.models import IngestRun
 
 
-def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
+def apply_plan(plan: IngestPlan) -> RunReport:
     """Execute an ingest plan.  See package docstring for full contract."""
     report = RunReport()
     report.warnings.extend(plan.warnings)
@@ -54,11 +53,7 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
     _validate_entity_claim_consistency(plan)
     _validate_assertion_targets(plan)
     _validate_handle_refs(plan)
-    # Before the live/dry-run split, so a mis-stamped patch fails at --dry-run too.
     _validate_entry_index_stamping(plan)
-
-    if dry_run:
-        return _apply_dry_run(plan, report)
 
     # ── Create IngestRun outside transaction ──────────────────────
     # Created outside so a FAILED run survives rollback — that's exactly
@@ -89,18 +84,18 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             _patch_handles(plan.assertions, handle_map)
             # Mint new inline-citation footnotes and rewrite their handle markers
             # to minted slugs *before* claims are built/validated, so the standard
-            # markdown conversion in _validate_fail_fast resolves them to storage
+            # markdown conversion in _validate_claims resolves them to storage
             # form. Existing-slug markers self-resolve and aren't touched here.
             _materialize_inline_citations(plan.assertions, plan.source.actor)
             # Per-claim provenance (note/citation) carried by the plan, collected
             # once now that handles are resolved (so every assertion carries its
-            # real ct/obj). Kept out of _build_claims so that helper's signature —
-            # and its dry-run call site — stay untouched.
+            # real ct/obj). Kept out of _build_claims to keep that helper a pure
+            # assertion→Claim conversion.
             entry_notes, claim_citations, claim_entry_index = _collect_plan_provenance(
                 plan
             )
             all_claims = _build_claims(plan.assertions)
-            valid_claims = _validate_fail_fast(all_claims, report)
+            valid_claims = _validate_claims(all_claims, report)
 
             to_create, superseded_ids = _diff_claims(valid_claims, plan.source)
             report.asserted = len(to_create)

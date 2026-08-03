@@ -5,8 +5,8 @@ A patch may carry rich markdown descriptions whose facts are backed by inline
 in a ``cites:`` map (minted to a floating CitationInstance at apply time,
 reached only by its marker); an *existing* footnote uses the instance's durable slug and needs no
 ``cites:`` entry (it self-resolves through standard conversion). Covers parse +
-correspondence guards, apply-time minting + marker rewrite, the re-edit
-round-trip, and the new-cite dry-run carve-out.
+correspondence guards, apply-time minting + marker rewrite and the re-edit
+round-trip.
 """
 
 from __future__ import annotations
@@ -36,11 +36,11 @@ def pm(db, flipcommons_catalog):
     )
 
 
-def _apply(text: str, *, patch_id: str = "0001-test", dry_run: bool = False):
+def _apply(text: str, *, patch_id: str = "0001-test"):
     doc = load_patch(text)
     source = Source.objects.get(slug=doc.attribution)
     plan = build_plan(doc, source=source, patch_id=patch_id)
-    return apply_plan(plan, dry_run=dry_run)
+    return apply_plan(plan)
 
 
 def _floating():
@@ -453,58 +453,6 @@ claims:
 """
     with pytest.raises(PatchError, match="non-string mapping key"):
         _apply(text)
-
-
-# ── dry-run carve-out ──────────────────────────────────────────────
-
-
-def test_dry_run_new_cite_edit_does_not_raise(flipcommons_catalog, ipdb_root, pm):
-    text = """
-attribution: flipcommons-catalog
-claims:
-  - model.medieval-madness:
-      description: "Fact.[[cite:1]]"
-      cites:
-        '1': ipdb:4443
-"""
-    report = _apply(text, dry_run=True)
-    assert not report.errors
-    assert report.asserted == 1
-    assert _floating().count() == 0  # nothing minted in dry-run
-
-
-def test_dry_run_new_cite_create_does_not_raise(flipcommons_catalog, ipdb_root):
-    text = """
-attribution: flipcommons-catalog
-claims:
-  - manufacturer.mazatron:
-      create: true
-      name: Mazatron
-      description: "Founded 1990.[[cite:1]]"
-      cites:
-        '1': ipdb:4443
-"""
-    report = _apply(text, dry_run=True)
-    assert not report.errors
-    assert not Manufacturer.objects.filter(slug="mazatron").exists()
-
-
-def test_dry_run_existing_slug_validates_normally(flipcommons_catalog, ipdb_root, pm):
-    # Mint a real cite, then dry-run a re-edit using its slug (no cites:): the
-    # slug resolves against the DB, so it stays on the standard validate path.
-    _apply(
-        "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n"
-        '      description: "A fact.[[cite:1]]"\n      cites:\n        '
-        "'1': ipdb:4443\n"
-    )
-    authoring = convert_storage_to_authoring(_description_value(pm))
-    report = _apply(
-        f"attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n"
-        f'      description: "{authoring}"\n',
-        patch_id="0002-dry",
-        dry_run=True,
-    )
-    assert not report.errors
 
 
 # ── inline cites carry locator/quote ───────────────────────────────

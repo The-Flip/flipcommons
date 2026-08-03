@@ -88,14 +88,12 @@ def _seed_flipcommons_catalog(flipcommons_catalog):
     created by the pindata ingest in prod, not a migration."""
 
 
-def _apply(
-    text: str, *, patch_id: str = "0001-test", dry_run: bool = False
-) -> RunReport:
+def _apply(text: str, *, patch_id: str = "0001-test") -> RunReport:
     """Build + apply a patch from text (bypassing file discovery + ledger)."""
     doc = load_patch(text)
     source = Source.objects.get(slug=doc.attribution)
     plan = build_plan(doc, source=source, patch_id=patch_id)
-    return apply_plan(plan, dry_run=dry_run)
+    return apply_plan(plan)
 
 
 # ── Parsing / strict loader ────────────────────────────────────────
@@ -514,25 +512,6 @@ claims:
     assert not stern.entities.exists()
 
 
-def test_dry_run_stern_shape_no_spurious_rejection(stern_entity):
-    text = """
-attribution: flipcommons-catalog
-claims:
-  - manufacturer.western-products:
-      name: Western Products
-      create: true
-  - corporate-entity.stern-pinball-inc:
-      expect: { manufacturer: stern }
-      manufacturer: western-products
-"""
-    report = _apply(text, patch_id="0002-stern", dry_run=True)
-    # The FK reassignment to a same-plan-created manufacturer must NOT be
-    # rejected just because the target doesn't exist yet.
-    assert report.rejected == 0
-    assert not Manufacturer.objects.filter(slug="western-products").exists()
-    assert not IngestRun.objects.filter(patch_id="0002-stern").exists()
-
-
 def test_relationship_member_created_earlier_same_patch(machine_model):
     # A relationship member created by an *earlier* entry in the same patch
     # resolves via the deferred (identity_refs) path — no longer rejected.
@@ -580,27 +559,6 @@ claims:
     assert ce.claims.filter(field_name="manufacturer", is_active=True).exists()
 
 
-def test_backward_fk_on_create_dry_run(bootstrap_source):
-    # Dry-run must not reject the FK-to-planned-target just because the target
-    # doesn't exist yet, and must write nothing (guards the apply.py P1 carve-out).
-    text = """
-attribution: flipcommons-catalog
-claims:
-  - manufacturer.western:
-      create: true
-      name: Western
-  - corporate-entity.western-inc:
-      create: true
-      name: Western Inc
-      manufacturer: western
-"""
-    report = _apply(text, patch_id="0001-western", dry_run=True)
-    assert report.rejected == 0
-    assert not Manufacturer.objects.filter(slug="western").exists()
-    assert not CorporateEntity.objects.filter(slug="western-inc").exists()
-    assert not IngestRun.objects.filter(patch_id="0001-western").exists()
-
-
 def test_backward_parent_location():
     # Create a parent location, then a child whose `parent` FK names it.
     _country("usa", "USA")
@@ -626,29 +584,6 @@ claims:
     tx = Location.objects.get(location_path="usa/tx")
     paris = Location.objects.get(location_path="usa/tx/paris")
     assert paris.parent_id == tx.pk
-
-
-def test_backward_parent_location_dry_run():
-    _country("usa", "USA")
-    text = """
-attribution: flipcommons-catalog
-claims:
-  - location.usa/tx:
-      create: true
-      name: Texas
-      slug: tx
-      parent: usa
-      location_type: state
-  - location.usa/tx/paris:
-      create: true
-      name: Paris
-      slug: paris
-      parent: usa/tx
-      location_type: city
-"""
-    report = _apply(text, patch_id="0001-paris", dry_run=True)
-    assert report.rejected == 0
-    assert not Location.objects.filter(location_path="usa/tx").exists()
 
 
 def test_backward_title_then_model(williams_entity):
@@ -1802,8 +1737,8 @@ claims:
     ).exists()
 
 
-def test_delete_blocked_caught_in_dry_run(machine_model):
-    # The blocker check is a build-phase DB read, so --dry-run surfaces it too.
+def test_delete_blocked_caught_at_build(machine_model):
+    # The blocker check is a build-phase DB read — it fails before any write.
     text = """
 attribution: flipcommons-catalog
 claims:
@@ -1811,7 +1746,7 @@ claims:
       delete: true
 """
     with pytest.raises(PatchError, match="cannot delete"):
-        _apply(text, patch_id="0001-del", dry_run=True)
+        _apply(text, patch_id="0001-del")
 
 
 def test_reassign_in_earlier_patch_then_delete(machine_model, stern_entity):
@@ -2610,7 +2545,7 @@ def test_sources_domains_not_list_of_strings_rejected():
         load_patch(text)
 
 
-# -- Read-phase semantic validation (caught at build/dry-run) --
+# -- Read-phase semantic validation (caught at build, before any write) --
 
 
 def _bad_source(node_body: str) -> str:
@@ -2655,7 +2590,7 @@ def test_sources_duplicate_declared_link_url_rejected():
 
 def test_sources_public_suffix_domain_rejected_at_read_phase():
     # A bare public suffix would over-match every site beneath it under
-    # longest-suffix recognition; the model's clean() guard fails it at dry-run.
+    # longest-suffix recognition; the model's clean() guard fails it at build.
     text = (
         "attribution: flipcommons-catalog\n"
         "sources:\n"
@@ -2664,12 +2599,12 @@ def test_sources_public_suffix_domain_rejected_at_read_phase():
         "    domains: [co.uk]\n"
     )
     with pytest.raises(PatchError, match="host"):
-        _apply(text, patch_id="0001-bad-domain", dry_run=True)
+        _apply(text, patch_id="0001-bad-domain")
 
 
 def test_sources_malformed_domain_url_rejected_as_patch_error():
     # A domains: entry whose .hostname access raises ValueError (unbalanced IPv6
-    # bracket) must surface as a clean PatchError at dry-run, not a raw traceback.
+    # bracket) must surface as a clean PatchError at build, not a raw traceback.
     text = (
         "attribution: flipcommons-catalog\n"
         "sources:\n"
@@ -2678,7 +2613,7 @@ def test_sources_malformed_domain_url_rejected_as_patch_error():
         "    domains: ['https://[::1/page']\n"
     )
     with pytest.raises(PatchError, match="host"):
-        _apply(text, patch_id="0001-bad-ipv6", dry_run=True)
+        _apply(text, patch_id="0001-bad-ipv6")
 
 
 def test_sources_domains_minted_end_to_end():
@@ -2701,7 +2636,7 @@ def test_sources_domains_minted_end_to_end():
     }
 
 
-# -- Dry-run collision preview (the committed-state host-collision warning) --
+# -- Host collision (recognition hosts spanning two existing roots) --
 
 
 def _spanning_two_roots_patch() -> str:
@@ -2721,20 +2656,7 @@ def _spanning_two_roots_patch() -> str:
     )
 
 
-def test_sources_collision_reported_at_dry_run_naming_both_roots():
-    # A2: an author validating against the dev DB sees the whole-node skip before
-    # publishing — the live upsert hook never runs at --dry-run, the preview does.
-    text = _spanning_two_roots_patch()
-    sources_before = CitationSource.objects.count()
-    report = _apply(text, patch_id="0001-collide", dry_run=True)  # must not raise
-    collisions = [w for w in report.warnings if "different roots" in w]
-    assert len(collisions) == 1  # the preview warns once, never doubles
-    assert "Root A" in collisions[0]
-    assert "Root B" in collisions[0]
-    assert CitationSource.objects.count() == sources_before  # nothing written
-
-
-def test_sources_collision_warns_exactly_once_at_live_apply():
+def test_sources_collision_warns_exactly_once_at_apply():
     text = _spanning_two_roots_patch()
     report = _apply(text, patch_id="0001-collide")
     collisions = [
@@ -2743,25 +2665,6 @@ def test_sources_collision_warns_exactly_once_at_live_apply():
     assert len(collisions) == 1
     assert report.sources_skipped == 1
     assert not CitationSource.objects.filter(name="Spans Two").exists()
-
-
-def test_sources_clean_declaration_dry_runs_quietly():
-    text = (
-        "attribution: flipcommons-catalog\n"
-        "sources:\n"
-        "  - name: Fresh\n"
-        "    source_type: web\n"
-        "    domains: [fresh.example]\n"
-    )
-    report = _apply(text, patch_id="0001-clean", dry_run=True)
-    assert not any("different roots" in w for w in report.warnings)
-
-
-def test_sources_semantic_invalidity_caught_at_dry_run():
-    # The whole point of read-phase validation: a bad value fails before any
-    # write, so --dry-run surfaces it on localhost before shipping.
-    with pytest.raises(PatchError, match="source_type"):
-        _apply(_bad_source("name: X\n    source_type: blog"), dry_run=True)
 
 
 # -- Apply behaviour: additive get-or-create --
@@ -3552,7 +3455,7 @@ claims:
       manufacturer_alias: ["{long_alias}"]
 """
     with pytest.raises(PatchError, match="exceeds the 200-character limit"):
-        _apply(text, dry_run=True)
+        _apply(text)
 
 
 def test_abbreviation_over_length_rejected(machine_model):
@@ -3564,7 +3467,7 @@ claims:
       abbreviation: ["{long_abbr}"]
 """
     with pytest.raises(PatchError, match="exceeds the 50-character limit"):
-        _apply(text, dry_run=True)
+        _apply(text)
 
 
 def test_schema_carries_max_length():
@@ -4343,7 +4246,6 @@ def test_periodical_node_without_slug_rejected():
         _apply(
             _bad_source("name: Billboard\n    source_type: periodical"),
             patch_id="0001-no-slug",
-            dry_run=True,
         )
 
 
@@ -4352,7 +4254,6 @@ def test_slug_on_a_web_node_rejected():
         _apply(
             _bad_source("name: X\n    source_type: web\n    slug: x"),
             patch_id="0001-web-slug",
-            dry_run=True,
         )
 
 
@@ -4363,11 +4264,10 @@ def test_reserved_root_slug_rejected():
                 "name: Ipdb Monthly\n    source_type: periodical\n    slug: ipdb"
             ),
             patch_id="0001-reserved",
-            dry_run=True,
         )
 
 
-def test_unresolvable_parent_rejected_at_dry_run():
+def test_unresolvable_parent_rejected_at_build():
     with pytest.raises(PatchError, match="neither an existing"):
         _apply(
             _bad_source(
@@ -4375,14 +4275,13 @@ def test_unresolvable_parent_rejected_at_dry_run():
                 "    slug: 1945-09\n    parent: billboard"
             ),
             patch_id="0001-orphan",
-            dry_run=True,
         )
 
 
-# -- Dry-run coverage: a bad slug cite must fail at read phase, not live apply --
+# -- Read-phase coverage: a bad slug cite must fail at build, not mid-apply --
 
 
-def test_cite_of_an_undeclared_issue_fails_at_dry_run(machine_model):
+def test_cite_of_an_undeclared_issue_fails_at_build(machine_model):
     text = f"""
 attribution: flipcommons-catalog
 claims:
@@ -4391,12 +4290,12 @@ claims:
       cite: billboard:1945-09-29
 """
     with pytest.raises(PatchError, match="declare\\s+the issue"):
-        _apply(text, patch_id="0001-undeclared", dry_run=True)
+        _apply(text, patch_id="0001-undeclared")
 
 
-def test_scheme_typo_fails_at_dry_run_naming_the_schemes(machine_model):
-    # 'ipddb:4443' parses as a slug ref; the read-phase resolution check is what
-    # keeps it from surviving --dry-run and wedging the queue at live apply.
+def test_scheme_typo_fails_at_build_naming_the_schemes(machine_model):
+    # 'ipddb:4443' parses as a slug ref; the read-phase resolution check names
+    # the failing cite at build instead of wedging the queue mid-apply.
     text = f"""
 attribution: flipcommons-catalog
 claims:
@@ -4405,14 +4304,12 @@ claims:
       cite: ipddb:4443
 """
     with pytest.raises(PatchError, match="known schemes are"):
-        _apply(text, patch_id="0001-typo", dry_run=True)
+        _apply(text, patch_id="0001-typo")
 
 
-def test_slug_root_host_collision_preview_not_applied(machine_model):
-    # detect_host_collision models the plain-root path only: hosts spanning two
-    # roots make IT skip the whole node, but a slug root resolves by slug and
-    # handles occupied domains per-host at apply. The dry-run preview must not
-    # claim a whole-node skip that live apply won't perform.
+def test_slug_root_occupied_domains_warn_per_host(machine_model):
+    # A slug root resolves by slug; hosts already owned by other roots warn
+    # individually and stay with their owners — never a whole-node skip.
     a = make_citation_source(name="Site A", source_type="web")
     make_citation_root_domain(source=a, host="site-a.test")
     b = make_citation_source(name="Site B", source_type="web")
@@ -4425,21 +4322,9 @@ sources:
     source_type: periodical
     domains: [site-a.test, site-b.test]
 """
-    dry = _apply(text, patch_id="0001-slug-preview", dry_run=True)
-    assert not any("skipped the node" in w for w in dry.warnings)
-
-    live = _apply(text, patch_id="0001-slug-preview")
-    # Live: the root is created by slug; each occupied host warns individually
-    # and is left with its owner.
+    report = _apply(text, patch_id="0001-occupied-domains")
     assert CitationSource.objects.filter(slug="billboard").exists()
-    assert sum("already owned" in w for w in live.warnings) == 2
-
-
-def test_cite_of_a_same_patch_declared_issue_passes_dry_run(machine_model):
-    report = _apply(_billboard_patch(machine_model), patch_id="0001-dry", dry_run=True)
-    assert report.rejected == 0
-    # Dry-run writes nothing — the declared sources are validated, not created.
-    assert not CitationSource.objects.filter(source_type="periodical").exists()
+    assert sum("already owned" in w for w in report.warnings) == 2
 
 
 def test_cite_of_a_previously_seeded_issue_resolves(machine_model):

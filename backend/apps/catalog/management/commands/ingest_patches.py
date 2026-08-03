@@ -8,14 +8,14 @@ ones in numeric order through ``apply_plan`` — the same engine ingest uses.
 
 It is manual and infrequent: no deploy hook, no startup hook.
 
-    uv run python manage.py ingest_patches [--patches-dir DIR] [--dry-run]
+    uv run python manage.py ingest_patches [--patches-dir DIR]
 """
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
@@ -31,18 +31,6 @@ from apps.claim_ingest.patches import (
 )
 from apps.claim_ingest.plan import RunReport
 from apps.provenance.models import IngestRun, Source
-
-
-class ApplyOutcome(NamedTuple):
-    """Result of applying one patch: whether it ran, and its run report.
-
-    ``report`` is ``None`` when the patch was skipped (already in the ledger);
-    otherwise it carries the counters the command rolls up for its summary.
-    """
-
-    applied: bool
-    report: RunReport | None
-
 
 # <repo>/data/ingest_sources/flippatch/patches — where pull_patches lands the
 # published patch files (authored in the flippatch repo, separate from pindata).
@@ -64,11 +52,6 @@ class Command(BaseCommand):
             default=str(DEFAULT_PATCHES_DIR),
             help="Directory of NNNN-slug.yaml patch files.",
         )
-        parser.add_argument(
-            "--dry-run",
-            action="store_true",
-            help="Report intended claims without writing.",
-        )
 
     def handle(
         self,
@@ -76,7 +59,6 @@ class Command(BaseCommand):
         **options: Any,  # noqa: ANN401 - argparse-driven Django command kwargs
     ) -> None:
         patches_dir = Path(options["patches_dir"])
-        dry_run: bool = options["dry_run"]
 
         if not patches_dir.is_dir():
             # Benign: a fresh DB or a bundle with no patches yet (e.g. before
@@ -100,19 +82,17 @@ class Command(BaseCommand):
         for path in paths:
             patch_id = path.stem
             try:
-                outcome = self._apply_one(path, patch_id, dry_run=dry_run)
+                report = self._apply_one(path, patch_id)
             except (PatchError, IntegrityError) as exc:
                 failed = (patch_id, str(exc))
                 self.stdout.write(self.style.ERROR(f"❌ failed {patch_id}"))
                 break
-            if outcome.applied:
+            if report is not None:
                 applied.append(patch_id)
-                if outcome.report is not None:
-                    src_created += outcome.report.sources_created
-                    src_links += outcome.report.source_links_created
-                    src_skipped += outcome.report.sources_skipped
-                verb = "would apply" if dry_run else "applied"
-                self.stdout.write(self.style.SUCCESS(f"✓ {verb} {patch_id}"))
+                src_created += report.sources_created
+                src_links += report.source_links_created
+                src_skipped += report.sources_skipped
+                self.stdout.write(self.style.SUCCESS(f"✓ applied {patch_id}"))
             else:
                 skipped.append(patch_id)
                 self.stdout.write(
@@ -122,7 +102,7 @@ class Command(BaseCommand):
         # Invalidate cached endpoint data once, at the command level
         # (apply_plan does not invalidate). Needed even for patches with no
         # relationship claims.
-        if applied and not dry_run:
+        if applied:
             from apps.catalog.cache import invalidate_response_cache
 
             invalidate_response_cache()
@@ -130,7 +110,6 @@ class Command(BaseCommand):
         self._report(
             applied,
             skipped,
-            dry_run=dry_run,
             src_created=src_created,
             src_links=src_links,
             src_skipped=src_skipped,
@@ -181,8 +160,8 @@ class Command(BaseCommand):
 
     # ── per-patch ─────────────────────────────────────────────────────
 
-    def _apply_one(self, path: Path, patch_id: str, *, dry_run: bool) -> ApplyOutcome:
-        """Apply one patch. Returns an :class:`ApplyOutcome` (applied + report).
+    def _apply_one(self, path: Path, patch_id: str) -> RunReport | None:
+        """Apply one patch. Returns its report, or ``None`` if already applied.
 
         Raises ``PatchError`` on a patch-level hard error (missing attribution
         Source, immutability mismatch, adapter failure) — the caller turns it
@@ -203,7 +182,7 @@ class Command(BaseCommand):
         ).first()
         if prior is not None:
             if prior.input_fingerprint == doc.fingerprint:
-                return ApplyOutcome(applied=False, report=None)  # already applied
+                return None  # already applied
             raise PatchError(
                 f"{patch_id} was already applied with a different content hash "
                 f"— an applied patch is immutable; add a new numbered patch "
@@ -212,20 +191,19 @@ class Command(BaseCommand):
 
         plan = build_plan(doc, source=source, patch_id=patch_id)
         try:
-            report = apply_plan(plan, dry_run=dry_run)
+            return apply_plan(plan)
         except IntegrityError:
             # Lost a race: another process applied this patch_id concurrently
             # and the partial unique index rejected our SUCCESS flip. If it's
             # now applied, treat as a skip; otherwise it's a real failure.
-            if not dry_run and self._is_applied(patch_id):
-                return ApplyOutcome(applied=False, report=None)
+            if self._is_applied(patch_id):
+                return None
             raise
         except ValidationError as exc:
             # Invalid claim values (bad year/range/type) are normal authoring
             # errors — report them as a patch failure, not a traceback. Full
             # per-claim detail is recorded on the failed IngestRun.errors.
             raise PatchError("; ".join(exc.messages)) from exc
-        return ApplyOutcome(applied=True, report=report)
 
     @staticmethod
     def _is_applied(patch_id: str) -> bool:
@@ -240,16 +218,13 @@ class Command(BaseCommand):
         applied: list[str],
         skipped: list[str],
         *,
-        dry_run: bool,
         src_created: int = 0,
         src_links: int = 0,
         src_skipped: int = 0,
     ) -> None:
-        prefix = "[dry-run] " if dry_run else ""
-        verb = "would apply" if dry_run else "applied"
-        self.stdout.write(f"\n{prefix}{verb}: {len(applied)}  skipped: {len(skipped)}")
+        self.stdout.write(f"\napplied: {len(applied)}  skipped: {len(skipped)}")
         if src_created or src_links or src_skipped:
             self.stdout.write(
-                f"{prefix}citation sources: {src_created} created, "
+                f"citation sources: {src_created} created, "
                 f"{src_links} links added, {src_skipped} unchanged"
             )

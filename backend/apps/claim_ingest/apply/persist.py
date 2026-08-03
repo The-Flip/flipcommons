@@ -1,6 +1,6 @@
-"""Live write path: create entities, persist claims, attach provenance, resolve.
+"""Write path: create entities, persist claims, attach provenance, resolve.
 
-Everything the live path does that touches the DB for real: bulk-create planned
+Everything that touches the DB for real: bulk-create planned
 entities and resolve their handles (:func:`_create_entities`,
 :func:`_patch_handles`), mint inline + per-field citations
 (:func:`_materialize_inline_citations`, :func:`_attach_plan_citations`), collect
@@ -9,7 +9,7 @@ claims into ChangeSets grouped per-entry (patch) or per-entity (ingest)
 (:func:`_persist` and its ``_persist_*`` modes). :func:`_resolve` then
 materialises derived values on affected entities.
 
-Depends on :mod:`.claims` (``RetractEntry``, the empty-diff guard). Reaches the
+Depends on :mod:`.claims` (``RetractEntry``). Reaches the
 substrate through two provenance helpers, held as lazy imports:
 ``build_relationship_claim`` in :func:`_patch_handles` and the
 ``resolve_entities_bulk`` dispatch in :func:`_resolve` — the latter routes to the
@@ -26,10 +26,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 
 from apps.actors.models import Actor
-from apps.claim_ingest.apply.claims import (
-    RetractEntry,
-    _reject_empty_diff_provenance,
-)
+from apps.claim_ingest.apply.claims import RetractEntry
 from apps.claim_ingest.plan import (
     ChangedRelationshipFields,
     CitationRef,
@@ -45,6 +42,7 @@ from apps.claim_ingest.plan import (
     SourceCitationRef,
     WebCitationRef,
 )
+from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import (
     CitationSourceId,
     ClaimIdentity,
@@ -233,12 +231,26 @@ def _check_empty_diff_entries(
     retract_entries: list[RetractEntry],
     claim_entry_index: ClaimEntryIndex,
 ) -> None:
-    """Live-path empty-diff guard: surviving claims/retractions are the change.
+    """Reject a provenance-bearing patch entry that diffs to nothing.
 
-    Maps each surviving built claim back to its authoring entry via
-    ``claim_entry_index`` and delegates to :func:`_reject_empty_diff_provenance`.
-    The dry-run path computes ``changed`` differently (see ``_apply_dry_run``); the
-    rejection logic itself is shared.
+    A patch entry carrying a ``note``/``cite``/``cites`` (or a ``retract:`` +
+    ``note:``) that diffs to nothing would silently discard that provenance — no
+    ChangeSet is minted for it, so the note/citation just vanishes. Rejecting
+    the entry keeps provenance honest: a note or citation must attach to a real
+    change.
+
+    An entry counts as changed when a built claim of its survived the diff
+    (mapped back to its authoring entry via ``claim_entry_index``) or it
+    produced a ``RetractEntry``.
+
+    Delete entries are exempt: an idempotent re-delete of an already-deleted
+    entity diffs to a clean no-op by design. A delete emits only ``status``
+    claims, so an entry whose assertions are *all* ``LIFECYCLE_STATUS_FIELD`` is a
+    delete — detected model-drivenly here, since the entry kind isn't threaded
+    into the apply engine.
+
+    Raises ``ValidationError`` (the apply engine is source-agnostic and must not
+    import ``PatchError``); ``_apply_one`` converts it to a clean ``PatchError``.
     """
     changed: set[EntryIndex] = set()
     for claim in to_create:
@@ -251,7 +263,37 @@ def _check_empty_diff_entries(
         assert entry.entry_index is not None
         changed.add(entry.entry_index)
 
-    _reject_empty_diff_provenance(plan, changed)
+    # Per entry: which carry provenance, and which are a pure delete (all-status,
+    # exempt because an idempotent re-delete is a clean no-op by design).
+    has_provenance: set[EntryIndex] = set()
+    only_status: dict[EntryIndex, bool] = {}
+    for pca in plan.assertions:
+        idx = pca.entry_index
+        assert idx is not None  # patch assertions are always stamped
+        if pca.note or pca.cite_specs or pca.inline_cites:
+            has_provenance.add(idx)
+        is_status = pca.field_name == LIFECYCLE_STATUS_FIELD
+        only_status[idx] = only_status.get(idx, True) and is_status
+    # The ``pcr.note`` branch is defensive: a no-op retraction (already-inactive
+    # field) never reaches here — build-time ``_check_provenance_carrier`` rejects
+    # a ``retract:`` + ``note:`` with no carrier — and a real retraction always
+    # yields a ``RetractEntry``, so its ``entry_index`` is already in ``changed``.
+    # Kept so the rule "a note must attach to a change" holds regardless of layer.
+    for pcr in plan.retractions:
+        idx = pcr.entry_index
+        assert idx is not None
+        if pcr.note:
+            has_provenance.add(idx)
+        only_status[idx] = False  # a retraction means the entry isn't a delete
+
+    for idx in has_provenance:
+        if only_status.get(idx, False) or idx in changed:
+            continue
+        raise ValidationError(
+            f"Patch entry at index {idx} carries a note/citation but changes "
+            f"nothing (its value already matches) — remove the no-op entry or "
+            f"correct its value so the provenance attaches to a real change"
+        )
 
 
 def _cite_resolution_error(ref: CitationRef, exc: Exception) -> str:
@@ -435,8 +477,7 @@ def _materialize_inline_citations(
     identically) and *before* ``_build_claims``/validation, so the standard
     ``convert_authoring_to_storage`` then resolves every ``[[cite:slug]]`` to
     ``[[cite:id:pk]]`` storage and ``_diff_claims`` diffs the final text — no
-    bespoke storage rewrite here. Live path only: dry-run never reaches here (it
-    carves new-cite assertions out before minting). Inside ``apply_plan``'s
+    bespoke storage rewrite here. Inside ``apply_plan``'s
     ``transaction.atomic()``, so a failed apply rolls the mint back; ``mint_many``
     is savepoint-wrapped for slug-collision retry.
     """

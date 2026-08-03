@@ -259,9 +259,7 @@ def _spans_two_roots_warning(name: str, host_roots: Sequence[CitationSource]) ->
 
     Such a node skips whole at apply — picking one owner and minting the others
     would trip the ``host`` ``unique`` and wedge the queue. Names each owning root
-    (the merge backlog until citation gardening ships). Shared by the apply-path
-    warn-skip (:func:`_ensure_plain_root`) and the dry-run preview
-    (:func:`detect_host_collision`) so the two channels never diverge.
+    (the merge backlog until citation gardening ships).
     """
     owners = ", ".join(sorted(repr(r.name) for r in host_roots))
     return (
@@ -325,9 +323,10 @@ def _validate_slug_addressing(
     of the reserved cite handles; and every ``parent:`` resolving to a root of
     the same type — already in the DB, or declared elsewhere in the same block
     (``declared_root_slugs``, the caller's parentless-node slugs). The
-    committed-state read is what lets a typo'd parent fail at ``--dry-run``
-    instead of skipping at apply. A parented node may not declare recognition
-    ``domains`` — those are root-only.
+    committed-state read is what lets a typo'd parent fail as a clean
+    ``PatchError`` naming the node, before the batch writes anything, instead of
+    skipping at apply. A parented node may not declare recognition ``domains`` —
+    those are root-only.
     """
     from django.core.exceptions import ValidationError
 
@@ -367,8 +366,8 @@ def _validate_slug_addressing(
         raise ValidationError({"slug": SLUG_FORMAT_MESSAGE})
     # Length is normally the model field's check, but ``slug`` is excluded
     # from the read-phase full_clean (its partial uniques would reject the
-    # found case) — without this, an overlong slug passes --dry-run and
-    # raises mid-apply, wedging the queue.
+    # found case) — without this, an overlong slug raises mid-apply, wedging
+    # the queue instead of failing with a clean per-node error.
     if len(slug) > CITATION_SOURCE_SLUG_MAX_LENGTH:
         raise ValidationError(
             {"slug": f"slug exceeds {CITATION_SOURCE_SLUG_MAX_LENGTH} characters"}
@@ -419,15 +418,15 @@ def validate_source_node(
     out-of-range dates, invalid ``identifier_key``, malformed URL, invalid
     ``link_type``, duplicate declared link URLs, and a recognition host that isn't
     a DNS name or is a bare public suffix. The host set is the unified
-    ``homepage ∪ domains`` set, so a bad **homepage** host fails here at
-    ``--dry-run`` rather than crashing mid-apply at mint. Validating through the
-    model's ``clean()`` keeps the host guard single-sourced (no forked predicate
-    check). The ``slug``/``parent`` verbs are validated by
+    ``homepage ∪ domains`` set, so a bad **homepage** host fails here rather
+    than crashing mid-apply at mint. Validating through the model's ``clean()``
+    keeps the host guard single-sourced (no forked predicate check). The
+    ``slug``/``parent`` verbs are validated by
     :func:`_validate_slug_addressing` (see there for why they sit outside the
     model ``full_clean``); ``declared_root_slugs`` is the same-block declared
     parentless slugs a ``parent:`` may resolve against. Raises
     :class:`django.core.exceptions.ValidationError`; the patch adapter maps it
-    to a ``PatchError`` (so it surfaces at ``--dry-run`` before shipping).
+    to a ``PatchError`` naming the node, before the batch writes anything.
     """
     from django.core.exceptions import ValidationError
 
@@ -512,32 +511,6 @@ def _validate_scheme_root_citation_source_info(node: SourceNode) -> None:
                 )
             }
         )
-
-
-def detect_host_collision(node: SourceNode) -> str | None:
-    """Committed-state recognition-host collision for one node, or ``None``.
-
-    The dry-run preview of the whole-node skip :func:`_ensure_plain_root` would
-    warn on at apply: a pure :func:`_roots_owning_hosts` read returning the
-    spans-two-roots warning when the node's recognition hosts are owned by >1
-    distinct root. An author validating against the dev DB sees the skip before
-    publishing instead of only at live apply.
-
-    **Committed state only — never a write simulation.** This deliberately does
-    *not* account for a root an earlier node in the same plan will create: that
-    would mean predicting the plan's own unwritten mutations (the
-    ``_apply_dry_run`` carve-out pathology). A host that would attach to such a
-    not-yet-created root won't flag here, and that false negative is accepted —
-    the apply-time warn-skip stays the backstop. Keeping it a plain ``SELECT`` is
-    what keeps this a preview, not a simulator. Returns the warning string (the
-    apply path appends the identical one via :func:`_spans_two_roots_warning`) so
-    the caller decides the channel; emits no ``PatchError`` (a collision is a
-    state conflict, not a malformed patch).
-    """
-    host_roots = _roots_owning_hosts(_declared_recognition_hosts(node))
-    if len(host_roots) > 1:
-        return _spans_two_roots_warning(node["name"], host_roots)
-    return None
 
 
 def _ensure_links(

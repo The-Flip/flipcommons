@@ -16,7 +16,6 @@ from apps.citation.source_upsert import (
     _declared_domains_hosts,
     _declared_homepage_hosts,
     _declared_recognition_hosts,
-    detect_host_collision,
     ensure_source,
     validate_source_node,
 )
@@ -428,37 +427,6 @@ class TestValidateRootSourceHosts:
         )
 
 
-class TestDetectHostCollision:
-    """The committed-state collision preview the dry-run path emits."""
-
-    def test_hosts_spanning_two_roots_returns_warning_naming_both(self):
-        a = make_citation_source(name="Root A", source_type="web")
-        make_citation_root_domain(source=a, host="a.example")
-        b = make_citation_source(name="Root B", source_type="web")
-        make_citation_root_domain(source=b, host="b.example")
-
-        warning = detect_host_collision(
-            _node("Spans Two", domains=["a.example", "b.example"])
-        )
-        assert warning is not None
-        assert "Root A" in warning
-        assert "Root B" in warning
-
-    def test_single_owning_root_is_not_a_collision(self):
-        """One owner means the node resolves to it — normal dedup, no warning."""
-        owner = make_citation_source(name="Owner", source_type="web")
-        make_citation_root_domain(source=owner, host="owned.example")
-        assert (
-            detect_host_collision(
-                _node("X", domains=["owned.example", "fresh.example"])
-            )
-            is None
-        )
-
-    def test_unowned_hosts_are_not_a_collision(self):
-        assert detect_host_collision(_node("X", domains=["fresh.example"])) is None
-
-
 class TestSourceUpsertAttribution:
     """Every row a `sources:` upsert creates is attributed to the patch actor.
 
@@ -617,7 +585,7 @@ class TestSlugAddressedValidation:
             )
 
     def test_overlong_slug_rejected_at_read_phase(self):
-        # The model's 200-char limit must fail at --dry-run, not as a
+        # The model's 200-char limit must fail at read phase, not as a
         # ValidationError mid-apply that wedges the queue — ``slug`` is
         # excluded from the read-phase full_clean, so this check owns it.
         with pytest.raises(ValidationError, match="200"):

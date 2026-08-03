@@ -30,7 +30,6 @@ codegen:
 # Apply pending data patches — the bulk write path for catalog data.
 # Run `make pull-patches` first to fetch new patch files.
 # Idempotent: already-applied patches are skipped.
-# For a preview, run `manage.py ingest_patches --dry-run` directly.
 ingest-patches:
 	cd backend && uv run python manage.py ingest_patches
 
