@@ -2072,8 +2072,8 @@ claims:
 
 
 def test_delete_cascade_child_other_entry_rejected(machine_model):
-    # Decision 5: deleting a Title cascades status=deleted onto its MachineModels;
-    # the delete footprint is exclusive, so a separate entry touching a cascaded
+    # Deleting a Title cascades status=deleted onto its MachineModels; the
+    # delete footprint is exclusive, so a separate entry touching a cascaded
     # child (reached only via the cascade) is rejected.
     text = """
 attribution: flipcommons-catalog
@@ -2089,7 +2089,7 @@ claims:
 
 
 def test_cascade_delete_is_one_changeset(machine_model):
-    # Decision 5: a standalone cascading delete (Title → MachineModel) yields ONE
+    # A standalone cascading delete (Title → MachineModel) yields ONE
     # multi-entity ChangeSet spanning root + cascade, matching the in-app delete.
     text = """
 attribution: flipcommons-catalog
