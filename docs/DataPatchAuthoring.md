@@ -99,6 +99,14 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 - **Auto-captions are ASR text.** Verbatim means verbatim ASR — a misheard name stays as the transcript has it, like any source typo. A machine-translated caption track is not evidence; quote the original language.
 - **A captionless video can't carry a quote.** Livestream archives often have no caption track at all; the fetcher warns loudly and caches nothing. Cite the written record the video's description usually links (an awards show's results page, a manufacturer's announcement post) for the fact itself, and keep the video footnote — quote-less — as provenance for the event.
 
+### PDF citations: pages and pixels
+
+**A `quote` hit on a cached PDF names its PDF document page(s) and the blob's path** — pinexplore extracts PDF text in reading order, which keeps sentences honest but turns tables into columns of unrelated cells, so the workflow for anything laid out spatially is: quote to find the page, then render that page from the blob (`Read(<blob path>, pages="27")`) and read it with your eyes. See pinexplore's [WebCache.md](https://github.com/deanmoses/pinexplore/blob/main/docs/WebCache.md) for the loop.
+
+- **The `locator:` convention is `printed page 17, PDF document page 27`.** The number printed on the sheet and the page's ordinal position in the file usually disagree (frontmatter often isn't numbered); the rendered page's footer gives the printed number, `quote` gives the document page — the one a PDF reader navigates by. Name both.
+- **When the fact is only in pixels, cite quote-less.** A checkmark in a feature matrix is vector art with no text to quote; the honest cite is the locator-only book cite's analogue — `ref` the page URL, `locator` the PDF document page, `note` the visual observation ("the Premium column carries a checkmark for the topper"). `quote:` is optional in the grammar.
+- **Do not quote the feature's row label as a stand-in.** It is verbatim and it is on the page, but it establishes the row, never the column your claim is about — a true string doing work its context doesn't support. `RULE_QUOTE_SUPPORTS_CLAIM` rejects exactly this; being caught is the good outcome, and the point is not to author it.
+
 ### Prefer primary sources
 
 **Cite primary sources over secondary ones.** A manufacturer's own site, a period periodical scan, a government registry, an interview in the subject's own words, an original-research catalog hosting its own artifacts — these beat any site that compiles facts from elsewhere. Encyclopedias, databases and aggregators are **secondary**: Wikipedia, weblio, IPDB, OPDB, Kineticist, Pinside, company-registry aggregators (b2bhint, bisprofiles) and the like.
