@@ -18,16 +18,25 @@ Decide per patch, not per patch set: a generated bulk patch and hand-written one
 Before referencing a field or entity in a patch, confirm it's claimable and learn its `entity_type` string. From `backend/`:
 
 ```bash
-# Is the field user-inputtable (claimable), and how is it classified?
-# Exempt (system) fields: id, uuid, created_at, updated_at, extra_data. Everything
-# else concrete on a ClaimControlledModel is a claim. FK -> value is target public_id;
-# M2M -> relationship (namespace: [members]); other -> scalar (value as-is).
-uv run python manage.py shell -c "from apps.catalog.models import MachineModel; print([f.name for f in MachineModel._meta.get_fields()])"
+# What's claimable on a model? Scalars take the value as-is, FKs the target's
+# public_id; a relationship namespace takes [members].
+uv run python manage.py shell -c "
+from apps.catalog.models import MachineModel as M
+from apps.provenance.model_bases.claim_relationships import relationships_for
+from apps.provenance.models.introspection import get_claim_fields
+print('scalar/FK:', sorted(get_claim_fields(M)))
+print('relationship:', sorted(b.spec.namespace for b in relationships_for(M)))
+"
 
-# entity_type string for a ref (`<entity_type>.<public_id>`):
-uv run python manage.py shell -c "from apps.catalog.models.taxonomy import GameFormat; print(GameFormat.entity_type)"
-# taxonomy examples: GameFormat -> 'game-format', ProductionStatus -> 'production-status', Tag -> 'tag'
+# entity_type strings for a ref (`<entity_type>.<public_id>`):
+uv run python manage.py shell -c "
+from apps.core.entity_types import all_linkable_models
+from apps.provenance.model_bases import ClaimControlledModel
+print(sorted(m.entity_type for m in all_linkable_models() if issubclass(m, ClaimControlledModel)))
+"
 ```
+
+**Aliases and media declare no spec**, so an empty relationship list means "none declared", not "none allowed" — `Manufacturer` prints `[]` yet takes `manufacturer_alias`.
 
 ## Authoring a good patch
 
@@ -336,23 +345,20 @@ uv run python manage.py ingest_patches --patches-dir ../../flippatch/patches
 
 #### Verify snapshot
 
-After applying, spot-check that the change resolved the way you intended — pull a representative entity and confirm its winning claim carries the right source, value, `cite:` and `note:` (`citation_instances` carries the cite, `changeset.note` the note):
+After applying, spot-check that the change resolved the way you intended — confirm the winning claim carries the right ingest source, value, cite and note. `rank = 1` is the winner-pick; an active claim is only a contender:
 
-```python
-from apps.catalog.models import MachineModel
-from apps.provenance.models import Claim
-from django.contrib.contenttypes.models import ContentType
-
-ct = ContentType.objects.get_for_model(MachineModel)
-c = Claim.objects.filter(
-    content_type=ct,
-    object_id=MachineModel.objects.get(slug="hyperball").id,
-    field_name="game_format",
-    is_active=True,
-).first()
-print(c.source.slug, c.value, [ci.citation_source.identifier for ci in c.citation_instances.all()])
-print(c.changeset.note)
+```bash
+scripts/analysis/analysis query scripts/analysis/catalog.sql "
+SELECT c.ingest_source_slug, c.value, ci.citation_source_name, ci.locator, ci.quote, cs.note
+FROM model_claims c
+JOIN models m ON m.id = c.model_id
+JOIN changesets cs ON cs.changeset_id = c.changeset_id
+LEFT JOIN claim_citations cc ON cc.claim_id = c.claim_id
+LEFT JOIN citation_instances ci ON ci.citation_instance_id = cc.citation_instance_id
+WHERE m.slug = 'bank-a-ball-6' AND c.field_name = 'year' AND c.rank = 1;"
 ```
+
+For a non-model entity, swap `model_claims`/`models` for `claims` joined on `subject_type = 'catalog.manufacturer'` and that entity's view.
 
 ### Hand off to user
 
