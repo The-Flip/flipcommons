@@ -138,12 +138,13 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             soft-delete `status`. The subgeneration/subtype dims are mostly NULL today.
 --   variant_of_id / remake_of_id / export_edition_of_id : bare self-FKs to the origin
 --             model — `model_lineage` expands them into edge rows.
---   source free-text : ipdb_notes, ipdb_notable_features (prose) and opdb_features
---             (VARCHAR[], empty never NULL; 'Export edition', 'Cocktail', …) — source
---             fields the product doesn't surface, promoted so mining them needs no
---             hand-rolled json_extract.
+--   source free-text : ipdb_notes, ipdb_notable_features, ipdb_toys,
+--             ipdb_marketing_slogans (prose) and opdb_features (VARCHAR[], empty never
+--             NULL; 'Export edition', 'Cocktail', …) — source fields the product doesn't
+--             surface, promoted so mining them needs no hand-rolled json_extract. The
+--             prose ones are sparse: NULL is a fact about the source's coverage.
 --   NOT surfaced : the extra_data long tail (opdb.keywords — use `themes` —
---             ipdb.marketing_slogans, opdb.common_name, …). Promoting one is a single
+--             opdb.common_name, opdb.description, …). Promoting one is a single
 --             line here; see EDITING.md.
 --   label   : "Name (Manufacturer Year)", CE name then '?' as fallbacks; year omitted if
 --             unknown.
@@ -169,8 +170,10 @@ CREATE OR REPLACE VIEW all_models AS
     cab.slug AS cabinet_slug,
     ps.slug  AS production_status_slug,
     m.description, m.status,
-    json_extract_string(m.extra_data, '$."ipdb.notes"')            AS ipdb_notes,
-    json_extract_string(m.extra_data, '$."ipdb.notable_features"') AS ipdb_notable_features,
+    json_extract_string(m.extra_data, '$."ipdb.notes"')             AS ipdb_notes,
+    json_extract_string(m.extra_data, '$."ipdb.notable_features"')  AS ipdb_notable_features,
+    json_extract_string(m.extra_data, '$."ipdb.toys"')              AS ipdb_toys,
+    json_extract_string(m.extra_data, '$."ipdb.marketing_slogans"') AS ipdb_marketing_slogans,
     COALESCE(json_extract(m.extra_data, '$."opdb.features"')::VARCHAR[], []::VARCHAR[]) AS opdb_features,
     m.extra_data,
     m.name || ' ('
