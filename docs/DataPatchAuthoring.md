@@ -99,13 +99,13 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 - **Auto-captions are ASR text.** Verbatim means verbatim ASR — a misheard name stays as the transcript has it, like any source typo. A machine-translated caption track is not evidence; quote the original language.
 - **A captionless video can't carry a quote.** Livestream archives often have no caption track at all; the fetcher warns loudly and caches nothing. Cite the written record the video's description usually links (an awards show's results page, a manufacturer's announcement post) for the fact itself, and keep the video footnote — quote-less — as provenance for the event.
 
-### PDF citations: pages and pixels
+### PDF citations
 
-**A `quote` hit on a cached PDF names its PDF document page(s) and the blob's path** — pinexplore extracts PDF text in reading order, which keeps sentences honest but turns tables into columns of unrelated cells, so the workflow for anything laid out spatially is: quote to find the page, then render that page from the blob (`Read(<blob path>, pages="27")`) and read it with your eyes. See pinexplore's [WebCache.md](https://github.com/deanmoses/pinexplore/blob/main/docs/WebCache.md) for the loop.
+How to _read_ a PDF — finding PDFs, finding and reading sheets within PDFs — is documented in pinexplore's [WebCache.md](https://github.com/deanmoses/pinexplore/blob/main/docs/WebCache.md). What follows is how to _cite_ PDFs.
 
-- **The `locator:` convention is `printed page 17, PDF document page 27`.** The number printed on the sheet and the page's ordinal position in the file usually disagree (frontmatter often isn't numbered); the rendered page's footer gives the printed number, `quote` gives the document page — the one a PDF reader navigates by. Name both.
-- **When the fact is only in pixels, cite quote-less.** A checkmark in a feature matrix is vector art with no text to quote; the honest cite is the locator-only book cite's analogue — `ref` the page URL, `locator` the PDF document page, `note` the visual observation ("the Premium column carries a checkmark for the topper"). `quote:` is optional in the grammar.
-- **Do not quote the feature's row label as a stand-in.** It is verbatim and it is on the page, but it establishes the row, never the column your claim is about — a true string doing work its context doesn't support. `RULE_QUOTE_SUPPORTS_CLAIM` rejects exactly this; being caught is the good outcome, and the point is not to author it.
+- **The `locator:` convention is `printed page 17, PDF document page 27`.** The number printed on the sheet and the sheet's ordinal position in the file usually disagree (frontmatter often isn't numbered); render the page to get the printed number, `quote` gives the sheet's ordinal position — the one a PDF reader navigates by. Name both.
+- **Words on a PDF sheet are quotable however you read them.** Quote straight from the extracted text whenever it carries the quote faithfully. Render the page and transcribe by eye when it doesn't. Many cases don't, like when the words are in un-OCR'able images, or tables and matrices are garbled. For this reason, flippatch's `make verify-quotes` does not gate PDF quotes (it reports them `SKIP-PDF`).
+- **Cite non-text without a quote.** For example: an image of a pinball machine, a checkmark in a feature-matrix column, a diagram arrow. There's no words. `ref` the page URL, `locator` the PDF document page, `note` the visual observation ("the Premium column carries a checkmark for the topper").
 
 ### Prefer primary sources
 

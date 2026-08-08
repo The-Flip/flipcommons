@@ -92,7 +92,7 @@ Iterate behind a localhost snapshot, then verify and hand off — the full loop 
 Generator-specific additions:
 
 - A curated patch classifies a whole **population**, so after applying confirm the population landed — the distribution across buckets looks right and the counts match `<prefix>_summary` — not just that one spot-checked entity resolved.
-- **Every quote is a proposal until `make verify-quotes` passes.** That gate checks each span against the evidence corpus independently of your extraction.
+- **Every quote is a proposal until `make verify-quotes` passes.** That gate checks each span against the evidence corpus independently of your extraction — **except a PDF's**, which it reports `SKIP-PDF` and leaves to you (see [DataPatchAuthoring.md → PDF citations](DataPatchAuthoring.md#pdf-citations)). A generator emitting PDF-sourced quotes therefore has no machine backstop: transcribe from the rendered sheet, and put whatever invariants you can in the analysis file instead.
 - **A patch already in `patches/` is immutable.** Localhost may be far ahead of production, and nothing in the repo records what production has ingested — only the user knows. If an existing patch looks worth regenerating, raise it and let them decide.
 
 ## Gotchas (learned the hard way)
