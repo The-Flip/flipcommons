@@ -1,40 +1,32 @@
 # Data analysis tool
 
-This doc is about using our DuckDB analytics layer to explore the Flipcommons localhost dev database — both ad-hoc, and via analysis files that back planning docs and data patch campaigns with reproducible queries.
+This is how to use our DuckDB analytics layer to explore the Flipcommons localhost dev database — both ad-hoc, and via analysis files that back planning docs and data patch campaigns with reproducible queries.
 
 ## What this layer is
 
-**A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the whole value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks.
-
-Two consequences to hold onto, because both have bitten:
+**A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks. Consequences:
 
 - **A view is not its table.** `models` is live-filtered and denormalized across four joins; `countries` is the parentless slice of `locations`; `tags` is keyed by model while `tag_vocab` is keyed by tag. Matching names do not mean matching columns or matching grain.
-- **A field missing from a view has not been dropped, and does not fail to exist.** Views carry what analyses have needed. Absence almost always means nobody has promoted it yet — read the Django model before concluding otherwise, then [promote it](EDITING.md). Grepping the SQL is not a test of what the catalog holds.
+- **A view may not carry all fields.** Absence may mean nobody has promoted it yet. Inspect the Django model and promote fields when required.
 
 ## Quick start
 
 ```bash
-# takes `--format json|csv|table` default `table`
-scripts/analysis/analysis query scripts/analysis/catalog.sql \
-  "FROM models WHERE year = 1977 ORDER BY name;"
-```
+# Do a query
+scripts/analysis/analysis query scripts/analysis/catalog.sql "FROM models WHERE year = 1977 ORDER BY name;" # takes `--format json|csv|table` default `table`
 
-## Reference
-
-How to explore the data model:
-
-```bash
-# Describe every public view
+# Describe every public view and macro
 scripts/analysis/analysis describe
 
-# Describe a single view and its columns
-scripts/analysis/analysis describe models
+# Look up a view or macro
+scripts/analysis/analysis describe model_edges  # Exact match prints its description and, for views, its columns
+scripts/analysis/analysis describe edge         # Otherwise, list all partial matches in name or description
 
-# Understand related areas
-# Each view's comment block carries what a one-liner cannot — the grain, the
-# liveness rule and the specific way that view will hand you a plausible wrong
-# answer — and it sits next to the SELECT it explains.
+# Get the map — what areas exist, when you don't have a term yet
 grep '═══' scripts/analysis/catalog.sql scripts/analysis/provenance.sql scripts/analysis/data_patches.sql
+
+# Get the block comment for one view — grain, liveness rule, the plausible wrong answer
+grep -B12 'CREATE OR REPLACE VIEW model_edges AS' scripts/analysis/catalog.sql   # Widen -B if the block runs long
 ```
 
 In `catalog.sql`, two headings say where to start: `MODELS — the spine; start here` and `MODEL-TO-MODEL RELATIONSHIPS — start with model_edges`.

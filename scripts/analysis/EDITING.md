@@ -71,7 +71,7 @@ COMMENT ON VIEW title_size IS
   'One row per Title with a live model — Title identity plus n, the live model count. …';
 ```
 
-That comment **is** the view reference. `scripts/analysis/analysis describe` reads it from the session, so README.md does not duplicate the view list. `undocumented_view` fails the self-test for any public view without a comment; review remains responsible for keeping the comment accurate, while `DESCRIBE` supplies the live column list.
+That comment **is** the view reference. `scripts/analysis/analysis describe` reads it from the session, so README.md does not duplicate the view list — and a term naming nothing exactly searches these one-liners, so the words you choose are how the view gets found at all. `undocumented_view` fails the self-test for any public view without a comment; review remains responsible for keeping the comment accurate, while `DESCRIBE` supplies the live column list.
 
 Two mechanics worth knowing:
 
