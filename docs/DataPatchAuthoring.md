@@ -93,7 +93,7 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 
 ### Scheme cites: where the quotable text lives
 
-**A scheme cite's `quote:` verifies against a fixed evidence corpus, not an ad-hoc fetch** (flippatch's `make verify-quotes` checks every quote against it):
+**A scheme cite's `quote:` verifies against a fixed evidence corpus, not an ad-hoc fetch** (flippatch's `make verify-quote-verbatim` checks every quote against it):
 
 - **`ipdb:<id>`** — the `ipdb_machines` table in pinexplore's `explore.duckdb`. The quotable text mirrors what the IPDB page renders: the title as a bare heading, then `Manufacturer:` / `Type:` / `Players:` / `Theme:` label-value rows, then the Notable Features and Notes prose — so a structured-field quote like `Type: Electro-mechanical (EM) [...] Players: 1` is legitimate and stays ctrl-F honest on the page. Cite the machine page whose record carries the field; IPDB has no manufacturer pages, so a manufacturer-level fact (a location, say) cites one of that manufacturer's machine pages.
 - **`opdb:<id>`** — the cached `https://opdb.org/machines/<id>` page in pinexplore's web cache. OPDB renders only label-value fields, so quotes read as terse spans (`Cactus Canyon Continued [...] Manufacturer - Eric Priepke [...] Converted game`); a fact implied by OPDB's group structure (the donor title of a conversion) is never stated as text and stays partially supported.
@@ -103,7 +103,7 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 
 **Fetch the video into the web cache like any URL.** Pinexplore's `web_fetch.py` routes any YouTube URL shape (`watch?v=`, `youtu.be/`, `/shorts/`, `/live/`) through yt-dlp and caches the best caption track — manual subtitles over auto-captions, the original spoken language over machine translations — with the spoken-line transcript as the page text. Then:
 
-- **Quote the transcript** like any web quote; `verify-quotes` resolves `youtube:<id>` to the cached watch URL.
+- **Quote the transcript** like any web quote; `verify-quote-verbatim` resolves `youtube:<id>` to the cached watch URL.
 - **Add a timestamp `locator:`** to point at the moment; the stored `.vtt` blob keeps the cue timing for finding it.
 - **Auto-captions are ASR text.** Verbatim means verbatim ASR — a misheard name stays as the transcript has it, like any source typo. A machine-translated caption track is not evidence; quote the original language.
 - **A captionless video can't carry a quote.** Livestream archives often have no caption track at all; the fetcher warns loudly and caches nothing. Cite the written record the video's description usually links (an awards show's results page, a manufacturer's announcement post) for the fact itself, and keep the video footnote — quote-less — as provenance for the event.
@@ -113,7 +113,7 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 How to _read_ a PDF — finding PDFs, finding and reading sheets within PDFs — is documented in pinexplore's [WebCache.md](https://github.com/deanmoses/pinexplore/blob/main/docs/WebCache.md). What follows is how to _cite_ PDFs.
 
 - **The `locator:` convention is `printed page 17, PDF document page 27`.** The number printed on the sheet and the sheet's ordinal position in the file usually disagree (frontmatter often isn't numbered); render the page to get the printed number, `quote` gives the sheet's ordinal position — the one a PDF reader navigates by. Name both.
-- **Words on a PDF sheet are quotable however you read them.** Quote straight from the extracted text whenever it carries the quote faithfully. Render the page and transcribe by eye when it doesn't. Many cases don't, like when the words are in un-OCR'able images, or tables and matrices are garbled. For this reason, flippatch's `make verify-quotes` does not gate PDF quotes (it reports them `SKIP-PDF`).
+- **Words on a PDF sheet are quotable however you read them.** Quote straight from the extracted text whenever it carries the quote faithfully. Render the page and transcribe by eye when it doesn't. Many cases don't, like when the words are in un-OCR'able images, or tables and matrices are garbled. For this reason, flippatch's `make verify-quote-verbatim` does not gate PDF quotes (it reports them `SKIP-PDF`).
 - **Cite non-text without a quote.** For example: an image of a pinball machine, a checkmark in a feature-matrix column, a diagram arrow. There's no words. `ref` the page URL, `locator` the PDF document page, `note` the visual observation ("the Premium column carries a checkmark for the topper").
 
 ### Prefer primary sources

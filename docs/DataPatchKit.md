@@ -92,7 +92,7 @@ Iterate behind a localhost snapshot, then verify and hand off — the full loop 
 Generator-specific additions:
 
 - A curated patch classifies a whole **population**, so after applying confirm the population landed — the distribution across buckets looks right and the counts match `<prefix>_summary` — not just that one spot-checked entity resolved.
-- **Every quote is a proposal until `make verify-quotes` passes.** That gate checks each span against the evidence corpus independently of your extraction — **except a PDF's**, which it reports `SKIP-PDF` and leaves to you (see [DataPatchAuthoring.md → PDF citations](DataPatchAuthoring.md#pdf-citations)). A generator emitting PDF-sourced quotes therefore has no machine backstop: transcribe from the rendered sheet, and put whatever invariants you can in the analysis file instead.
+- **Every quote is a proposal until `make verify-quote-verbatim` passes.** That gate checks each span against the evidence corpus independently of your extraction — **except a PDF's**, which it reports `SKIP-PDF` and leaves to you (see [DataPatchAuthoring.md → PDF citations](DataPatchAuthoring.md#pdf-citations)). A generator emitting PDF-sourced quotes therefore has no machine backstop: transcribe from the rendered sheet, and put whatever invariants you can in the analysis file instead.
 - **A patch already in `patches/` is immutable.** Localhost may be far ahead of production, and nothing in the repo records what production has ingested — only the user knows. If an existing patch looks worth regenerating, raise it and let them decide.
 
 ## Gotchas (learned the hard way)
@@ -100,7 +100,7 @@ Generator-specific additions:
 - **Keyword matches catch cross-references.** A note about _Bally Derby_ makes "Skill Derby" look like a gun game. Read the matched sentence; keep an explicit exclude list in the analysis's Reference section for the misses.
 - **The signal can have false positives.** A note saying "not a pinball" may be about a _different_ game it cross-references. When unsure, leave the field unset — an honest unknown beats a wrong fact.
 - **Anchor every free-text detector.** A rotted regex or a renamed column zeroes a whole detector with no error, and a row-level invariant cannot see a set silently shrink. An anchor check asserting a known example still triggers is the only thing that catches it.
-- **Cut the quote from the raw source text, not from a parsed segment.** Then it is verbatim by construction and `verify-quotes` passes by construction too.
-- **Joined spans must appear in source order.** `verify-quotes` checks each `[...]`-joined span separately and requires the order the source uses, so a row matching several patterns follows its own source text, not your feature ordering. Dedupe repeated spans — one phrase asserting two facts would otherwise read as out of order.
+- **Cut the quote from the raw source text, not from a parsed segment.** Then it is verbatim by construction and `verify-quote-verbatim` passes by construction too.
+- **Joined spans must appear in source order.** `verify-quote-verbatim` checks each `[...]`-joined span separately and requires the order the source uses, so a row matching several patterns follows its own source text, not your feature ordering. Dedupe repeated spans — one phrase asserting two facts would otherwise read as out of order.
 - **Values are JSON-shaped; YAML coercion is off.** `patchkit._scalar` handles this — a bare `1996-01-01` stays a string, `no` stays `"no"`.
 - **`except A, B:` is valid Python 3** and ruff's preferred style — don't parenthesize (a project-wide rule, relevant if your generator catches exceptions).
