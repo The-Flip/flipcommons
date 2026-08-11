@@ -464,7 +464,9 @@ CREATE OR REPLACE VIEW _citation_parent_chain AS
   LEFT JOIN fc.citation_citationsource p ON p.id = c.parent_id;
 
 CREATE OR REPLACE VIEW _citation_root_domains AS
-  SELECT source_id, list_sort(list(host)) AS root_domains
+  -- host || path_prefix so a path-scoped slice of a shared CDN host displays
+  -- distinctly from (and never masquerades as) a whole-host registration.
+  SELECT source_id, list_sort(list(host || path_prefix)) AS root_domains
   FROM fc.citation_citationsourcerootdomain
   GROUP BY source_id;
 
@@ -573,8 +575,11 @@ COMMENT ON VIEW claim_citations IS
 -- citation_roots — the vocabulary shape over the roots alone: one row per WORK, with
 -- its registered root domains and its usage. This is the discovery view — the thing to
 -- read before writing anything that filters on a citation source.
---   root_domains : the hosts registered to this work (ipdb.org, opdb.org, …), for
---             matching a bare URL back to the work that owns it. Empty for a book.
+--   root_domains : the recognition slices registered to this work, as display
+--             strings — a bare host (ipdb.org) or host||path_prefix for a
+--             shared-CDN tenant slice (img1.wsimg.com/blobby/go/…). A discovery
+--             list, not a match key: resolve a URL with citation_root_for_url()
+--             (or a bare host with citation_root_for_host()). Empty for a book.
 --   n_instances : CitationInstances hung off this work or any of its children.
 --   n_cited_claims : distinct claims those instances cite. Lower than n_instances
 --             whenever one instance is reused, and 0 for a work cited nowhere yet.
@@ -624,9 +629,20 @@ COMMENT ON VIEW citation_roots IS
 -- `h LIKE '%' || host` gets two things wrong at once: it attributes
 -- twip.kineticist.com to BOTH works with no way to choose, and it matches
 -- evil-american-pinball.com to american-pinball.com because the boundary isn't a label.
--- The backend implements the real rule in apps/citation/hosts.py (normalize_host +
--- label_suffixes + longest_suffix_match); these macros mirror it, because a hand-rolled
--- copy in each analysis silently misattributes rather than erroring.
+--
+-- AND ON A SHARED CDN HOST THE MATCH NEEDS THE PATH TOO. A row may carry a
+-- `path_prefix` scoping it to one tenant's slice of a multi-tenant CDN host
+-- (img1.wsimg.com/blobby/go/<uuid> — GoDaddy serves every customer's files there), and
+-- on such a host a host-only match is not merely lossy, it is WRONG: it would attribute
+-- every tenant's files to whichever maker happens to hold a row. So resolve a URL with
+-- citation_root_for_url(); citation_root_for_host() serves bare hosts only and returns
+-- NULL for a shared CDN host, where host-only attribution is honestly unanswerable.
+-- One eligibility rule, citation_domain_eligible(), feeds both macros so they cannot
+-- diverge. The backend implements the real rule in apps/citation/hosts.py
+-- (normalize_host + label_suffixes + longest_suffix_match) and
+-- apps/citation/shared_hosts.py (the shared-CDN host list); these macros mirror it,
+-- because a hand-rolled copy in each analysis silently misattributes rather than
+-- erroring.
 
 -- host_norm — mirrors hosts.normalize_host: lowercase, trim, drop a trailing FQDN dot,
 -- then strip EVERY leading `www.` label. All of them, so the result can't shadow the
@@ -647,42 +663,117 @@ CREATE OR REPLACE MACRO url_host(u) AS
 COMMENT ON MACRO url_host IS
   'A URL authority as a normalized host — scheme, userinfo, port, path, query and fragment removed. Empty string when there is no // authority to read, rather than a guessed host.';
 
--- citation_root_domains — one row per (root citation source, registered host). The
--- grain twin of citation_roots.root_domains: predicate and join on `host`. Carries the
--- full root_* family, so recognizing a URL lands on the work's stable key in one step
--- rather than on an id needing a second join — `root_family_incomplete` enforces that.
+-- citation_root_domains — one row per (root citation source, registered host slice).
+-- The grain twin of citation_roots.root_domains: predicate and join on
+-- `(host, path_prefix)`. `path_prefix` is '' for an ordinary whole-host row and a
+-- /-led, case-sensitive tenant prefix for a shared-CDN slice. Carries the full root_*
+-- family, so recognizing a URL lands on the work's stable key in one step rather than
+-- on an id needing a second join — `root_family_incomplete` enforces that.
 CREATE OR REPLACE VIEW citation_root_domains AS
   SELECT
     rd.source_id      AS root_citation_source_id,
     s.citation_source_name AS root_citation_source_name,
     s.slug            AS root_citation_source_slug,
     s.identifier_key  AS root_identifier_key,
-    rd.host           AS host
+    rd.host           AS host,
+    rd.path_prefix    AS path_prefix
   FROM fc.citation_citationsourcerootdomain rd
   JOIN citation_sources s ON s.citation_source_id = rd.source_id;
 COMMENT ON VIEW citation_root_domains IS
-  'One row per (root citation source, registered host) — the grain twin of citation_roots.root_domains, for joining a URL back to its work. Match with citation_root_for_host(), NOT equality: the rule is longest label-boundary suffix.';
+  'One row per (root citation source, registered host slice) — the grain twin of citation_roots.root_domains, for joining a URL back to its work. path_prefix is '''' on whole-host rows, a tenant prefix on shared-CDN slices. Match with citation_root_for_url() (or citation_root_for_host() for a bare host), NOT equality: the rule is longest label-boundary suffix plus segment-boundary path prefix.';
 
--- citation_root_for_host — the recognition entry point: the root citation source id
--- owning this host, or NULL. Mirrors hosts.longest_suffix_match.
---   `= d.host`                      the host itself is a registered root
---   `ends_with(h, '.' || d.host)`   it is a SUBdomain of one — the leading dot is the
---                                   label boundary, which is what excludes
---                                   evil-american-pinball.com
---   ORDER BY length DESC LIMIT 1    most-specific wins, so twip.kineticist.com resolves
---                                   to This Week in Pinball and not to Kineticist
--- Takes a host; wrap a URL in url_host() first. Normalizes its argument, so a raw
--- `www.IPDB.org` matches — the stored side is already normalized by the model's clean().
+-- url_path — the path of a URL, verbatim. The path sibling of url_host, with one
+-- deliberate asymmetry: NO normalization. url_host lowercases because DNS is
+-- case-blind; URL paths are case-sensitive and shared-CDN tenant ids are matched
+-- verbatim, so lowercasing here would silently un-match a correctly declared prefix.
+-- Query and fragment are dropped (they never participate in recognition), and like
+-- url_host it refuses to guess: no `//` authority means no path, so a bare
+-- 'ipdb.org/x' yields '' rather than a misread.
+CREATE OR REPLACE MACRO url_path(u) AS
+  regexp_extract(coalesce(u, ''), '^(?:[a-z][a-z0-9+.-]*:)?//(?:[^/@]*@)?[^/?#]*([^?#]*)', 1);
+COMMENT ON MACRO url_path IS
+  'A URL''s path, verbatim — case and percent-encoding preserved, query and fragment dropped. Empty string when there is no // authority to anchor on, mirroring url_host.';
+
+-- _shared_cdn_host — the shared multi-tenant CDN hosts, by label-boundary suffix.
+-- MIRRORS apps/citation/shared_hosts.py (SHARED_HOSTS): on these hosts the path names
+-- the tenant, so a bare (path_prefix = '') row carries no honest attribution. Keep the
+-- VALUES list in lockstep with the backend table — drift here silently misattributes.
+CREATE OR REPLACE MACRO _shared_cdn_host(h) AS (
+  EXISTS (
+    SELECT 1
+    FROM (VALUES ('wsimg.com'), ('cdn.shopify.com'), ('storage.googleapis.com')) s(shared)
+    WHERE host_norm(h) = s.shared OR ends_with(host_norm(h), '.' || s.shared)
+  )
+);
+
+-- _path_traversal_free — no backslashes, no dot segments (literal or %2e-encoded).
+-- Mirrors hosts.is_traversal_free_path: CDNs normalize /tenant/../other to /other, so
+-- a traversal path must never satisfy a tenant prefix — reject, don't canonicalize.
+CREATE OR REPLACE MACRO _path_traversal_free(p) AS (
+  NOT contains(coalesce(p, ''), '\')
+  AND NOT regexp_matches(coalesce(p, ''), '(^|/)(\.|%2e){1,2}(/|$)', 'i')
+);
+
+-- citation_domain_eligible — THE one candidacy rule, shared by citation_root_for_host
+-- and citation_root_for_url so the two cannot diverge. A registered (d_host, d_prefix)
+-- row is eligible for a URL's (h, p) when the host is a label-boundary suffix match
+-- AND either the row is bare on a non-shared host (a whole-host registration; on a
+-- shared CDN host bare rows are never eligible — even a junk row predating the
+-- backend's write guard must not absorb another tenant's URL), or the row is prefixed
+-- on a shared host (the write invariant — a prefixed row planted on an ordinary host
+-- through a validation bypass must not split that site into path-scoped roots) and its
+-- prefix covers p at a path-segment boundary, verbatim (case-sensitive, encoding
+-- untouched), with traversal paths refused outright. Mirrors hosts.longest_suffix_match
+-- + path_prefix_matches + the extractors candidacy filter.
+CREATE OR REPLACE MACRO citation_domain_eligible(h, p, d_host, d_prefix) AS (
+  (host_norm(h) = d_host OR ends_with(host_norm(h), '.' || d_host))
+  AND CASE
+        WHEN d_prefix = '' THEN NOT _shared_cdn_host(h)
+        ELSE _shared_cdn_host(d_host)
+             AND _path_traversal_free(p)
+             AND (coalesce(p, '') = d_prefix
+                  OR starts_with(coalesce(p, ''), d_prefix || '/'))
+      END
+);
+COMMENT ON MACRO citation_domain_eligible IS
+  'Whether a registered (d_host, d_prefix) recognition row may claim a URL''s (host, path): label-boundary host suffix, segment-boundary verbatim path prefix, bare rows never on a shared CDN host, prefixed rows only on one. The single rule both citation_root_for_* macros filter through.';
+
+-- citation_root_for_host — the bare-host recognition entry point: the root citation
+-- source id owning this host, or NULL. Mirrors hosts.longest_suffix_match.
+--   citation_domain_eligible(h, '', …)  the shared candidacy rule with an empty path,
+--                                       which admits only bare rows — and none at all
+--                                       on a shared CDN host, where host-only
+--                                       attribution is honestly unanswerable (NULL)
+--   ORDER BY length DESC LIMIT 1        most-specific wins, so twip.kineticist.com
+--                                       resolves to This Week in Pinball and not to
+--                                       Kineticist
+-- Takes a host; for a URL use citation_root_for_url(), which also matches path-scoped
+-- rows. Normalizes its argument, so a raw `www.IPDB.org` matches — the stored side is
+-- already normalized by the model's clean().
 CREATE OR REPLACE MACRO citation_root_for_host(h) AS (
   SELECT d.root_citation_source_id
   FROM citation_root_domains d
-  WHERE host_norm(h) = d.host
-     OR ends_with(host_norm(h), '.' || d.host)
+  WHERE citation_domain_eligible(h, '', d.host, d.path_prefix)
   ORDER BY length(d.host) DESC
   LIMIT 1
 );
 COMMENT ON MACRO citation_root_for_host IS
-  'The root citation source id owning this host, else NULL. Longest label-boundary suffix, so the most specific registered host wins and a lookalike domain matches nothing. Wrap a URL in url_host() first.';
+  'The root citation source id owning this bare host, else NULL — including NULL for a shared CDN host, whose rows are path-scoped. Longest label-boundary suffix wins; a lookalike domain matches nothing. For a URL use citation_root_for_url().';
+
+-- citation_root_for_url — the URL recognition entry point: the root citation source id
+-- whose registered slice covers this URL, or NULL. The same candidacy rule as
+-- citation_root_for_host plus the path: on a shared CDN host only a matching tenant
+-- prefix resolves, so another tenant's file is NULL rather than misattributed. Host
+-- specificity dominates path specificity, mirroring hosts.longest_suffix_match.
+CREATE OR REPLACE MACRO citation_root_for_url(u) AS (
+  SELECT d.root_citation_source_id
+  FROM citation_root_domains d
+  WHERE citation_domain_eligible(url_host(u), url_path(u), d.host, d.path_prefix)
+  ORDER BY length(d.host) DESC, length(d.path_prefix) DESC
+  LIMIT 1
+);
+COMMENT ON MACRO citation_root_for_url IS
+  'The root citation source id whose registered host (or shared-CDN tenant slice) covers this URL, else NULL. Longest label-boundary host suffix, then longest segment-boundary path prefix. The entry point for resolving a URL — host-only lookups belong to citation_root_for_host().';
 
 
 

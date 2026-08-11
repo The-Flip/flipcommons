@@ -29,8 +29,14 @@ from apps.citation.citation_types import (
     slug_addressed_source_types,
 )
 from apps.citation.deliverers import deliverer_for_host
-from apps.citation.hosts import is_dns_host, normalize_host
+from apps.citation.hosts import (
+    is_dns_host,
+    is_path_prefix,
+    normalize_host,
+    normalize_path_prefix,
+)
 from apps.citation.psl import is_public_suffix
+from apps.citation.shared_hosts import shared_host_for
 from apps.core.models import (
     BoundedTextField,
     TimeStampedModel,
@@ -70,12 +76,14 @@ CITATION_SOURCE_DESCRIPTION_MAX_LENGTH = 5_000
 CITATION_SOURCE_LINK_URL_MAX_LENGTH = 2_000
 CITATION_SOURCE_LINK_LABEL_MAX_LENGTH = 200
 CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH = 253  # RFC 1035 DNS hostname limit
+CITATION_ROOT_DOMAIN_PATH_PREFIX_MAX_LENGTH = 300
 
-# Shown when a write tries to claim a recognition host another root already owns
-# (the `host` unique). A module constant so every surface that reports the
-# collision reads identically.
+# Shown when a write tries to claim a recognition host (or a path-scoped slice
+# of one) another root already owns (the `(host, path_prefix)` unique). A module
+# constant so every surface that reports the collision reads identically.
 CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
-    "That domain is already recognized by another citation source."
+    "That domain (or its declared path scope) is already recognized by another "
+    "citation source."
 )
 
 
@@ -605,25 +613,38 @@ class CitationSourceLink(TimeStampedModel, ActorAttributedModel):
 
 
 class CitationSourceRootDomain(TimeStampedModel, ActorAttributedModel):
-    """A recognition host owned by a root ``CitationSource``.
+    """A recognition host, optionally path-scoped, owned by a root ``CitationSource``.
 
     The signal ``recognize_url`` keys off: a normalized host (lowercased,
     ``www.``-stripped — see ``apps.citation.hosts``) that resolves to the root
     that owns it, by longest label-boundary suffix. One root may own many hosts
     (a rebrand's old + new domain, ``.com`` + ``.co.uk``, an asset subdomain).
 
+    ``path_prefix`` scopes a row to a slice of a **shared CDN host** — a
+    multi-tenant host (GoDaddy's ``img1.wsimg.com``) where the path names the
+    tenant, so host-only attribution is impossible. It is ``""`` (bare — the
+    row matches every path, the ordinary case) everywhere else. Two guards in
+    ``clean()`` hold that line, both keyed on the declared shared-host table
+    (``apps.citation.shared_hosts``): a **bare** row on a shared host is
+    rejected (it would attribute every tenant's files to one source), and a
+    **prefixed** row on a non-shared host is rejected (path scoping exists for
+    shared hosts only). The prefix is stored verbatim — case-sensitive, no
+    percent-decoding — normalized only in its slash framing
+    (``hosts.normalize_path_prefix``) and matched at path-segment boundaries.
+
     Decoupled from the display ``homepage`` ``CitationSourceLink``: editing a
     display link never changes recognition, and there is no derived column to
-    keep in sync. ``host`` is globally ``unique`` — two roots cannot claim the
-    same recognition host. ``clean()`` canonicalizes ``host`` through
-    ``hosts.normalize_host`` (lowercase, ``www.``-strip, trailing-dot), so every
-    validated write — admin inline, API, patches — stores a normalized value
-    without the caller having to remember. ``clean()`` also rejects a host that
-    isn't a syntactic DNS name (an IP literal) or that is a bare public suffix
-    (``com``, ``co.uk``) — the latter would over-match every site beneath it
-    under longest-suffix recognition. The DB lowercase CHECK is a backstop for
-    writes that bypass validation (raw SQL / bulk), which it can only partially
-    cover (case, not ``www.``-stripping or the host-shape guard).
+    keep in sync. ``(host, path_prefix)`` is unique — two roots cannot claim
+    the same recognition slice, while two makers on one shared CDN host
+    coexist under different prefixes. ``clean()`` canonicalizes ``host``
+    through ``hosts.normalize_host`` (lowercase, ``www.``-strip, trailing-dot),
+    so every validated write — admin inline, API, patches — stores a normalized
+    value without the caller having to remember. ``clean()`` also rejects a
+    host that isn't a syntactic DNS name (an IP literal) or that is a bare
+    public suffix (``com``, ``co.uk``) — the latter would over-match every site
+    beneath it under longest-suffix recognition. The DB lowercase and
+    prefix-shape CHECKs are backstops for writes that bypass validation (raw
+    SQL / bulk), which they can only partially cover.
 
     **Root-only.** A domain may attach only to a root (a parentless source). A
     CHECK constraint cannot reach ``source.parent_id`` across the FK, so the
@@ -637,17 +658,41 @@ class CitationSourceRootDomain(TimeStampedModel, ActorAttributedModel):
         on_delete=models.CASCADE,
         related_name="root_domains",
     )
-    host = models.CharField(
-        max_length=CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH,
-        unique=True,
-        error_messages={"unique": CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG},
+    host = models.CharField(max_length=CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH)
+    path_prefix = models.CharField(
+        max_length=CITATION_ROOT_DOMAIN_PATH_PREFIX_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        help_text=(
+            "Scopes recognition to a path slice of a shared multi-tenant CDN "
+            "host (e.g. /blobby/go/<tenant-uuid> on img1.wsimg.com). Leave "
+            "blank everywhere else — only declared shared hosts may (and must) "
+            "carry one."
+        ),
     )
 
     class Meta:
-        ordering = ["host"]
+        ordering = ["host", "path_prefix"]
         constraints = [
             field_not_blank("host"),
             field_lowercase("host"),
+            models.UniqueConstraint(
+                fields=["host", "path_prefix"],
+                name="citation_rootdomain_unique_host_path_prefix",
+                violation_error_message=CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG,
+            ),
+            # Prefix shape backstop (the portable subset of is_path_prefix):
+            # empty, or /-led and not /-terminated. Full shape (no ?/#, no
+            # empty or traversal segments) is clean()'s job.
+            models.CheckConstraint(
+                condition=models.Q(path_prefix="")
+                | (
+                    models.Q(path_prefix__startswith="/")
+                    & ~models.Q(path_prefix__endswith="/")
+                ),
+                name="citation_rootdomain_path_prefix_shape",
+            ),
         ]
 
     def clean(self) -> None:
@@ -693,6 +738,47 @@ class CitationSourceRootDomain(TimeStampedModel, ActorAttributedModel):
                     )
                 }
             )
+        prefix = normalize_path_prefix(self.path_prefix)
+        self.path_prefix = prefix
+        if not is_path_prefix(prefix):
+            raise ValidationError(
+                {
+                    "path_prefix": (
+                        "Enter a valid path prefix: /-led, no trailing /, no "
+                        "query or fragment, no empty or dot (traversal) "
+                        "segments."
+                    )
+                }
+            )
+        # Path scoping exists exactly for shared multi-tenant CDN hosts (the
+        # declared table in apps.citation.shared_hosts): there a bare row would
+        # attribute every tenant's files to one source, and elsewhere a prefix
+        # would fragment an ordinary site recognition already handles whole.
+        # App-level rather than a CHECK for the same reason as the deliverer
+        # guard: suffix-matching a declared table isn't portable DDL, and the
+        # table grows without migrations.
+        shared = shared_host_for(normalize_host(self.host))
+        if shared is not None and not self.path_prefix:
+            raise ValidationError(
+                {
+                    "host": (
+                        f"{shared.label} is a shared multi-tenant CDN — a bare "
+                        f"recognition host there would attribute every "
+                        f"tenant's files to one source. Declare it with the "
+                        f"tenant's path prefix (e.g. host/path/to/tenant)."
+                    )
+                }
+            )
+        if shared is None and self.path_prefix:
+            raise ValidationError(
+                {
+                    "path_prefix": (
+                        "A path prefix is only valid on a declared shared "
+                        "multi-tenant CDN host; this host is recognized "
+                        "whole — leave the prefix blank."
+                    )
+                }
+            )
         if self.source_id is not None and not self.source.is_root:
             raise ValidationError(
                 {
@@ -704,7 +790,7 @@ class CitationSourceRootDomain(TimeStampedModel, ActorAttributedModel):
             )
 
     def __str__(self) -> str:
-        return self.host
+        return f"{self.host}{self.path_prefix}"
 
 
 # ---------------------------------------------------------------------------

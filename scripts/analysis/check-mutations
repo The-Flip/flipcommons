@@ -10,7 +10,9 @@
 #     scripts/analysis/check-mutations title      # only those whose name matches
 #
 # Exits nonzero if any mutation SURVIVES (the defect went unnoticed) or fires the wrong
-# check. Run it after touching catalog_checks.sql; the everyday gate stays `analysis run`.
+# check. A check already firing at baseline (doc drift, an expired skip) BLOCKS its own
+# mutations without failing the run — see the baseline section below. Run it after
+# touching catalog_checks.sql; the everyday gate stays `analysis run`.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -19,13 +21,18 @@ plan=scripts/analysis/catalog_checks.sql
 spec=scripts/analysis/catalog_mutations.tsv
 filter=${1:-}
 
-pass=0; fail=0
+pass=0; fail=0; skip=0
 
 # ── baseline ───────────────────────────────────────────────────────────────────
 # Every verdict below is "the expected check appeared". That is only evidence the
 # MUTATION caused it if the check was silent to begin with — otherwise a check firing
 # on healthy data would pass every mutation that expects it, including mutations whose
-# SQL does nothing at all. So prove the baseline is clean before trusting anything.
+# SQL does nothing at all. That reasoning is PER CHECK, though: some checks fire on
+# healthy-data drift (a live tag nobody documented, an anchor skip that expired), and
+# a drifted doc says nothing about whether union_integrity would notice a broken join.
+# So a dirty baseline doesn't abort the run — it BLOCKS exactly the mutations whose
+# expected check is already firing, and its noise is subtracted from every probe so
+# the remaining verdicts stay trustworthy.
 # DuckDB writes a coloured `-- Loading resources` banner to stderr; strip the escapes
 # and surrounding blanks so an empty result really reads as empty.
 clean() { tail -1 | sed 's/\x1b\[[0-9;]*m//g; s/^[[:space:]]*//; s/[[:space:]]*$//'; }
@@ -33,10 +40,12 @@ clean() { tail -1 | sed 's/\x1b\[[0-9;]*m//g; s/^[[:space:]]*//; s/[[:space:]]*$
 baseline=$(duckdb -init "$plan" -noheader -list :memory: \
   "SELECT COALESCE(string_agg(DISTINCT check_name, ','), '') FROM foundation_checks;" 2>&1 | clean)
 if [ -n "$baseline" ]; then
-  echo "✗ baseline is not clean: foundation_checks already returns [$baseline]"
-  echo "  Fix the foundation first — mutation results are meaningless until it is green."
-  exit 1
+  echo "⚠ baseline is not clean: foundation_checks already returns [$baseline]"
+  echo "  Mutations expecting those checks are BLOCKED below; everything else still runs."
 fi
+# 'a,b' → 'a','b' for SQL NOT IN; empty stays empty.
+baseline_sql=$(printf '%s' "$baseline" | sed "s/[^,][^,]*/'&'/g")
+in_baseline() { case ",$baseline," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
 # ── coverage ───────────────────────────────────────────────────────────────────
 # Every check_name declared in catalog_checks.sql needs a mutation, or nobody has
@@ -110,8 +119,10 @@ probe() {  # probe <sql> [check_name] — stderr kept, so a broken mutation is v
   # would turn every genuine SURVIVED into a misleading "WRONG CHECK". The filtered fast
   # path is unaffected, so `view comment dropped` still proves the check itself fires.
   # undocumented_macro is dropped for the same reason: the macro mutations redefine a
-  # macro, which drops its COMMENT ON MACRO.
-  _where="WHERE check_name NOT IN ('undocumented_view', 'undocumented_macro')"
+  # macro, which drops its COMMENT ON MACRO. Baseline-firing checks are dropped too —
+  # they'd report drift the mutation didn't cause, turning SURVIVED into WRONG CHECK
+  # and letting a '*' mutation pass on noise.
+  _where="WHERE check_name NOT IN ('undocumented_view', 'undocumented_macro'${baseline_sql:+, $baseline_sql})"
   [ -n "${2:-}" ] && _where="WHERE check_name = '$2'"
   _out=$(duckdb -init "$plan" -noheader -list :memory: "
       $1
@@ -130,6 +141,12 @@ while IFS='	' read -r name expect sql; do
   case "$name" in ''|'#'*) continue ;; esac
   case "$name" in *"$filter"*) ;; *) continue ;; esac
   selected=$((selected + 1))
+
+  # A check already firing at baseline would "confirm" any mutation expecting it,
+  # including one whose SQL does nothing — so its mutations prove nothing today.
+  if [ "$expect" != '*' ] && in_baseline "$expect"; then
+    printf '%-34s %-32s BLOCKED — firing at baseline\n' "$name" "$expect"; skip=$((skip + 1)); continue
+  fi
 
   if [ "$expect" != '*' ] && [ "$(probe "$sql" "$expect")" = "$expect" ]; then
     printf '%-34s %-32s ok\n' "$name" "$expect"; pass=$((pass + 1)); continue
@@ -162,4 +179,8 @@ if [ "$fail" -gt 0 ]; then
   echo "✗ $fail of $((pass + fail)) mutations were not caught"
   exit 1
 fi
-echo "✓ all $pass mutations caught"
+if [ "$skip" -gt 0 ]; then
+  echo "⚠ $pass mutations caught; $skip BLOCKED by baseline drift [$baseline] — those checks are unproven until the foundation is green"
+else
+  echo "✓ all $pass mutations caught"
+fi

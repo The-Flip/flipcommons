@@ -10,10 +10,12 @@ from __future__ import annotations
 import pytest
 from django.core.exceptions import ValidationError
 
+from apps.citation.hosts import Host, PathPrefix
 from apps.citation.models import CitationSource, CitationSourceRootDomain
 from apps.citation.source_node import SourceLinkNode
 from apps.citation.source_upsert import (
-    _declared_domains_hosts,
+    DeclaredDomain,
+    _declared_domains,
     _declared_homepage_hosts,
     _declared_recognition_hosts,
     ensure_source,
@@ -60,7 +62,9 @@ class TestDeclaredHomepageHosts:
                 {"url": "https://cat.example/c", "link_type": "catalog"},
             ]
         )
-        assert hosts == ["home.example"]
+        assert hosts == [
+            DeclaredDomain(host=Host("home.example"), path_prefix=PathPrefix(""))
+        ]
 
     def test_dedups_http_and_https_of_same_host(self):
         hosts = _declared_homepage_hosts(
@@ -69,7 +73,9 @@ class TestDeclaredHomepageHosts:
                 _homepage("https://example.com/other"),
             ]
         )
-        assert hosts == ["example.com"]
+        assert hosts == [
+            DeclaredDomain(host=Host("example.com"), path_prefix=PathPrefix(""))
+        ]
 
     def test_skips_link_with_no_hostname(self):
         hosts = _declared_homepage_hosts(
@@ -261,25 +267,59 @@ class TestSourceUpsertDedup:
         )
 
 
-class TestDeclaredDomainsHosts:
-    """Pure host extraction for the ``domains:`` verb — no DB."""
+def _bare(host: str) -> DeclaredDomain:
+    return DeclaredDomain(host=Host(host), path_prefix=PathPrefix(""))
 
-    def test_bare_host_and_url_normalize_identically(self):
-        assert _declared_domains_hosts(_node("x", domains=["oldpin.com"])) == [
-            "oldpin.com"
+
+TENANT_ENTRY = "img1.wsimg.com/blobby/go/4bd466e8-edb0-49f6-afcc-31250ba5b0f3"
+TENANT_PAIR = DeclaredDomain(
+    host=Host("img1.wsimg.com"),
+    path_prefix=PathPrefix("/blobby/go/4bd466e8-edb0-49f6-afcc-31250ba5b0f3"),
+)
+
+
+class TestDeclaredDomains:
+    """Pure (host, path_prefix) extraction for the ``domains:`` verb — no DB."""
+
+    def test_bare_host_and_bare_url_normalize_identically(self):
+        assert _declared_domains(_node("x", domains=["oldpin.com"])) == [
+            _bare("oldpin.com")
         ]
-        assert _declared_domains_hosts(
-            _node("x", domains=["https://www.OldPin.com/path"])
-        ) == ["oldpin.com"]
+        # A URL whose path is only "/" is still a bare-host declaration.
+        assert _declared_domains(_node("x", domains=["https://www.OldPin.com/"])) == [
+            _bare("oldpin.com")
+        ]
+
+    def test_path_carrying_entry_declares_a_prefix_not_the_bare_host(self):
+        """The old parser silently dropped a URL entry's path, registering the
+        bare host — on a shared CDN, the exact misattribution the shared-host
+        guard forbids. The path is now the declared prefix, in both forms."""
+        assert _declared_domains(_node("x", domains=[TENANT_ENTRY])) == [TENANT_PAIR]
+        assert _declared_domains(_node("x", domains=[f"https://{TENANT_ENTRY}/"])) == [
+            TENANT_PAIR
+        ]
+
+    def test_prefix_kept_verbatim_beyond_slash_framing(self):
+        declared = _declared_domains(_node("x", domains=["cdn.example.com/Files/A/"]))
+        assert declared == [
+            DeclaredDomain(
+                host=Host("cdn.example.com"), path_prefix=PathPrefix("/Files/A")
+            )
+        ]
 
     def test_recognition_set_unions_homepage_and_domains_deduped(self):
         node = _node(
             "x",
             links=[_homepage("https://pinballnow.com/")],
-            domains=["oldpin.com", "https://pinballnow.com/"],
+            domains=["oldpin.com", "https://pinballnow.com/", TENANT_ENTRY],
         )
-        # homepage first, then the declared-only host; the dup is dropped.
-        assert _declared_recognition_hosts(node) == ["pinballnow.com", "oldpin.com"]
+        # homepage first, then the declared-only entries; the dup is dropped
+        # and the path-scoped slice stays distinct from any bare host.
+        assert _declared_recognition_hosts(node) == [
+            _bare("pinballnow.com"),
+            _bare("oldpin.com"),
+            TENANT_PAIR,
+        ]
 
 
 class TestDeclaredDomainsMinting:
@@ -318,6 +358,84 @@ class TestDeclaredDomainsMinting:
         )
         root = CitationSource.objects.get(name="Pinball Now")
         assert root.root_domains.filter(host="oldpin.com").exists()
+
+    def test_path_carrying_entry_mints_a_prefixed_row_not_the_bare_host(self, actor):
+        result = ensure_source(
+            _node("Cardona Pinball Designs", domains=[TENANT_ENTRY]),
+            actor=actor,
+            warnings=[],
+        )
+        assert result.source_created
+        root = CitationSource.objects.get(name="Cardona Pinball Designs")
+        rows = list(root.root_domains.values_list("host", "path_prefix"))
+        assert rows == [(TENANT_PAIR.host, TENANT_PAIR.path_prefix)]
+        # The old silent-drop shape — a bare shared-CDN host — was NOT minted.
+        assert not CitationSourceRootDomain.objects.filter(
+            host="img1.wsimg.com", path_prefix=""
+        ).exists()
+
+    def test_two_makers_mint_their_own_slices_of_one_shared_host(self, actor):
+        ensure_source(
+            _node("Cardona Pinball Designs", domains=[TENANT_ENTRY]),
+            actor=actor,
+            warnings=[],
+        )
+        result = ensure_source(
+            _node(
+                "Other Maker",
+                domains=[
+                    "img1.wsimg.com/blobby/go/ffffffff-0000-0000-0000-0000000000aa"
+                ],
+            ),
+            actor=actor,
+            warnings=[],
+        )
+        assert result.source_created
+        assert (
+            CitationSourceRootDomain.objects.filter(host="img1.wsimg.com").count() == 2
+        )
+
+    def test_redeclare_backfills_a_missing_prefixed_row_additively(self, actor):
+        """A root resolved by name gains the newly declared slice; the existing
+        slice is a no-op (exact-pair dedup), and nothing is overwritten."""
+        ensure_source(
+            _node("Cardona Pinball Designs", domains=[TENANT_ENTRY]),
+            actor=actor,
+            warnings=[],
+        )
+        warnings: list[str] = []
+        result = ensure_source(
+            _node(
+                "Cardona Pinball Designs",
+                domains=[TENANT_ENTRY, "cardonapinball.com"],
+            ),
+            actor=actor,
+            warnings=warnings,
+        )
+        assert not result.source_created
+        root = CitationSource.objects.get(name="Cardona Pinball Designs")
+        assert set(root.root_domains.values_list("host", "path_prefix")) == {
+            (TENANT_PAIR.host, TENANT_PAIR.path_prefix),
+            ("cardonapinball.com", ""),
+        }
+        assert warnings == []
+
+    def test_node_resolves_by_prefixed_slice_to_its_owning_root(self, actor):
+        """Host-first resolution works on the exact pair: re-declaring the slice
+        under a new name finds the owning root, never a second one."""
+        ensure_source(
+            _node("Cardona Pinball Designs", domains=[TENANT_ENTRY]),
+            actor=actor,
+            warnings=[],
+        )
+        before = CitationSource.objects.count()
+        result = ensure_source(
+            _node("Cardona (renamed)", domains=[TENANT_ENTRY]),
+            actor=actor,
+            warnings=[],
+        )
+        assert not result.source_created
+        assert CitationSource.objects.count() == before
 
 
 class TestRebrandResolution:
@@ -425,6 +543,43 @@ class TestValidateRootSourceHosts:
                 domains=["oldpin.com", "twip.kineticist.com"],
             )
         )
+
+    def test_bare_shared_host_domain_is_rejected(self):
+        """A bare shared-CDN declaration fails at read phase — before any
+        write — instead of registering a host that would absorb every
+        tenant's files."""
+        with pytest.raises(ValidationError, match="shared multi-tenant CDN"):
+            validate_source_node(_node("Bad", domains=["img1.wsimg.com"]))
+
+    def test_prefix_on_non_shared_host_is_rejected(self):
+        with pytest.raises(ValidationError):
+            validate_source_node(_node("Bad", domains=["cardonapinball.com/files"]))
+
+    def test_prefixed_shared_host_domain_passes(self):
+        validate_source_node(_node("Good", domains=[TENANT_ENTRY]))
+
+    def test_redeclaring_an_existing_pair_passes_read_phase(self):
+        """Regression for the (host, path_prefix) UniqueConstraint: it is
+        validated by full_clean's *constraints* pass (not the unique pass), so
+        validate_source_node must disable it — a legitimate re-declaration of
+        a slice already in the DB is the additive upsert's found case, not an
+        error."""
+        root = make_citation_source(name="Cardona Pinball Designs")
+        make_citation_root_domain(
+            source=root,
+            host=TENANT_PAIR.host,
+            path_prefix=TENANT_PAIR.path_prefix,
+        )
+        validate_source_node(
+            _node("Cardona Pinball Designs", domains=[TENANT_ENTRY])
+        )  # must not raise
+
+    def test_redeclaring_an_existing_bare_host_passes_read_phase(self):
+        root = make_citation_source(name="Pinball Now")
+        make_citation_root_domain(source=root, host="pinballnow.com")
+        validate_source_node(
+            _node("Pinball Now", domains=["pinballnow.com"])
+        )  # must not raise
 
 
 class TestSourceUpsertAttribution:
