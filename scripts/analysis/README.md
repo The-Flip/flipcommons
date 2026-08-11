@@ -68,6 +68,12 @@ Match canonical names and aliases as one pool — most records have no alias row
 
 Found a phrasing the catalog lacks? Add it with a [data patch](../../docs/DataPatches.md), not a lookup table in your analysis.
 
+### A subject of any type resolves without branching on the type
+
+Claims and patch entries name their subject polymorphically — `subject_type` plus a bare integer `subject_id` — and models are only the dominant type, not the only one. `entity_subjects` resolves the pair, so `claims` and everything built on it carry `subject_public_id`, `subject_name` and `subject_status` for a person, theme or location subject exactly as for a model. A per-type entity view can't do that job: joining one needs the type known in advance.
+
+`model_slug` / `model_status` on the `patch_*` views are the narrower pair and stay narrow: NULL on every non-model row, by design, so `WHERE model_slug = …` can't admit a Title that happens to share the slug. Reach for `subject_*` unless the query is specifically about models.
+
 ### Liveness is the default
 
 Catalog records are soft-deleted (see [RecordLifecycle.md](../../docs/RecordLifecycle.md)). `models` excludes them, matching the read APIs; `all_models` is the escape hatch. Liveness applies to what a model _points at_ too: every dim is soft-deleted independently, so a dead dim **de-enriches to NULL** rather than being reported as current. The one deliberate exception is `claims`, which is not live-filtered — provenance of a deleted record is legitimate history. Use `model_claims` for the live-model lens.
@@ -181,6 +187,7 @@ For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate
 - **`_underscore` = private helper view; unprefixed = public.** Public views are the ones a document quotes and other analyses build on. Keep intermediate parsing private.
 - **Published numbers come from `<prefix>_summary`, never hand-counted.** The query is the source of truth, the prose a rendering of it. When the numbers move, update the prose.
 - **Predicate on stable keys, display names.** Filter and join on `slug` / `*_id` / `game_format_slug`; use `name` / `manufacturer_name` / `game_format_name` only for output. A renamed value silently zeroes a count with no error; a slug or id doesn't.
+- **A count this layer derives is `n_<what>`; a count the product stored keeps the product's spelling.** `n_claims`, `n_cited_claims`, `n_models`, `n_titles` are computed here. `ingest_runs` is the exception — `claims_asserted`, `claims_retracted`, `records_parsed` are columns on `IngestRun`, passed through verbatim so the view and the ingest can't disagree by name.
 - **Ingested source free-text is a plain column.** `ipdb_notes`, `ipdb_notable_features`, `ipdb_toys`, `ipdb_marketing_slogans` and `opdb_features` (the editions and flags list, e.g. `Export edition`) sit on `models` directly, so never hand-roll a `json_extract`. Wanting a raw `extra_data` field that isn't there is a foundation change: see [EDITING.md](EDITING.md#what-belongs-in-the-foundation).
 - **Read-only, always.** The catalog is never mutated from an analysis script.
 
