@@ -34,6 +34,7 @@ from apps.citation.hosts import (
     is_reserved_tld,
     normalize_host,
 )
+from apps.citation.shared_hosts import shared_host_for
 
 # Built once at import — parsing the bundled snapshot is a cost paid a single
 # time, and this is the module's only ``Any`` boundary (publicsuffixlist ships
@@ -85,6 +86,8 @@ class HostRejection(enum.Enum):
     """The host's TLD is an RFC special-use name (``.test``, ``.example``, …)."""
     PUBLIC_SUFFIX = "public_suffix"
     """The host is a bare public suffix (``gov.uk``, ``co.uk``) with no domain below."""
+    SHARED_HOST = "shared_host"
+    """The host is a declared shared multi-tenant CDN — no maker's site to root."""
 
 
 class HostError(Exception):
@@ -119,7 +122,14 @@ def root_host_from_url(url: str) -> Host:
        ``RESERVED_TLD``. This reject is funnel-only: a fuzzy paste must not mint
        a root that could never match a real cite. The declare path
        (``CitationSourceRootDomain.clean``) skips it — declaring is curator-trusted.
-    4. :func:`registrable_domain` is not ``None`` — else ``PUBLIC_SUFFIX`` (a
+    4. **not** :func:`~apps.citation.shared_hosts.shared_host_for` — else
+       ``SHARED_HOST``. A shared multi-tenant CDN host is nobody's site: the
+       tenant lives in the path, so rounding a paste there would mint a root
+       (``wsimg.com``) that absorbs every tenant's files. Checked on the
+       *pasted* host, before rounding, so an asset-subdomain paste can't
+       sidestep it. A maker's slice of a shared host is declared by a curator
+       with a ``path_prefix``, never derived from a paste.
+    5. :func:`registrable_domain` is not ``None`` — else ``PUBLIC_SUFFIX`` (a
        bare public suffix has no registrable label to round to).
 
     Returns the **registrable domain** (``s4.american-pinball.com`` →
@@ -142,6 +152,8 @@ def root_host_from_url(url: str) -> Host:
         raise HostError(HostRejection.NOT_DNS)
     if is_reserved_tld(host):
         raise HostError(HostRejection.RESERVED_TLD)
+    if shared_host_for(host) is not None:
+        raise HostError(HostRejection.SHARED_HOST)
     rounded = registrable_domain(host)
     if rounded is None:
         raise HostError(HostRejection.PUBLIC_SUFFIX)

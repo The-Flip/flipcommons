@@ -593,6 +593,10 @@ layers = [
     "models",
     "scheme_validation",
     "psl | deliverers",
+    # The shared-CDN host table: consulted by models' clean(), extractors'
+    # matcher and psl's derive funnel, itself importing only hosts — so it
+    # sits alone between them and the pure bottom layer.
+    "shared_hosts",
     "hosts | citation_types | safe_fetch | authz | source_node | isbn",
 ]
 

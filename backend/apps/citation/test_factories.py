@@ -127,6 +127,7 @@ def make_citation_root_domain(
     *,
     source: CitationSource | None = None,
     host: str | None = None,
+    path_prefix: str = "",
     created_by: Actor | None = None,
     updated_by: Actor | None = None,
 ) -> CitationSourceRootDomain:
@@ -137,6 +138,7 @@ def make_citation_root_domain(
     return CitationSourceRootDomain.objects.create(
         source=source or make_citation_source(),
         host=host,
+        path_prefix=path_prefix,
         created_by=created_by,
         updated_by=updated_by or created_by,
     )

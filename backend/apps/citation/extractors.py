@@ -37,6 +37,7 @@ from apps.citation.deliverers import (
 )
 from apps.citation.hosts import (
     Host,
+    PathPrefix,
     RootDomainMatch,
     is_dns_host,
     label_suffixes,
@@ -49,6 +50,7 @@ from apps.citation.models import (
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+from apps.citation.shared_hosts import shared_host_for
 from apps.core.types import CitationSourceId
 
 if TYPE_CHECKING:
@@ -203,7 +205,10 @@ def _recognize_by_host(url: str) -> Recognition | None:
     ``CitationSourceRootDomain``, by **longest label-boundary suffix** — an
     asset subdomain (``s4.american-pinball.com``) resolves to its registrable
     root, while a more-specific seeded host (``twip.kineticist.com``) still
-    wins over its parent domain for its own subtree. Returns parent only, no
+    wins over its parent domain for its own subtree. A **path-scoped** row (a
+    shared CDN's per-tenant prefix) additionally requires the URL's path to sit
+    under its prefix at a segment boundary; among matching rows host
+    specificity dominates path specificity. Returns parent only, no
     identifier. The recognition host is an owned fact on the root, decoupled
     from the display ``homepage`` link — declared deliberately, never inferred
     and never via external HTTP. See ``docs/Citations.md``.
@@ -238,13 +243,40 @@ def _recognize_by_host(url: str) -> Recognition | None:
     # filter is defense-in-depth for the app-level clean() invariant (rows
     # inserted via raw SQL / bulk that bypass it).
     candidates = [
-        RootDomainMatch(source_id=row[0], source_name=row[1], host=Host(row[2]))
+        RootDomainMatch(
+            source_id=row[0],
+            source_name=row[1],
+            host=Host(row[2]),
+            path_prefix=PathPrefix(row[3]),
+        )
         for row in CitationSourceRootDomain.objects.filter(
             host__in=label_suffixes(host),
             source__parent__isnull=True,
-        ).values_list("source_id", "source__name", "host")
+        ).values_list("source_id", "source__name", "host", "path_prefix")
     ]
-    best = longest_suffix_match(host, candidates)
+    # On a shared multi-tenant CDN host only path-scoped rows carry honest
+    # attribution — a bare row there (including a legitimate bare row on a
+    # non-shared ancestor host, and junk a pre-guard write left behind) must
+    # never absorb another tenant's URL; an unmatched tenant falls through to
+    # no-match so cite-url's funnel can refuse it. And in either case a row
+    # must satisfy the write invariant clean() enforces — a prefix lives on a
+    # shared host only — so a prefixed row planted on an ordinary host through
+    # a validation bypass can't split that site into path-scoped roots. Like
+    # the root-only filter above, this discards only rows that bypassed
+    # validation (plus, on a shared URL host, bare ancestor rows recognition
+    # must not attribute to).
+    if shared_host_for(host) is not None:
+        candidates = [
+            c
+            for c in candidates
+            if c.path_prefix and shared_host_for(c.host) is not None
+        ]
+    else:
+        # A shared row host under a non-shared URL host is impossible (the
+        # shared suffix would make the URL host shared too), so dropping
+        # prefixed rows is exactly the row invariant here.
+        candidates = [c for c in candidates if not c.path_prefix]
+    best = longest_suffix_match(host, parsed.path, candidates)
     if best is None:
         return None
     return Recognition(parent_id=best.source_id, parent_name=best.source_name)

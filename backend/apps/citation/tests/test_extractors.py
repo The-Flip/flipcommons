@@ -186,6 +186,98 @@ class TestRootDomainRecognition:
         assert recognize_url("https://child.example.com/page") is None
 
 
+TENANT_PREFIX = "/blobby/go/4bd466e8-edb0-49f6-afcc-31250ba5b0f3"
+
+
+class TestPathScopedRecognition:
+    """A shared CDN host resolves by (host, path prefix), never host alone."""
+
+    def _prefixed_root(self, name: str, path_prefix: str) -> CitationSource:
+        root = make_citation_source(name=name, source_type="web")
+        make_citation_root_domain(
+            source=root, host="img1.wsimg.com", path_prefix=path_prefix
+        )
+        return root
+
+    def test_url_under_the_prefix_resolves_to_its_maker(self, db):
+        cardona = self._prefixed_root("Cardona Pinball Designs", TENANT_PREFIX)
+        rec = recognize_url(
+            f"https://img1.wsimg.com{TENANT_PREFIX}/downloads/FT%20release%202026%2006%2012.pdf"
+        )
+        assert rec is not None
+        assert rec.parent_id == cardona.id
+
+    def test_another_tenant_on_the_same_host_abstains(self, db):
+        self._prefixed_root("Cardona Pinball Designs", TENANT_PREFIX)
+        rec = recognize_url(
+            "https://img1.wsimg.com/blobby/go/ffffffff-0000-0000-0000-000000000000/downloads/other.pdf"
+        )
+        assert rec is None
+
+    def test_querystring_does_not_participate(self, db):
+        cardona = self._prefixed_root("Cardona Pinball Designs", TENANT_PREFIX)
+        rec = recognize_url(f"https://img1.wsimg.com{TENANT_PREFIX}/x.pdf?v=2#frag")
+        assert rec is not None
+        assert rec.parent_id == cardona.id
+
+    def test_traversal_path_abstains(self, db):
+        # /tenant/../other would fetch another tenant's file after CDN
+        # normalization; recognition must not claim it.
+        self._prefixed_root("Cardona Pinball Designs", TENANT_PREFIX)
+        rec = recognize_url(
+            f"https://img1.wsimg.com{TENANT_PREFIX}/../ffffffff-0000-0000-0000-000000000000/x.pdf"
+        )
+        assert rec is None
+
+    def test_two_makers_resolve_independently(self, db):
+        cardona = self._prefixed_root("Cardona Pinball Designs", TENANT_PREFIX)
+        other = self._prefixed_root(
+            "Other Maker", "/blobby/go/ffffffff-0000-0000-0000-000000000000"
+        )
+        rec_a = recognize_url(f"https://img1.wsimg.com{TENANT_PREFIX}/a.pdf")
+        rec_b = recognize_url(
+            "https://img1.wsimg.com/blobby/go/ffffffff-0000-0000-0000-000000000000/b.pdf"
+        )
+        assert rec_a is not None
+        assert rec_a.parent_id == cardona.id
+        assert rec_b is not None
+        assert rec_b.parent_id == other.id
+
+    def test_prefixed_row_on_an_ordinary_host_is_ignored(self, db):
+        # The inverse write invariant, defended like the root-only filter: a
+        # prefixed row on a non-shared host can only exist via a validation
+        # bypass (objects.create skips clean()), and recognition must not let
+        # it split a normal site into path-scoped roots — the site's bare row
+        # keeps resolving every URL, including those under the junk prefix.
+        site = make_citation_source(name="Cardona Pinball Designs", source_type="web")
+        make_citation_root_domain(source=site, host="cardonapinball.com")
+        squatter = make_citation_source(name="Squatter", source_type="web")
+        make_citation_root_domain(
+            source=squatter, host="cardonapinball.com", path_prefix="/files"
+        )
+        rec = recognize_url("https://cardonapinball.com/files/manual.pdf")
+        assert rec is not None
+        assert rec.parent_id == site.id
+
+    def test_bare_ancestor_row_never_absorbs_a_shared_host_url(self, db):
+        # Simulates pre-guard prod junk: a bare wsimg.com row created via a
+        # validation bypass (objects.create skips clean()). On a shared host
+        # only path-scoped rows carry honest attribution, so the correct
+        # tenant still resolves to its maker and the wrong tenant abstains
+        # (falling through to cite-url's funnel 422) instead of landing on
+        # the junk row.
+        junk = make_citation_source(name="Junk CDN root", source_type="web")
+        make_citation_root_domain(source=junk, host="wsimg.com")
+        cardona = self._prefixed_root("Cardona Pinball Designs", TENANT_PREFIX)
+        rec_good = recognize_url(f"https://img1.wsimg.com{TENANT_PREFIX}/a.pdf")
+        assert rec_good is not None
+        assert rec_good.parent_id == cardona.id
+        assert (
+            recognize_url("https://img1.wsimg.com/blobby/go/other-tenant/b.pdf") is None
+        )
+        assert recognize_url("https://wsimg.com/") is None
+
+
 class TestCreateWebChild:
     """The shared web-child leaf: validated, attributed, atomic."""
 

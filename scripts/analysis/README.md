@@ -108,7 +108,7 @@ The foundation surfaces a model's relationships in three shapes, plus a fourth f
 Two mechanisms cross the foundation's edge, both documented where they are defined:
 
 - **What a slug means** — `domain_vocab` parses [DomainModel.md](../../docs/DomainModel.md) at query time, so definitions are never copied into this layer. `LEFT JOIN domain_vocab d ON d.dim = 'gameformat' AND d.slug = g.slug`.
-- **Which work a URL belongs to** — `citation_root_for_host(url_host(u))`. Not equality or `LIKE`: registered hosts nest, so the rule is a longest label-boundary suffix.
+- **Which work a URL belongs to** — `citation_root_for_url(u)`. Not equality or `LIKE`: registered hosts nest, so the rule is a longest label-boundary suffix — and on a shared multi-tenant CDN host (`img1.wsimg.com`) the registered row is scoped to a tenant path prefix, so the URL's path participates too. `citation_root_for_host(h)` remains for a bare host with no URL, and deliberately returns NULL for a shared CDN host, where host-only attribution is unanswerable.
 
 ## Analysis files
 
