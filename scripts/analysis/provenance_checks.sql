@@ -240,6 +240,28 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   JOIN citation_sources s ON s.citation_source_id = d.root_citation_source_id
   WHERE NOT s.is_root
 
+  -- A shared multi-tenant CDN host carries only path-scoped rows — a bare row there
+  -- would attribute every tenant's files to one maker, which is why the backend's
+  -- clean() refuses to write one. The recognition macros already refuse to MATCH such
+  -- a row (citation_domain_eligible), so this is the visibility half: a row that
+  -- slipped in through a validation bypass surfaces here as data to garden rather than
+  -- silently sitting inert.
+  UNION ALL
+  SELECT 'shared_cdn_bare_root_domain',
+         'host=' || d.host || ' root=' || d.root_citation_source_name
+  FROM citation_root_domains d
+  WHERE d.path_prefix = '' AND _shared_cdn_host(d.host)
+
+  -- ...and the inverse write invariant: a path prefix lives on a shared host ONLY. A
+  -- prefixed row on an ordinary host (a validation bypass — clean() refuses to write
+  -- one) would split a normal site into path-scoped roots; the recognition macros
+  -- already refuse to match it, so as above this is the visibility half.
+  UNION ALL
+  SELECT 'path_scoped_row_on_ordinary_host',
+         'host=' || d.host || d.path_prefix || ' root=' || d.root_citation_source_name
+  FROM citation_root_domains d
+  WHERE d.path_prefix IS DISTINCT FROM '' AND NOT _shared_cdn_host(d.host)
+
   -- ─── The root_* family travels together ──────────────────────────────────
   -- Any view that identifies a root citation source carries ALL FOUR of the family —
   -- id, name, slug, identifier_key — and this asserts it structurally rather than by

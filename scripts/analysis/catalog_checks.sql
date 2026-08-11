@@ -448,8 +448,11 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     -- — so this anchors only once a patch retracts a claim about a model that carries a
     -- status at all. Populated on patch_claims, hence qualified.
     ('patch_retractions.model_status',      'pending'),
-    -- no interactive claim is about a machine model yet; a UI edit writes one
-    ('model_claims.changeset_action',       'pending'),
+    -- changeset_action is carried only by interactive claims, and those exist only
+    -- where someone has made UI edits against THIS database — a fresh rebuild from
+    -- patches has none. `sparse`, not `pending`: an expiry keyed to local user
+    -- behavior would make the self-test's verdict differ per machine.
+    ('model_claims.changeset_action',       'sparse'),
     -- no patch has filled a manufacturer QID yet
     ('manufacturers.wikidata_id',           'pending')
   ) AS t(col, kind);
@@ -719,6 +722,91 @@ CREATE OR REPLACE VIEW foundation_checks AS
          -- the boundary is a LABEL: a lookalike suffix must not match at all
       OR citation_root_for_host('evil-kineticist.com') IS NOT NULL
     )
+  UNION ALL
+  SELECT 'macro_url_path', url_path('http://X.com:8080/Case/PATH%20x?q=1#f')
+  WHERE url_path('http://X.com:8080/Case/PATH%20x?q=1#f')
+        IS DISTINCT FROM '/Case/PATH%20x'  -- port/query/fragment dropped; case and
+                                           -- percent-encoding preserved (paths are
+                                           -- case-sensitive, unlike url_host)
+     -- no authority means no path, mirroring url_host's refusal to guess
+     OR url_path('ipdb.org/x') IS DISTINCT FROM ''
+     OR url_path(NULL)         IS DISTINCT FROM ''
+  UNION ALL
+  -- The shared candidacy rule both citation_root_for_* macros filter through —
+  -- data-independent on purpose: the misattribution cases (a bare row on a shared CDN
+  -- host, another tenant's path) are exactly the rows a healthy catalog never holds,
+  -- so only literal-argument assertions can prove the rule at all.
+  SELECT 'macro_citation_domain_eligible', 'eligibility drifted from apps/citation'
+  WHERE NOT citation_domain_eligible('s4.american-pinball.com', '/x', 'american-pinball.com', '')  -- bare row, suffix host
+     OR citation_domain_eligible('evil-american-pinball.com', '/x', 'american-pinball.com', '')    -- label boundary
+     OR NOT citation_domain_eligible('img1.wsimg.com', '/blobby/go/T/downloads/a.pdf',
+                                     'img1.wsimg.com', '/blobby/go/T')                             -- tenant prefix match
+     OR citation_domain_eligible('img1.wsimg.com', '/blobby/go/T-evil/a.pdf',
+                                 'img1.wsimg.com', '/blobby/go/T')                                 -- path SEGMENT boundary
+     OR citation_domain_eligible('img1.wsimg.com', '/blobby/go/OTHER/a.pdf',
+                                 'img1.wsimg.com', '/blobby/go/T')                                 -- another tenant
+     OR citation_domain_eligible('img1.wsimg.com', '/BLOBBY/go/t/a.pdf',
+                                 'img1.wsimg.com', '/blobby/go/T')                                 -- paths are case-sensitive
+     OR citation_domain_eligible('img1.wsimg.com', '/blobby/go/T/../OTHER/a.pdf',
+                                 'img1.wsimg.com', '/blobby/go/T')                                 -- traversal refused
+     OR citation_domain_eligible('img1.wsimg.com', '/blobby/go/T/%2e%2e/OTHER/a.pdf',
+                                 'img1.wsimg.com', '/blobby/go/T')                                 -- ...encoded too
+     OR citation_domain_eligible('img1.wsimg.com', '/anything', 'wsimg.com', '')                   -- bare ancestor row never
+                                                                                                   -- absorbs a shared-CDN URL
+     OR citation_domain_eligible('wsimg.com', '', 'wsimg.com', '')                                 -- nor the bare host itself
+     OR NOT citation_domain_eligible('shopify.com', '/blog', 'shopify.com', '')                    -- leaf declaration leaves
+                                                                                                   -- the parent site alone
+     -- every mirrored shared-host entry gets one positive assertion, so dropping or
+     -- mistyping an entry in the SQL mirror fails the self-test loudly (wsimg.com is
+     -- exercised throughout the cases above)
+     OR NOT citation_domain_eligible('cdn.shopify.com', '/s/files/1/0001/doc.pdf',
+                                     'cdn.shopify.com', '/s/files/1/0001')
+     OR NOT citation_domain_eligible('storage.googleapis.com', '/maker-bucket/docs/x.pdf',
+                                     'storage.googleapis.com', '/maker-bucket')
+     OR citation_domain_eligible('cardonapinball.com', '/files/a.pdf',
+                                 'cardonapinball.com', '/files')                                   -- a prefixed row on an
+                                                                                                   -- ordinary host is a bypass
+                                                                                                   -- artifact, never a match
+  UNION ALL
+  -- Data-dependent like macro_citation_root_for_host, anchored on the same seeded pair.
+  SELECT 'macro_citation_root_for_url',
+         coalesce(citation_root_for_url('https://twip.kineticist.com/article')::VARCHAR, 'NULL')
+  WHERE (SELECT count(*) FROM citation_root_domains WHERE host = 'twip.kineticist.com') = 1
+    AND (
+         -- a URL resolves like its host, most-specific registered host winning
+         citation_root_for_url('https://twip.kineticist.com/article') IS DISTINCT FROM
+           (SELECT root_citation_source_id FROM citation_root_domains WHERE host = 'twip.kineticist.com')
+      OR citation_root_for_url('https://www.kineticist.com/x') IS DISTINCT FROM
+           (SELECT root_citation_source_id FROM citation_root_domains WHERE host = 'kineticist.com')
+         -- the label-boundary negative holds through the URL form
+      OR citation_root_for_url('https://evil-kineticist.com/x') IS NOT NULL
+         -- an unregistered shared-CDN tenant is NULL, never a host-level guess
+      OR citation_root_for_url('https://img1.wsimg.com/blobby/go/unregistered/x.pdf') IS NOT NULL
+    )
+  UNION ALL
+  -- Longest-prefix precedence, pinned deterministically: the baseline catalog holds no
+  -- nested prefixed rows, so this check supplies its own — a CTE named after the view
+  -- shadows it inside the macro expansion (the provenance_checks `claims` shadowing
+  -- trick, reaching through the macro), making the ordering testable with no data.
+  SELECT 'macro_citation_root_for_url_prefix_order', probe.got
+  FROM (
+    WITH citation_root_domains AS (
+      SELECT * FROM (VALUES
+        (1001, 'Tenant',           NULL::VARCHAR, '', 'img1.wsimg.com', '/blobby/go/T'),
+        (1002, 'Tenant downloads', NULL::VARCHAR, '', 'img1.wsimg.com', '/blobby/go/T/downloads')
+      ) v(root_citation_source_id, root_citation_source_name, root_citation_source_slug,
+          root_identifier_key, host, path_prefix)
+    )
+    SELECT
+      coalesce(citation_root_for_url('https://img1.wsimg.com/blobby/go/T/downloads/x.pdf')::VARCHAR,
+               'NULL') AS got,
+      -- both rows are eligible for a URL under the deeper prefix; the deeper must win
+      citation_root_for_url('https://img1.wsimg.com/blobby/go/T/downloads/x.pdf') AS deep,
+      -- ...while a URL under only the shallow prefix still resolves to it
+      citation_root_for_url('https://img1.wsimg.com/blobby/go/T/other.pdf')       AS shallow
+  ) probe
+  WHERE probe.deep    IS DISTINCT FROM 1002
+     OR probe.shallow IS DISTINCT FROM 1001
   UNION ALL
 
   -- model_edges is a LOSSLESS union of the two mechanism views (no dedup, no fan-out)

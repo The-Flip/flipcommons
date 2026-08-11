@@ -526,6 +526,21 @@ sources:
 claims: []
 ```
 
+A `domains:` entry may also carry a **path**, declaring a path-scoped slice of a **shared multi-tenant CDN host** — the shape for a maker whose documents live only on a host like GoDaddy's `img1.wsimg.com`, where the path segment names the tenant. The path is meaningful: the entry registers the exact `(host, path prefix)` pair, and URLs resolve to the root only when their path sits under the prefix at a segment boundary. Registering such a host **bare is rejected** (it would attribute every tenant's files to one maker), and a path prefix on an ordinary host is rejected too — path scoping exists only for the declared shared hosts (`apps/citation/shared_hosts.py`). Prefixes are case-sensitive and stored verbatim:
+
+```yaml
+sources:
+  - name: Cardona Pinball Designs
+    source_type: web
+    links:
+      - { url: "https://cardonapinball.com/", link_type: homepage }
+    domains:
+      # Cardona's tenant directory on GoDaddy's shared CDN — its release-notes
+      # PDFs and instruction cards resolve here; other tenants' files do not.
+      - img1.wsimg.com/blobby/go/4bd466e8-edb0-49f6-afcc-31250ba5b0f3
+claims: []
+```
+
 A `sources:` node carries `name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, `domains`, `links` — plus `slug`/`parent` on slug-addressed (periodical) nodes, below. Nesting is never expressed by structure — a nested `children` key is rejected. A **web** child is created on demand when you `cite:` a URL on its root's domain; a **periodical** issue is declared as its own node whose `parent:` names its periodical's slug.
 
 A **periodical** is the one slug-addressed type: it has no natural identifier (no ISBN, no recognition domain, no scheme key), so its nodes carry an authored `slug` — required, in the system slug grammar, root-unique for periodicals and sibling-unique for issues. An issue node sets `parent:` to its periodical's slug; the periodical may be declared in the same block (any order — parentless nodes are processed first) or an earlier patch. A root slug may not shadow `isbn` or a scheme key. Archive links (a Google Books scan) hang off the issue via `links:`, where every citer benefits:

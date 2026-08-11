@@ -1,16 +1,21 @@
-"""Pure host helpers for citation-source recognition.
+"""Pure host and path-prefix helpers for citation-source recognition.
 
 Model-free and dependency-free (no Public Suffix List), so ``models``,
 ``extractors``, ``source_upsert`` and migrations can import it without a cycle.
-Everything here takes a **host**, not a URL — callers parse
-``urlparse(url).hostname`` first and skip a ``None`` result.
+Everything here takes a **host** (and, where paths participate, a URL *path*),
+never a whole URL — callers parse ``urlparse(url)`` first and skip a ``None``
+hostname.
 
 These helpers implement a **longest label-boundary suffix** host match: given a
 host and a set of candidate roots, the most-specific candidate wins — an asset
 subdomain (``s4.american-pinball.com``) resolves to its registrable root, while
 a more-specific seeded host (``twip.kineticist.com``) still beats its parent
-domain for its own subtree. The intended consumer is citation-source
-recognition; on their own these are pure string ops — deterministic and offline.
+domain for its own subtree. A candidate may additionally be scoped by a
+**path prefix** (a shared CDN's per-tenant directory); such a row matches only
+URLs whose path sits under the prefix at a segment boundary, and among matching
+rows host specificity dominates path specificity. The intended consumer is
+citation-source recognition; on their own these are pure string ops —
+deterministic and offline.
 
 This module also carries the **syntactic** host predicates
 (:func:`is_dns_host`, :func:`is_reserved_tld`) that the write-time guard and the
@@ -60,6 +65,100 @@ def normalize_host(hostname: str) -> Host:
     while host.startswith("www."):
         host = host.removeprefix("www.")
     return Host(host)
+
+
+PathPrefix = NewType("PathPrefix", str)
+"""A recognition path prefix **already normalized** by :func:`normalize_path_prefix`.
+
+The path half of a path-scoped recognition row: ``""`` for a bare-host row
+(matches every path — today's semantics), otherwise a ``/``-led,
+non-``/``-terminated URL-path prefix stored **verbatim** — case-sensitive, no
+percent-decoding — matched at path-segment boundaries only. Like :data:`Host`,
+``NewType`` does not validate; the honest sources are
+:func:`normalize_path_prefix` and a value read from
+``CitationSourceRootDomain.path_prefix`` (stored normalized by the model's
+``clean()``).
+"""
+
+
+def normalize_path_prefix(raw: str) -> PathPrefix:
+    """Normalize a path prefix: trim, lead with exactly one ``/``, no trailing ``/``.
+
+    The write-path chokepoint for ``CitationSourceRootDomain.path_prefix``,
+    mirroring :func:`normalize_host` for hosts. Deliberately **not** lowercased
+    and **not** percent-decoded — URL paths are case-sensitive and a shared
+    CDN's tenant ids are matched verbatim; only the slash framing is
+    canonicalized so ``blobby/go/x``, ``/blobby/go/x`` and ``/blobby/go/x/``
+    all store one shape. Whitespace-only and bare-``/`` input normalize to
+    ``""`` (the bare-host form). Idempotent. The result is a
+    :data:`PathPrefix`; syntactic validity is :func:`is_path_prefix`'s job.
+    """
+    prefix = raw.strip()
+    prefix = prefix.rstrip("/")
+    if prefix and not prefix.startswith("/"):
+        prefix = "/" + prefix
+    return PathPrefix(prefix)
+
+
+# A path segment that traverses: ``.`` or ``..`` spelled literally or with
+# percent-encoded dots (``%2e``, any case), in any 1–2-unit combination
+# (``.``, ``..``, ``%2e``, ``%2e%2e``, ``.%2e``, ``%2e.``).
+_TRAVERSAL_SEGMENT = re.compile(r"(?:\.|%2e){1,2}", re.IGNORECASE)
+
+
+def is_traversal_free_path(url_path: str) -> bool:
+    """Whether *url_path* is free of dot-segment / backslash traversal.
+
+    ``urlparse`` does not normalize dot segments but browsers and CDNs do, so
+    ``/tenant/../other`` (or its ``%2e`` / backslash spellings) would match
+    under ``/tenant`` while actually fetching another tenant's file. Recognition
+    must not claim a page it can't honestly resolve, so a path-scoped row
+    refuses such a path outright (reject, not canonicalize); bare-host rows are
+    unaffected — their attribution doesn't depend on the path.
+    """
+    if "\\" in url_path:
+        return False
+    return not any(
+        _TRAVERSAL_SEGMENT.fullmatch(segment) for segment in url_path.split("/")
+    )
+
+
+def is_path_prefix(prefix: PathPrefix) -> bool:
+    """Whether *prefix* is syntactically a valid recognition path prefix.
+
+    ``""`` (the bare-host form) is valid. Otherwise: must start with ``/``,
+    must not end with ``/``, no ``?``/``#`` (querystrings and fragments never
+    participate in recognition), no empty segments (``//``), and no traversal
+    segments (:func:`is_traversal_free_path` — a stored ``/tenant/..`` prefix
+    could never match honestly). Length is the storage column's concern.
+    Expects a normalized :data:`PathPrefix`.
+    """
+    if prefix == "":
+        return True
+    if not prefix.startswith("/") or prefix.endswith("/"):
+        return False
+    if "?" in prefix or "#" in prefix:
+        return False
+    if any(segment == "" for segment in prefix.split("/")[1:]):
+        return False
+    return is_traversal_free_path(prefix)
+
+
+def path_prefix_matches(prefix: PathPrefix, url_path: str) -> bool:
+    """Whether *url_path* sits under *prefix* at a path-segment boundary.
+
+    A bare prefix (``""``) matches every path. A non-bare prefix matches the
+    exact path or any path below it — the segment boundary
+    (``prefix + "/"``) is what stops ``/blobby/go/4bd466e8-evil…`` matching a
+    ``/blobby/go/4bd466e8-…`` prefix. Comparison is verbatim: case-sensitive,
+    percent-encoding untouched. A traversal-carrying *url_path* never matches
+    a non-bare prefix (see :func:`is_traversal_free_path`).
+    """
+    if prefix == "":
+        return True
+    if not is_traversal_free_path(url_path):
+        return False
+    return url_path == prefix or url_path.startswith(prefix + "/")
 
 
 # A single DNS label: ASCII ``[a-z0-9-]``, 1–63 chars, no leading/trailing
@@ -138,38 +237,54 @@ def label_suffixes(host: Host) -> list[Host]:
 class RootDomainMatch(NamedTuple):
     """A seeded recognition host paired with the root source that owns it.
 
-    ``host`` is a :data:`Host` — normalized, as the DB write path stores it, so
-    :func:`longest_suffix_match` compares it verbatim.
+    ``host`` is a :data:`Host` and ``path_prefix`` a :data:`PathPrefix` —
+    both normalized, as the DB write path stores them, so
+    :func:`longest_suffix_match` compares them verbatim. ``path_prefix`` is
+    ``""`` for a bare-host row (matches every path).
     """
 
     source_id: CitationSourceId
     source_name: str
     host: Host
+    path_prefix: PathPrefix = PathPrefix("")
 
 
 def longest_suffix_match(
-    url_host: Host, domains: Sequence[RootDomainMatch]
+    url_host: Host, url_path: str, domains: Sequence[RootDomainMatch]
 ) -> RootDomainMatch | None:
-    """The most-specific *domains* row whose host is a suffix of *url_host*.
+    """The most-specific *domains* row matching *url_host* and *url_path*.
 
-    The winner is the row whose ``host`` is the **longest label-boundary
-    suffix** of *url_host* (``host == url_host`` or
-    ``url_host.endswith("." + host)``). Returns ``None`` when nothing matches.
-    Ties are impossible when candidate hosts are unique (as the seeded
-    recognition rows are): no two share a host, and the strict ``>`` on length
-    keeps the result independent of iteration order.
+    A row is eligible when its ``host`` is a **label-boundary suffix** of
+    *url_host* (``host == url_host`` or ``url_host.endswith("." + host)``)
+    and its ``path_prefix`` matches *url_path* at a segment boundary
+    (:func:`path_prefix_matches`; a bare row matches every path). Among
+    eligible rows the winner has the longest host, then the longest prefix —
+    host specificity dominates path specificity. Returns ``None`` when nothing
+    matches.
 
-    Both sides are :data:`Host` (normalized) by type — *url_host* via
-    :func:`normalize_host`, each ``domain.host`` stored normalized at write
-    time. The comparison is exact (no lowercasing or ``www.`` stripping here);
-    the :data:`Host` requirement is what stops a raw, mixed-case or
-    ``www.``-prefixed host from reaching it and silently missing.
+    Ties are impossible when rows are unique on ``(host, path_prefix)`` (as
+    the seeded recognition rows are): equal-length label-boundary suffixes of
+    one host are the same host, equal-length matching prefixes of one path are
+    the same prefix, and the strict ``>`` keeps the result independent of
+    iteration order.
+
+    *url_host* is a :data:`Host` (via :func:`normalize_host`) and each row's
+    ``host``/``path_prefix`` are stored normalized at write time. The
+    comparison is exact — no lowercasing, ``www.`` stripping or
+    percent-decoding here; the :data:`Host` requirement is what stops a raw,
+    mixed-case or ``www.``-prefixed host from reaching it and silently
+    missing. *url_path* is the raw ``urlparse(url).path``.
     """
     candidates = set(label_suffixes(url_host))
     best: RootDomainMatch | None = None
     for domain in domains:
-        if domain.host in candidates and (
-            best is None or len(domain.host) > len(best.host)
+        if domain.host not in candidates:
+            continue
+        if not path_prefix_matches(domain.path_prefix, url_path):
+            continue
+        if best is None or (len(domain.host), len(domain.path_prefix)) > (
+            len(best.host),
+            len(best.path_prefix),
         ):
             best = domain
     return best

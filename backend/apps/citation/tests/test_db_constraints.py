@@ -680,3 +680,90 @@ class TestCitationSourceRootDomain:
         make_citation_root_domain(source=root, host="example.com")
         root.delete()
         assert not CitationSourceRootDomain.objects.filter(host="example.com").exists()
+
+
+TENANT_PREFIX = "/blobby/go/4bd466e8-edb0-49f6-afcc-31250ba5b0f3"
+OTHER_TENANT_PREFIX = "/blobby/go/ffffffff-0000-0000-0000-000000000000"
+
+
+class TestCitationSourceRootDomainPathPrefix:
+    """Path-scoped rows: pair uniqueness (DB) and the shared-host guards."""
+
+    def _domain(self, *, host: str, path_prefix: str) -> CitationSourceRootDomain:
+        root = make_citation_source(name=f"Root {host}{path_prefix}")
+        return CitationSourceRootDomain(
+            source=root,
+            host=host,
+            path_prefix=path_prefix,
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
+
+    def test_prefixed_row_on_shared_host_accepted(self, db):
+        rd = self._domain(host="img1.wsimg.com", path_prefix=TENANT_PREFIX)
+        rd.full_clean()
+        rd.save()
+        assert rd.pk is not None
+
+    def test_clean_normalizes_prefix_framing(self, db):
+        rd = self._domain(
+            host="img1.wsimg.com", path_prefix=f"  {TENANT_PREFIX[1:]}/  "
+        )
+        rd.full_clean()
+        assert rd.path_prefix == TENANT_PREFIX
+
+    def test_clean_rejects_bare_row_on_shared_host(self, db):
+        """The catastrophe guard: a bare shared-CDN host would attribute every
+        tenant's files to one maker. The message names the platform."""
+        rd = self._domain(host="img1.wsimg.com", path_prefix="")
+        with pytest.raises(ValidationError, match="GoDaddy Website Builder CDN"):
+            rd.full_clean()
+
+    def test_clean_rejects_bare_ancestor_of_shared_host(self, db):
+        """`wsimg.com` is declared whole, so the bare ancestor is unregistrable
+        too — otherwise every leaf URL would suffix-match it."""
+        rd = self._domain(host="wsimg.com", path_prefix="")
+        with pytest.raises(ValidationError):
+            rd.full_clean()
+
+    def test_clean_rejects_prefix_on_non_shared_host(self, db):
+        rd = self._domain(host="cardonapinball.com", path_prefix="/downloads")
+        with pytest.raises(ValidationError, match="shared multi-tenant CDN"):
+            rd.full_clean()
+
+    @pytest.mark.parametrize(
+        "path_prefix",
+        ["/a//b", "/a?x=1", "/a#frag", "/a/../b", "/a/%2e%2e/b", "/a\\b"],
+    )
+    def test_clean_rejects_malformed_prefix(self, db, path_prefix):
+        rd = self._domain(host="img1.wsimg.com", path_prefix=path_prefix)
+        with pytest.raises(ValidationError):
+            rd.full_clean()
+
+    def test_two_makers_coexist_on_one_shared_host(self, db):
+        """The point of the feature: (host, path_prefix) uniqueness lets the
+        next maker register the same CDN host under its own tenant prefix."""
+        a = self._domain(host="img1.wsimg.com", path_prefix=TENANT_PREFIX)
+        a.full_clean()
+        a.save()
+        b = self._domain(host="img1.wsimg.com", path_prefix=OTHER_TENANT_PREFIX)
+        b.full_clean()
+        b.save()
+        assert a.pk != b.pk
+
+    def test_duplicate_pair_rejected_at_db(self, db):
+        a = self._domain(host="img1.wsimg.com", path_prefix=TENANT_PREFIX)
+        a.full_clean()
+        a.save()
+        with pytest.raises(IntegrityError):
+            make_citation_root_domain(
+                source=make_citation_source(name="Rival"),
+                host="img1.wsimg.com",
+                path_prefix=TENANT_PREFIX,
+            )
+
+    @pytest.mark.parametrize("path_prefix", ["no-slash", "/trailing/"])
+    def test_prefix_shape_check_fires_when_clean_bypassed(self, db, path_prefix):
+        """The CHECK backstop for writes that skip validation."""
+        with pytest.raises(IntegrityError):
+            make_citation_root_domain(host="img1.wsimg.com", path_prefix=path_prefix)

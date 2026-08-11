@@ -22,7 +22,12 @@ from apps.citation.citation_types import (
     citation_type_spec,
     scheme_root_citation_source_info,
 )
-from apps.citation.hosts import Host, normalize_host
+from apps.citation.hosts import (
+    Host,
+    PathPrefix,
+    normalize_host,
+    normalize_path_prefix,
+)
 from apps.citation.source_node import SourceLinkNode, SourceNode
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 
@@ -170,15 +175,33 @@ def _create_link(source: CitationSource, link: SourceLinkNode, *, actor: Actor) 
     obj.save()
 
 
-def _declared_homepage_hosts(links: Sequence[SourceLinkNode]) -> list[Host]:
-    """Normalized recognition hosts a node declares via its ``homepage`` links.
+class DeclaredDomain(NamedTuple):
+    """One declared recognition slice: a host and its optional path prefix.
+
+    ``path_prefix`` is ``""`` for an ordinary whole-host declaration and a
+    normalized prefix for a shared-CDN tenant slice
+    (``img1.wsimg.com/blobby/go/<uuid>``). Both halves are normalized, so
+    exact-pair dedup and DB resolution compare verbatim.
+    """
+
+    host: Host
+    path_prefix: PathPrefix
+
+    def __str__(self) -> str:
+        return f"{self.host}{self.path_prefix}"
+
+
+def _declared_homepage_hosts(links: Sequence[SourceLinkNode]) -> list[DeclaredDomain]:
+    """Recognition hosts a node declares via its ``homepage`` links, bare.
 
     Only ``homepage``-typed links contribute a recognition host (matching the
-    backfill and the create paths); other link types are display-only. Each
-    URL's hostname is parsed and normalized; a ``None`` hostname is skipped
-    (honoring ``hosts``' None→skip contract). Order-preserving and de-duplicated.
+    backfill and the create paths); other link types are display-only. A
+    homepage host is always a **bare** declaration — a homepage URL's path is
+    the page, not a recognition scope. Each URL's hostname is parsed and
+    normalized; a ``None`` hostname is skipped (honoring ``hosts``' None→skip
+    contract). Order-preserving and de-duplicated.
     """
-    hosts: list[Host] = []
+    domains: list[DeclaredDomain] = []
     for link in links:
         if link["link_type"] != "homepage":
             continue
@@ -186,72 +209,100 @@ def _declared_homepage_hosts(links: Sequence[SourceLinkNode]) -> list[Host]:
         if hostname is None:
             continue
         host = normalize_host(hostname)
-        if host and host not in hosts:
-            hosts.append(host)
-    return hosts
+        declared = DeclaredDomain(host=host, path_prefix=PathPrefix(""))
+        if host and declared not in domains:
+            domains.append(declared)
+    return domains
 
 
-def _declared_domains_hosts(node: SourceNode) -> list[Host]:
-    """Normalized recognition hosts a node declares via the ``domains:`` verb.
+def _declared_domains(node: SourceNode) -> list[DeclaredDomain]:
+    """Recognition slices a node declares via the ``domains:`` verb.
 
-    Forgiving input: each entry may be a bare host (``oldpin.com``) or a full URL
-    (``https://oldpin.com/``); ``urlparse(entry).hostname or entry`` lands both on
-    the same host before :func:`normalize_host`. Unlike a homepage host this is a
-    pure recognition declaration — no display side, no rounding. Order-preserving
-    and de-duplicated; the universal DNS/public-suffix guard is applied later by
+    Forgiving input: each entry may be a bare host (``oldpin.com``), a full URL
+    (``https://oldpin.com/``), or either form carrying a path — the shared-CDN
+    tenant shape (``img1.wsimg.com/blobby/go/<uuid>``). **The path is
+    meaningful**: it becomes the row's ``path_prefix``, so a full-URL entry
+    with a path declares a path-scoped slice rather than silently registering
+    the bare host (the misattribution the shared-host guard exists to
+    prevent). Unlike a homepage host this is a pure recognition declaration —
+    no display side, no rounding. Order-preserving and de-duplicated by exact
+    pair; the DNS/public-suffix/shared-host guards are applied later by
     :func:`validate_source_node` and the model's ``clean()`` at mint.
 
-    A malformed entry whose ``.hostname`` access raises (an unbalanced IPv6
-    bracket, ``https://[::1/page``) falls back to the raw string, so the model
-    guard rejects it as a clean ``ValidationError`` (→ ``PatchError``) at read
-    phase rather than letting a raw ``ValueError`` escape as a traceback. Domains
-    have no upstream URLValidator the way homepage links do.
+    A malformed URL-shaped entry whose parse raises (an unbalanced IPv6
+    bracket, ``https://[::1/page``) falls back to the raw string as a host, so
+    the model guard rejects it as a clean ``ValidationError`` (→ ``PatchError``)
+    at read phase rather than letting a raw ``ValueError`` escape as a
+    traceback. Domains have no upstream URLValidator the way homepage links do.
     """
-    hosts: list[Host] = []
+    domains: list[DeclaredDomain] = []
     for entry in node.get("domains", []):
         try:
-            hostname = urlparse(entry).hostname
+            parsed = urlparse(entry)
+            hostname = parsed.hostname
+            url_path = parsed.path
         except ValueError:
             hostname = None
-        host = normalize_host(hostname or entry)
-        if host and host not in hosts:
-            hosts.append(host)
-    return hosts
+            url_path = ""
+        if hostname is not None:
+            raw_host, raw_path = hostname, url_path
+        else:
+            # A schemeless entry parses entirely into .path — split the first
+            # segment off as the host, the remainder (if any) as the prefix.
+            raw_host, _, remainder = entry.partition("/")
+            raw_path = f"/{remainder}" if remainder else ""
+        declared = DeclaredDomain(
+            host=normalize_host(raw_host),
+            path_prefix=normalize_path_prefix(raw_path),
+        )
+        if declared.host and declared not in domains:
+            domains.append(declared)
+    return domains
 
 
-def _declared_recognition_hosts(node: SourceNode) -> list[Host]:
-    """The node's full recognition-host set: ``homepage`` links ∪ ``domains:``.
+def _declared_recognition_hosts(node: SourceNode) -> list[DeclaredDomain]:
+    """The node's full recognition set: ``homepage`` links ∪ ``domains:``.
 
     One unified set so resolution (:func:`_roots_owning_hosts`) and minting
     (:func:`_ensure_root_domains`) can never diverge on what identifies a root.
-    Homepage hosts come first (display-and-recognition), then declared-only
-    ``domains:`` hosts; de-duplicated across both, order-preserving.
+    Homepage hosts come first (display-and-recognition, always bare), then
+    declared-only ``domains:`` slices; de-duplicated across both by exact
+    ``(host, path_prefix)`` pair, order-preserving.
     """
-    hosts = _declared_homepage_hosts(node.get("links", []))
-    for host in _declared_domains_hosts(node):
-        if host not in hosts:
-            hosts.append(host)
-    return hosts
+    domains = _declared_homepage_hosts(node.get("links", []))
+    for declared in _declared_domains(node):
+        if declared not in domains:
+            domains.append(declared)
+    return domains
 
 
-def _roots_owning_hosts(hosts: Sequence[Host]) -> list[CitationSource]:
-    """The distinct **root** sources that already own any of the given hosts.
+def _roots_owning_hosts(domains: Sequence[DeclaredDomain]) -> list[CitationSource]:
+    """The distinct **root** sources that already own any of the given slices.
 
-    Exact-host lookup against ``CitationSourceRootDomain`` — **never** the
-    longest-suffix matcher recognition uses. Dedup keys on the literal host so a
-    deliberately-declared subdomain root (``twip.kineticist.com`` under an existing
-    ``kineticist.com``) is treated as a distinct, unseeded host, not folded into
-    its parent domain. Root-scoped (``parent__isnull``) because only a root is a
-    valid match target; a host illegitimately held by a child (a ``clean()``
-    bypass) is handled defensively by :func:`_ensure_root_domains`, not matched
-    here. Distinct by pk — one root may own several of the hosts.
+    Exact ``(host, path_prefix)`` lookup against ``CitationSourceRootDomain`` —
+    **never** the longest-suffix matcher recognition uses. Dedup keys on the
+    literal pair so a deliberately-declared subdomain root
+    (``twip.kineticist.com`` under an existing ``kineticist.com``) is treated
+    as a distinct, unseeded host, not folded into its parent domain — and one
+    shared CDN host's tenant slices resolve independently. One ``host__in``
+    query, pair-matched in Python. Root-scoped (``parent__isnull``) because
+    only a root is a valid match target; a slice illegitimately held by a
+    child (a ``clean()`` bypass) is handled defensively by
+    :func:`_ensure_root_domains`, not matched here. Distinct by pk — one root
+    may own several of the slices.
     """
     from apps.citation.models import CitationSourceRootDomain
 
+    wanted = set(domains)
     rows = CitationSourceRootDomain.objects.filter(
-        host__in=list(hosts), source__parent__isnull=True
+        host__in=[d.host for d in domains], source__parent__isnull=True
     ).select_related("source")
-    return list({row.source_id: row.source for row in rows}.values())
+    owners = {
+        row.source_id: row.source
+        for row in rows
+        if DeclaredDomain(Host(row.host), PathPrefix(row.path_prefix)) in wanted
+    }
+    return list(owners.values())
 
 
 def _spans_two_roots_warning(name: str, host_roots: Sequence[CitationSource]) -> str:
@@ -271,36 +322,47 @@ def _spans_two_roots_warning(name: str, host_roots: Sequence[CitationSource]) ->
 
 
 def _ensure_root_domains(
-    source: CitationSource, hosts: Sequence[Host], *, warnings: list[str], actor: Actor
+    source: CitationSource,
+    domains: Sequence[DeclaredDomain],
+    *,
+    warnings: list[str],
+    actor: Actor,
 ) -> None:
-    """Additively mint a recognition domain on ``source`` for each unowned host.
+    """Additively mint a recognition domain on ``source`` for each unowned slice.
 
-    Each host is resolved against **every** existing owner (not just ``source``,
-    and not root-scoped): a host ``source`` already owns is a no-op; a host owned
-    by a *different* source warns and is skipped — never minted-over, so the
-    ``host`` ``unique`` cannot trip and wedge the patch queue (honoring the
-    module's "a collision is a warning, never a failure" contract). This is the
-    backstop for a host the root-scoped :func:`_roots_owning_hosts` couldn't see
-    — e.g. one a child illegitimately holds. Otherwise the host is ``full_clean``ed
-    (firing the root-only/normalization guards) and saved.
+    Each ``(host, path_prefix)`` pair is resolved against **every** existing
+    owner (not just ``source``, and not root-scoped): a slice ``source``
+    already owns is a no-op; a slice owned by a *different* source warns and is
+    skipped — never minted-over, so the pair ``unique`` cannot trip and wedge
+    the patch queue (honoring the module's "a collision is a warning, never a
+    failure" contract). This is the backstop for a slice the root-scoped
+    :func:`_roots_owning_hosts` couldn't see — e.g. one a child illegitimately
+    holds. Otherwise the row is ``full_clean``ed (firing the root-only /
+    normalization / shared-host guards) and saved.
     """
     from apps.citation.models import CitationSourceRootDomain
 
-    for host in hosts:
+    for declared in domains:
         owner = (
-            CitationSourceRootDomain.objects.filter(host=host)
+            CitationSourceRootDomain.objects.filter(
+                host=declared.host, path_prefix=declared.path_prefix
+            )
             .select_related("source")
             .first()
         )
         if owner is not None:
             if owner.source_id != source.pk:
                 warnings.append(
-                    f"Recognition host {host!r} is already owned by "
+                    f"Recognition host {str(declared)!r} is already owned by "
                     f"{owner.source.name!r}; not minted on {source.name!r}."
                 )
             continue
         domain = CitationSourceRootDomain(
-            source=source, host=host, created_by=actor, updated_by=actor
+            source=source,
+            host=declared.host,
+            path_prefix=declared.path_prefix,
+            created_by=actor,
+            updated_by=actor,
         )
         domain.full_clean()
         domain.save()
@@ -460,9 +522,20 @@ def validate_source_node(
         )
         obj.full_clean(exclude=["citation_source", *attribution], validate_unique=False)
 
-    for host in _declared_recognition_hosts(node):
-        domain = CitationSourceRootDomain(host=host)
-        domain.full_clean(exclude=["source", *attribution], validate_unique=False)
+    for declared in _declared_recognition_hosts(node):
+        domain = CitationSourceRootDomain(
+            host=declared.host, path_prefix=declared.path_prefix
+        )
+        # validate_constraints=False alongside validate_unique=False: the
+        # (host, path_prefix) UniqueConstraint is validated by the constraints
+        # pass (not the unique pass), and a node legitimately re-declaring a
+        # domain already in the DB must not be rejected here. clean() still
+        # runs every real guard; the DB enforces the constraints at mint.
+        domain.full_clean(
+            exclude=["source", *attribution],
+            validate_unique=False,
+            validate_constraints=False,
+        )
 
     _validate_scheme_root_citation_source_info(node)
 
@@ -496,11 +569,17 @@ def _validate_scheme_root_citation_source_info(node: SourceNode) -> None:
             f"homepage link {info.homepage_url!r} must be declared "
             f"(declared homepages: {homepage_urls!r})"
         )
-    declared_hosts = set(_declared_recognition_hosts(node))
-    if declared_hosts != set(info.recognition_hosts):
+    declared_domains = set(_declared_recognition_hosts(node))
+    # A scheme root's registered recognition hosts are always bare — path
+    # scoping is a shared-CDN concern no platform root has.
+    expected = {
+        DeclaredDomain(host=Host(host), path_prefix=PathPrefix(""))
+        for host in info.recognition_hosts
+    }
+    if declared_domains != expected:
         problems.append(
             f"recognition hosts must be {sorted(info.recognition_hosts)!r} "
-            f"(declared {sorted(declared_hosts)!r})"
+            f"(declared {sorted(str(d) for d in declared_domains)!r})"
         )
     if problems:
         raise ValidationError(
@@ -578,13 +657,13 @@ def _ensure_slug_root(
 
     fields = _source_fields(node)
     links = node.get("links", [])
-    recognition_hosts = _declared_recognition_hosts(node)
+    recognition_domains = _declared_recognition_hosts(node)
     obj = CitationSource.objects.roots().filter(slug=fields["slug"]).first()
     if obj is None:
         obj = _create_source(fields, actor=actor)
         for link in links:
             _create_link(obj, link, actor=actor)
-        _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
+        _ensure_root_domains(obj, recognition_domains, warnings=warnings, actor=actor)
         return SourceUpsertResult(source_created=True, links_created=len(links))
     divergent = sorted(k for k, v in fields.items() if getattr(obj, k) != v)
     if divergent:
@@ -594,7 +673,7 @@ def _ensure_slug_root(
             f"{divergent} differ and were left unchanged."
         )
     links_created = _ensure_links(obj, links, warnings=warnings, actor=actor)
-    _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
+    _ensure_root_domains(obj, recognition_domains, warnings=warnings, actor=actor)
     return SourceUpsertResult(source_created=False, links_created=links_created)
 
 
@@ -692,10 +771,10 @@ def _ensure_plain_root(
     name = fields["name"]
     source_type = fields["source_type"]
     links = node.get("links", [])
-    recognition_hosts = _declared_recognition_hosts(node)
+    recognition_domains = _declared_recognition_hosts(node)
 
     # Resolve by recognition host first; host identity wins over the name key.
-    host_roots = _roots_owning_hosts(recognition_hosts)
+    host_roots = _roots_owning_hosts(recognition_domains)
     if len(host_roots) > 1:
         warnings.append(_spans_two_roots_warning(name, host_roots))
         return SourceUpsertResult(source_created=False, links_created=0)
@@ -716,7 +795,7 @@ def _ensure_plain_root(
         obj = _create_source(fields, actor=actor)
         for link in links:
             _create_link(obj, link, actor=actor)
-        _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
+        _ensure_root_domains(obj, recognition_domains, warnings=warnings, actor=actor)
         return SourceUpsertResult(source_created=True, links_created=len(links))
 
     # Found: never overwrite the row; warn on any declared-field divergence.
@@ -736,5 +815,5 @@ def _ensure_plain_root(
         )
 
     links_created = _ensure_links(obj, links, warnings=warnings, actor=actor)
-    _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
+    _ensure_root_domains(obj, recognition_domains, warnings=warnings, actor=actor)
     return SourceUpsertResult(source_created=False, links_created=links_created)

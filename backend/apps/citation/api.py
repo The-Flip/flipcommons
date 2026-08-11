@@ -441,6 +441,13 @@ def _host_error_detail(reason: HostRejection) -> str:
                 "That URL's host is a public suffix (like gov.uk); cite a page on "
                 "a specific site under it instead."
             )
+        case HostRejection.SHARED_HOST:
+            return (
+                "That URL is on a shared hosting CDN whose files belong to many "
+                "different publishers, so it can't root a site of its own. A "
+                "curator must first register the publisher's section of the CDN "
+                "on their citation source."
+            )
     assert_never(reason)
 
 
@@ -484,12 +491,14 @@ def _create_root_and_child(
             domain = CitationSourceRootDomain(
                 source=root, host=host, created_by=actor, updated_by=actor
             )
-            # validate_unique=False so the model guards (root-only clean(),
-            # CHECK constraints) still fire — as a 422 — while the host-unique
-            # race surfaces only as a DB IntegrityError from save() below,
-            # distinct from a guard failure.
+            # validate_unique=False AND validate_constraints=False so the model
+            # guards (root-only clean(), normalization) still fire — as a 422 —
+            # while the (host, path_prefix) unique race surfaces only as a DB
+            # IntegrityError from save() below, distinct from a guard failure.
+            # The pair unique lives in Meta.constraints, which the constraints
+            # pass (not the unique pass) validates, so both flags are needed.
             try:
-                domain.full_clean(validate_unique=False)
+                domain.full_clean(validate_unique=False, validate_constraints=False)
             except ValidationError as exc:
                 raise HttpError(422, _validation_detail(exc)) from exc
             domain.save()

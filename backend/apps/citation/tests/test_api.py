@@ -8,10 +8,9 @@ from unittest.mock import patch
 import pytest
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
 
 from apps.citation.extraction import ExtractionDraft, ExtractionResult
-from apps.citation.extractors import Recognition, UrlUnrecognized
+from apps.citation.extractors import UrlUnrecognized
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
@@ -904,6 +903,69 @@ class TestCiteUrl:
         assert not CitationSource.objects.exists()
         assert not CitationSourceRootDomain.objects.exists()
 
+    def test_unmatched_shared_cdn_url_is_422_with_no_write(self, client, user):
+        # A shared multi-tenant CDN host is nobody's site: with no declared
+        # tenant prefix the URL must 422 at the funnel, never mint a wsimg.com
+        # (or img1.wsimg.com) root that would absorb every tenant's files.
+        client.force_login(user)
+        resp = _post(
+            client,
+            self.URL,
+            {"url": "https://img1.wsimg.com/blobby/go/some-tenant/downloads/x.pdf"},
+        )
+        assert resp.status_code == 422
+        assert "shared hosting CDN" in resp.json()["detail"]
+        assert not CitationSource.objects.exists()
+        assert not CitationSourceRootDomain.objects.exists()
+
+    def test_unmatched_shared_cdn_url_422s_even_with_bare_ancestor_row(
+        self, client, user
+    ):
+        # Pre-guard prod junk: a bare wsimg.com row (minted before the shared
+        # list existed, via a clean() bypass). Recognition ignores bare rows on
+        # a shared host, so the paste still falls through to the funnel's 422
+        # instead of nesting a misattributed child under the junk root.
+        client.force_login(user)
+        junk = make_citation_source(name="Junk CDN root", source_type="web")
+        make_citation_root_domain(source=junk, host="wsimg.com")
+        resp = _post(
+            client,
+            self.URL,
+            {"url": "https://img1.wsimg.com/blobby/go/some-tenant/downloads/x.pdf"},
+        )
+        assert resp.status_code == 422
+        assert junk.children.count() == 0
+
+    def test_shared_cdn_url_under_declared_prefix_nests_under_maker(self, client, user):
+        # The Cardona case end to end: a declared tenant prefix resolves the
+        # CDN URL to the maker's root and the page child nests there.
+        client.force_login(user)
+        cardona = make_citation_source(
+            name="Cardona Pinball Designs", source_type="web"
+        )
+        make_citation_root_domain(
+            source=cardona,
+            host="img1.wsimg.com",
+            path_prefix="/blobby/go/4bd466e8-edb0-49f6-afcc-31250ba5b0f3",
+        )
+        resp = _post(
+            client,
+            self.URL,
+            {
+                "url": (
+                    "https://img1.wsimg.com/blobby/go/"
+                    "4bd466e8-edb0-49f6-afcc-31250ba5b0f3/downloads/"
+                    "FT%20release%202026%2006%2012.pdf"
+                ),
+                "page_name": "FT release notes 2026-06-12",
+            },
+        )
+        assert resp.status_code == 201
+        child = CitationSource.objects.get(pk=resp.json()["id"])
+        assert child.parent_id == cardona.pk
+        # No new root was minted for the CDN.
+        assert CitationSource.objects.filter(parent__isnull=True).count() == 1
+
     def test_domain_match_nests_child_and_ignores_site_fields(self, client, user):
         client.force_login(user)
         root = make_citation_source(name="Existing", source_type="web")
@@ -1038,29 +1100,24 @@ class TestCiteUrl:
         assert CitationSource.objects.count() == 0
 
     def test_root_create_race_re_recognizes_and_nests(self, client, user):
-        """A concurrent host-unique violation rolls back and nests the child.
+        """A lost create-root race rolls back and nests the child — never a 422.
 
-        A true concurrent commit can't be staged inside the test's own
-        transaction (it'd roll back with our savepoint), so we drive the
-        except-branch directly: the domain insert raises ``IntegrityError`` as
-        it would on a lost race, and the re-recognition then matches the root
-        the racer committed.
+        The racer's root and its ``raced.org`` domain row are committed before
+        the request, and only ``classify_url`` is mocked (to the no-match
+        verdict the endpoint saw before the racer won). Everything downstream
+        is real, which is what makes this a regression test for the
+        ``validate_constraints=False`` on the domain's ``full_clean``: the
+        (host, path_prefix) unique pair is validated by full_clean's
+        *constraints* pass, so restoring that pass would surface the racer's
+        row as a pre-validation 422 here, instead of letting the real
+        ``save()`` raise ``IntegrityError`` and the except-branch re-recognize
+        against the racer's committed root.
         """
         client.force_login(user)
         racer = make_citation_source(name="Racer", source_type="web")
+        make_citation_root_domain(source=racer, host="raced.org")
 
-        def raise_integrity(self, *args, **kwargs):
-            raise IntegrityError("duplicate key value violates unique constraint")
-
-        rematch = Recognition(parent_id=racer.pk, parent_name="Racer")
-        # classify_url answers the endpoint's verdict (no match — create the
-        # root); recognize_url is called once, by the except-branch's
-        # re-recognition, and finds the racer's committed root.
-        with (
-            patch.object(CitationSourceRootDomain, "save", raise_integrity),
-            patch("apps.citation.api.classify_url", return_value=UrlUnrecognized()),
-            patch("apps.citation.api.recognize_url", side_effect=[rematch]),
-        ):
+        with patch("apps.citation.api.classify_url", return_value=UrlUnrecognized()):
             resp = _post(
                 client, self.URL, {"url": "https://raced.org/p", "page_name": "P"}
             )

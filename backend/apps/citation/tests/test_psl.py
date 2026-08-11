@@ -149,6 +149,14 @@ class TestRootHostFromUrl:
             # A bare single-label host (``com``) has no dot, so is_dns_host
             # rejects it as NOT_DNS before rounding ever runs.
             ("https://com/page", HostRejection.NOT_DNS),
+            # A shared multi-tenant CDN host is nobody's site to root.
+            ("https://img1.wsimg.com/blobby/go/uuid/x.pdf", HostRejection.SHARED_HOST),
+            ("https://wsimg.com/", HostRejection.SHARED_HOST),
+            ("https://cdn.shopify.com/s/files/1/x.pdf", HostRejection.SHARED_HOST),
+            (
+                "https://storage.googleapis.com/bucket/x.pdf",
+                HostRejection.SHARED_HOST,
+            ),
         ],
     )
     def test_unroundable_host_raises_typed_reason(self, url, reason):
@@ -162,3 +170,17 @@ class TestRootHostFromUrl:
         with pytest.raises(HostError) as exc:
             root_host_from_url("https://blog.newsite.example/p")
         assert exc.value.reason is HostRejection.RESERVED_TLD
+
+    def test_shared_host_rejected_on_the_pasted_host_before_rounding(self):
+        # The shared check reads the *pasted* host: an asset-subdomain paste
+        # (img1.wsimg.com) must be caught even though rounding would land on
+        # wsimg.com — otherwise the funnel would mint the ancestor root every
+        # tenant's URLs then suffix-match.
+        with pytest.raises(HostError) as exc:
+            root_host_from_url("https://img1.wsimg.com/blobby/go/uuid/x.pdf")
+        assert exc.value.reason is HostRejection.SHARED_HOST
+
+    def test_shared_parent_of_leaf_declaration_still_rounds(self):
+        # cdn.shopify.com is declared as a leaf, so shopify.com itself (a
+        # legitimate non-shared site) still roots normally.
+        assert root_host_from_url("https://shopify.com/blog/post") == "shopify.com"
