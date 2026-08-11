@@ -844,8 +844,9 @@ class CitationInstance(models.Model):
     #
     # No validate_no_mojibake here, unlike our authored fields: a faithful quote
     # of a garbled source is itself garbled (e.g. IPDB serves a literal U+FFFD),
-    # and reproducing that verbatim is correct. flippatch's verify-quotes gate
-    # guards quote fidelity against the canonical cached source upstream.
+    # and reproducing that verbatim is correct. flippatch's
+    # verify-quote-verbatim gate guards quote fidelity against the canonical
+    # cached source upstream.
     quote = BoundedTextField(
         max_length=CITATION_INSTANCE_QUOTE_MAX_LENGTH,
         blank=True,

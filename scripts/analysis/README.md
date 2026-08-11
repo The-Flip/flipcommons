@@ -1,40 +1,32 @@
 # Data analysis tool
 
-This doc is about using our DuckDB analytics layer to explore the Flipcommons localhost dev database — both ad-hoc, and via analysis files that back planning docs and data patch campaigns with reproducible queries.
+This is how to use our DuckDB analytics layer to explore the Flipcommons localhost dev database — both ad-hoc, and via analysis files that back planning docs and data patch campaigns with reproducible queries.
 
 ## What this layer is
 
-**A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the whole value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks.
-
-Two consequences to hold onto, because both have bitten:
+**A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks. Consequences:
 
 - **A view is not its table.** `models` is live-filtered and denormalized across four joins; `countries` is the parentless slice of `locations`; `tags` is keyed by model while `tag_vocab` is keyed by tag. Matching names do not mean matching columns or matching grain.
-- **A field missing from a view has not been dropped, and does not fail to exist.** Views carry what analyses have needed. Absence almost always means nobody has promoted it yet — read the Django model before concluding otherwise, then [promote it](EDITING.md). Grepping the SQL is not a test of what the catalog holds.
+- **A view may not carry all fields.** Absence may mean nobody has promoted it yet. Inspect the Django model and promote fields when required.
 
 ## Quick start
 
 ```bash
-# takes `--format json|csv|table` default `table`
-scripts/analysis/analysis query scripts/analysis/catalog.sql \
-  "FROM models WHERE year = 1977 ORDER BY name;"
-```
+# Do a query
+scripts/analysis/analysis query scripts/analysis/catalog.sql "FROM models WHERE year = 1977 ORDER BY name;" # takes `--format json|csv|table` default `table`
 
-## Reference
-
-How to explore the data model:
-
-```bash
-# Describe every public view
+# Describe every public view and macro
 scripts/analysis/analysis describe
 
-# Describe a single view and its columns
-scripts/analysis/analysis describe models
+# Look up a view or macro
+scripts/analysis/analysis describe model_edges  # Exact match prints its description and, for views, its columns
+scripts/analysis/analysis describe edge         # Otherwise, list all partial matches in name or description
 
-# Understand related areas
-# Each view's comment block carries what a one-liner cannot — the grain, the
-# liveness rule and the specific way that view will hand you a plausible wrong
-# answer — and it sits next to the SELECT it explains.
+# Get the map — what areas exist, when you don't have a term yet
 grep '═══' scripts/analysis/catalog.sql scripts/analysis/provenance.sql scripts/analysis/data_patches.sql
+
+# Get the block comment for one view — grain, liveness rule, the plausible wrong answer
+grep -B12 'CREATE OR REPLACE VIEW model_edges AS' scripts/analysis/catalog.sql   # Widen -B if the block runs long
 ```
 
 In `catalog.sql`, two headings say where to start: `MODELS — the spine; start here` and `MODEL-TO-MODEL RELATIONSHIPS — start with model_edges`.
@@ -75,6 +67,12 @@ Before maintaining a manual mapping, check the alias views. They map source word
 Match canonical names and aliases as one pool — most records have no alias row, so searching aliases alone resolves almost nothing. Alias views contain one row per alias of a live parent, keyed by parent ID and its stable key. `location_aliases` uses `location_path` because a location slug is unique only within its parent; abbreviation views name their value column `abbreviation` because shorthand is not an alternate name. Values are stored as entered, so choose normalization locally and count distinct target records before accepting a match.
 
 Found a phrasing the catalog lacks? Add it with a [data patch](../../docs/DataPatches.md), not a lookup table in your analysis.
+
+### A subject of any type resolves without branching on the type
+
+Claims and patch entries name their subject polymorphically — `subject_type` plus a bare integer `subject_id` — and models are only the dominant type, not the only one. `entity_subjects` resolves the pair, so `claims` and everything built on it carry `subject_public_id`, `subject_name` and `subject_status` for a person, theme or location subject exactly as for a model. A per-type entity view can't do that job: joining one needs the type known in advance.
+
+`model_slug` / `model_status` on the `patch_*` views are the narrower pair and stay narrow: NULL on every non-model row, by design, so `WHERE model_slug = …` can't admit a Title that happens to share the slug. Reach for `subject_*` unless the query is specifically about models.
 
 ### Liveness is the default
 
@@ -189,7 +187,8 @@ For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate
 - **`_underscore` = private helper view; unprefixed = public.** Public views are the ones a document quotes and other analyses build on. Keep intermediate parsing private.
 - **Published numbers come from `<prefix>_summary`, never hand-counted.** The query is the source of truth, the prose a rendering of it. When the numbers move, update the prose.
 - **Predicate on stable keys, display names.** Filter and join on `slug` / `*_id` / `game_format_slug`; use `name` / `manufacturer_name` / `game_format_name` only for output. A renamed value silently zeroes a count with no error; a slug or id doesn't.
-- **Ingested source free-text is a plain column.** `ipdb_notes`, `ipdb_notable_features` and `opdb_features` (the editions and flags list, e.g. `Export edition`) sit on `models` directly, so never hand-roll a `json_extract`. Wanting a raw `extra_data` field that isn't there is a foundation change: see [EDITING.md](EDITING.md#what-belongs-in-the-foundation).
+- **A count this layer derives is `n_<what>`; a count the product stored keeps the product's spelling.** `n_claims`, `n_cited_claims`, `n_models`, `n_titles` are computed here. `ingest_runs` is the exception — `claims_asserted`, `claims_retracted`, `records_parsed` are columns on `IngestRun`, passed through verbatim so the view and the ingest can't disagree by name.
+- **Ingested source free-text is a plain column.** `ipdb_notes`, `ipdb_notable_features`, `ipdb_toys`, `ipdb_marketing_slogans` and `opdb_features` (the editions and flags list, e.g. `Export edition`) sit on `models` directly, so never hand-roll a `json_extract`. Wanting a raw `extra_data` field that isn't there is a foundation change: see [EDITING.md](EDITING.md#what-belongs-in-the-foundation).
 - **Read-only, always.** The catalog is never mutated from an analysis script.
 
 ### Making manual judgment checkable (optional)

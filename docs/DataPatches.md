@@ -35,13 +35,15 @@ description:
   Correct the Mazatron prototype.
 claims: # ordered list of single-key entries
   - model.mazatron: # entity ref: <entity_type>.<public_id>
-      changesets: # each item is its own ChangeSet: note/cite + field assertions
-        - note: 'IPDB says "exists only as a prototype machine".' # reason / evidence for this item's claims
-          cite: ipdb:4443 # external evidence → citation on this item's claims
+      changesets: # each item is its own ChangeSet: its own evidence + field assertions
+        - cite: # external evidence → citation on this item's claims
+            ref: ipdb:4443
+            quote: "exists only as a prototype machine" # the verbatim excerpt behind them
           production_status: unreleased # FK → target public_id
           tag: [prototype] # relationship: namespace → member public_ids
-        - note: "Pinside thread confirms a 1990 prototype run."
-          cite: https://pinside.com/thread
+        - cite:
+            ref: https://pinside.com/thread
+            quote: "only two prototypes were built, in 1990"
           year: 1990 # a disjoint field with its own evidence → its own ChangeSet
 ```
 
@@ -53,8 +55,9 @@ For a record that needs just **one** correction, the flat single-key form is the
 attribution: flipcommons-catalog
 claims:
   - model.mazatron:
-      note: 'IPDB says "exists only as a prototype machine".'
-      cite: ipdb:4443
+      cite:
+        ref: ipdb:4443
+        quote: "exists only as a prototype machine"
       production_status: unreleased
 ```
 
@@ -349,22 +352,25 @@ claims:
 
 ### Notes & citations
 
-Write a `note:` about the changeset and `cite:` citations:
+Attach the evidence with `cite:`, and add a `note:` only when there's something the evidence doesn't say for itself:
 
 ```yaml
 attribution: flipcommons-catalog
 claims:
   - model.mazatron:
-      note: 'IPDB says "exists only as a prototype machine".' # the per-entity "why"
-      cite: ipdb:4443 # scheme:identifier — dedups through the seeded IPDB root
+      cite:
+        ref: ipdb:4443 # scheme:identifier — dedups through the seeded IPDB root
+        quote: "exists only as a prototype machine" # the evidence; no note needed
       production_status: unreleased
   - model.medieval-madness:
-      note: 'Wikipedia says it "was released in 1997".'
-      cite: https://en.wikipedia.org/wiki/Medieval_Madness # raw URL — needs a seeded website root (see Citation sources)
+      note: The date is the original run; the 2015 remake is a separate record. # the per-entity "why", beyond the evidence
+      cite:
+        ref: https://en.wikipedia.org/wiki/Medieval_Madness # raw URL — needs a seeded website root (see Citation sources)
+        quote: "was released in 1997"
       year: 1997
 ```
 
-`note:` is the entity's ChangeSet note, shown on its Edit History page.
+`note:` is the entity's ChangeSet note, shown on its Edit History page. Write it **sparingly** — it's the edit summary, for rationale the citation can't carry: uncertainty, a cleanup or merge explanation, a disambiguation, or why the value follows from what the source states. A **verbatim excerpt does not belong here** — it goes in `quote:` on the `cite:` mapping (below), where the citation already names the source, so the legacy `<source> says "<quote>"` note form is obsolete. A cite carrying a quote usually needs no note at all. See [DataPatchAuthoring.md → Note only when there's something to explain](DataPatchAuthoring.md#note-only-when-theres-something-to-explain).
 
 `cite:` is external evidence, attached to each of the entry's authored claims and shown beside the field on the edit-history page. Its ref is one of the following forms:
 

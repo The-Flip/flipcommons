@@ -9,10 +9,12 @@ It exists because the scaffolding around a generated patch — YAML escaping, th
 A campaign is **two files** in flippatch's `campaigns/<patch>/`, and the split is the design:
 
 ```text
-flippatch/patches/
-  0181-bingo-years.yaml               # the shipped patch
-  authoring/
+flippatch/
+  patches/
+    0181-bingo-years.yaml             # the shipped patch
+  scripts/
     patchkit.py                       # the shared helper
+  campaigns/
     0181-bingo-years/
       years.sql                       # the analysis: detect, classify, gate, extract quotes
       gen.py                          # the emitter: one view -> patch YAML
@@ -52,7 +54,7 @@ The worked examples to copy are **`0177-exports`**, **`0178-gameplay-features`**
 
 ## `patchkit` API
 
-`gen.py` puts the campaign dir on `sys.path` (`sys.path.insert(0, <authoring>)`) and imports `patchkit as pk`.
+`gen.py` puts flippatch's `scripts/` on `sys.path` (`sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))`) and imports `patchkit as pk`.
 
 | function                                                                                                                                                                          | purpose                                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -65,7 +67,7 @@ The worked examples to copy are **`0177-exports`**, **`0178-gameplay-features`**
 | `clean_ipdb_quote(text, limit=240)`                                                                                                                                               | additionally strips IPDB's run-on header and `…: "<passage>` framing               |
 | `yamlq` / `clean_text`                                                                                                                                                            | the escaper / the typography normalizer, if you need them directly                 |
 
-**Escaping is solved — use it.** Notes go through `yamlq` (single-quoted YAML: literal except `'`, which doubles), which carries both the double quotes in a quoted excerpt and apostrophes, with no backslashes. Never `yaml.dump`, never `json.dumps` a note, never hand-roll it.
+**Escaping is solved — use it.** Notes and quotes go through `yamlq` (single-quoted YAML: literal except `'`, which doubles), which carries an excerpt's own double quotes and apostrophes alike, with no backslashes. Never `yaml.dump`, never `json.dumps` a note or a quote, never hand-roll it.
 
 **Relationship members.** `entry(...)` takes `relationships={namespace: [members]}` (the general emitter; `tags=` is the `tag` shorthand) and `remove={namespace: [members]}`. Members are escaped, so string members for aliases and abbreviations are safe — `relationships={"manufacturer_alias": ["Stern Pinball", "Stern, Inc"]}`. A `gameplay_feature` member may carry a count as a one-key `{public_id: count}` mapping, and the two forms mix freely in one list.
 
@@ -90,7 +92,7 @@ Iterate behind a localhost snapshot, then verify and hand off — the full loop 
 Generator-specific additions:
 
 - A curated patch classifies a whole **population**, so after applying confirm the population landed — the distribution across buckets looks right and the counts match `<prefix>_summary` — not just that one spot-checked entity resolved.
-- **Every quote is a proposal until `make verify-quotes` passes.** That gate checks each span against the evidence corpus independently of your extraction.
+- **Every quote is a proposal until `make verify-quote-verbatim` passes.** That gate checks each span against the evidence corpus independently of your extraction — **except a PDF's**, which it reports `SKIP-PDF` and leaves to you (see [DataPatchAuthoring.md → PDF citations](DataPatchAuthoring.md#pdf-citations)). A generator emitting PDF-sourced quotes therefore has no machine backstop: transcribe from the rendered sheet, and put whatever invariants you can in the analysis file instead.
 - **A patch already in `patches/` is immutable.** Localhost may be far ahead of production, and nothing in the repo records what production has ingested — only the user knows. If an existing patch looks worth regenerating, raise it and let them decide.
 
 ## Gotchas (learned the hard way)
@@ -98,7 +100,7 @@ Generator-specific additions:
 - **Keyword matches catch cross-references.** A note about _Bally Derby_ makes "Skill Derby" look like a gun game. Read the matched sentence; keep an explicit exclude list in the analysis's Reference section for the misses.
 - **The signal can have false positives.** A note saying "not a pinball" may be about a _different_ game it cross-references. When unsure, leave the field unset — an honest unknown beats a wrong fact.
 - **Anchor every free-text detector.** A rotted regex or a renamed column zeroes a whole detector with no error, and a row-level invariant cannot see a set silently shrink. An anchor check asserting a known example still triggers is the only thing that catches it.
-- **Cut the quote from the raw source text, not from a parsed segment.** Then it is verbatim by construction and `verify-quotes` passes by construction too.
-- **Joined spans must appear in source order.** `verify-quotes` checks each `[...]`-joined span separately and requires the order the source uses, so a row matching several patterns follows its own source text, not your feature ordering. Dedupe repeated spans — one phrase asserting two facts would otherwise read as out of order.
+- **Cut the quote from the raw source text, not from a parsed segment.** Then it is verbatim by construction and `verify-quote-verbatim` passes by construction too.
+- **Joined spans must appear in source order.** `verify-quote-verbatim` checks each `[...]`-joined span separately and requires the order the source uses, so a row matching several patterns follows its own source text, not your feature ordering. Dedupe repeated spans — one phrase asserting two facts would otherwise read as out of order.
 - **Values are JSON-shaped; YAML coercion is off.** `patchkit._scalar` handles this — a bare `1996-01-01` stays a string, `no` stays `"no"`.
 - **`except A, B:` is valid Python 3** and ruff's preferred style — don't parenthesize (a project-wide rule, relevant if your generator catches exceptions).

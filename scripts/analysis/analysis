@@ -14,7 +14,7 @@
 # It is a convenience, not the only way in: `duckdb -init <analysis>.sql :memory:`
 # from the flipcommons root still works for ad-hoc querying.
 #
-#   scripts/analysis/analysis describe [<analysis.sql>] [<view>|<macro>]
+#   scripts/analysis/analysis describe [<analysis.sql>] [<view>|<macro>|<term>]
 #   scripts/analysis/analysis run <analysis.sql> <prefix> [--markdown]
 #   scripts/analysis/analysis browse <analysis.sql>
 #   scripts/analysis/analysis ui  <analysis.sql>
@@ -35,12 +35,15 @@
 # `describe` is the reference: bare, it lists every public view with its COMMENT ON
 # VIEW one-liner, then every public macro with its signature and COMMENT ON MACRO;
 # named, it adds the live column list for a view, or prints the one-liner for a macro.
+# A term matching nothing exactly is a SEARCH: every view and macro whose name or
+# one-liner contains it, so "does the catalog know about X" answers with the views
+# instead of an error. A term matching nothing at all still exits nonzero.
 # Given an analysis file, its OWN views and macros are listed first under the file's
 # name and the foundation follows. Only foundation objects are prompted for a missing
 # comment — an analysis's are working views and owe nobody a description.
 # Both read the session itself, so neither can drift the way a prose table did.
 # Both args are optional and order-free — anything ending in .sql is the analysis
-# file (default: the foundation), anything else is a view or macro name.
+# file (default: the foundation), anything else is a view or macro name or a term.
 # `browse` materializes every public relation (view or table) into
 # <analysis>.browse.duckdb, a static, disposable database that desktop clients such
 # as TablePlus can open directly.
@@ -207,14 +210,17 @@ case "$cmd" in
         "SELECT coalesce(string_agg('''' || n || '''', ','), '''''') FROM ($pub_macro);")
     fi
     # Predicates naming the analysis's OWN objects; empty when describing the foundation.
-    own_v=; own_m=; found_v=; found_m=
+    # The macro half is a BARE condition, its WHERE supplied at each use: the two callers
+    # below build different queries around it, and a second WHERE-carrying spelling is
+    # one an edit could update alone.
+    own_v=; found_v=; own_m=true; found_m=true
     # Naming one object by name doesn't say which group it is in, so the placeholder
     # becomes conditional: nag for a foundation object, stay silent for the analysis's.
     nag_v="'(undocumented — add a COMMENT ON VIEW)'"
     nag_m="'(undocumented — add a COMMENT ON MACRO)'"
     if [ -n "$fviews" ]; then
       own_v="AND view_name NOT IN ($fviews)";   found_v="AND view_name IN ($fviews)"
-      own_m="WHERE n NOT IN ($fmacros)";        found_m="WHERE n IN ($fmacros)"
+      own_m="n NOT IN ($fmacros)";             found_m="n IN ($fmacros)"
       nag_v="CASE WHEN view_name IN ($fviews) THEN $nag_v ELSE '' END"
       nag_m="CASE WHEN n IN ($fmacros) THEN $nag_m ELSE '' END"
     fi
@@ -231,7 +237,7 @@ case "$cmd" in
            $pub $own_v ORDER BY view_oid;"
         duckdb -init "$analysis_file" -noheader -list :memory: \
           "SELECT sig || coalesce(chr(10) || '    ' || comment, '')
-           FROM ($pub_macro) $own_m ORDER BY oid;"
+           FROM ($pub_macro) WHERE $own_m ORDER BY oid;"
         printf '\n— foundation —\n'
       fi
       # Index. Rendered as name + indented prose rather than a box table: the
@@ -246,24 +252,76 @@ case "$cmd" in
       duckdb -init "$analysis_file" -noheader -list :memory: \
         "SELECT sig || chr(10) || '    ' ||
                 coalesce(comment, '(undocumented — add a COMMENT ON MACRO)')
-         FROM ($pub_macro) $found_m ORDER BY oid;"
+         FROM ($pub_macro) WHERE $found_m ORDER BY oid;"
     else
+      # Doubled for SQL. A search term is freer-form than a view name, and an apostrophe
+      # in one would otherwise be a syntax error rather than simply matching nothing.
+      sql_view=$(printf '%s' "$view" | sed "s/'/''/g")
       n=$(duckdb -init "$analysis_file" -noheader -list :memory: \
-        "SELECT count(*) $pub AND view_name = '$view';")
+        "SELECT count(*) $pub AND view_name = '$sql_view';")
       if [ "$n" -eq 0 ]; then
         # Not a view — try a macro before giving up, so one name lookup covers both.
         m=$(duckdb -init "$analysis_file" -noheader -list :memory: \
-          "SELECT count(*) FROM ($pub_macro) WHERE n = '$view';")
-        [ "$m" -eq 0 ] && { echo "no such public view or macro: $view" >&2; exit 2; }
+          "SELECT count(*) FROM ($pub_macro) WHERE n = '$sql_view';")
+        if [ "$m" -eq 0 ]; then
+          # Naming nothing exactly is a SEARCH, not a mistake. The question behind such
+          # a term — does the catalog know about X — is one this layer can answer, and
+          # an error answers it wrong: `abbrev` names no view, yet two views are about
+          # abbreviations. Names and one-liners only. The block prose above each CREATE
+          # never enters the session, which is what the README's greps are for.
+          match_v="(contains(lower(view_name), lower('$sql_view'))
+                    OR contains(lower(coalesce(comment, '')), lower('$sql_view')))"
+          match_m="(contains(lower(n), lower('$sql_view'))
+                    OR contains(lower(coalesce(comment, '')), lower('$sql_view')))"
+
+          # $1 = the views' group predicate, $2 = the macros'. Views then macros, each in
+          # definition order and rendered exactly as the index above renders them, so a
+          # hit reads the same whether you searched for it or scrolled past it. The
+          # nullif is what drops the indented line entirely for an analysis's own
+          # undocumented object, whose placeholder is the empty string.
+          search() {
+            duckdb -init "$analysis_file" -noheader -list :memory: \
+              "SELECT txt FROM (
+                 SELECT view_name || coalesce(chr(10) || '    ' ||
+                          nullif(coalesce(comment, $nag_v), ''), '') AS txt,
+                        0 AS kind, view_oid AS ord
+                 $pub $1 AND $match_v
+                 UNION ALL
+                 SELECT sig || coalesce(chr(10) || '    ' ||
+                          nullif(coalesce(comment, $nag_m), ''), '') AS txt,
+                        1 AS kind, oid AS ord
+                 FROM ($pub_macro) WHERE $2 AND $match_m
+               ) ORDER BY kind, ord;"
+          }
+
+          # A header only where there is something under it: a term hitting one side
+          # prints one list rather than an empty section. An empty own_v means there is
+          # no split to show at all, which is the case when describing the foundation.
+          own_hits=
+          [ -n "$own_v" ] && own_hits=$(search "$own_v" "$own_m")
+          found_hits=$(search "$found_v" "$found_m")
+          [ -n "$own_hits$found_hits" ] ||
+            { echo "no such public view or macro: $view" >&2; exit 2; }
+          if [ -n "$own_hits" ]; then
+            printf '— %s —\n' "$(basename "$analysis_file")"
+            printf '%s\n' "$own_hits"
+            if [ -n "$found_hits" ]; then printf '\n— foundation —\n'; fi
+          fi
+          if [ -n "$found_hits" ]; then printf '%s\n' "$found_hits"; fi
+          exit 0
+        fi
+        # Same nullif as the search: an own undocumented macro prints its signature
+        # alone, where the view branch below suppresses the row and lets DESCRIBE speak.
         duckdb -init "$analysis_file" -noheader -list :memory: \
-          "SELECT sig || chr(10) || '    ' || coalesce(comment, $nag_m)
-           FROM ($pub_macro) WHERE n = '$view';"
+          "SELECT sig || coalesce(chr(10) || '    ' ||
+                    nullif(coalesce(comment, $nag_m), ''), '')
+           FROM ($pub_macro) WHERE n = '$sql_view';"
         exit 0
       fi
       # The WHERE keeps an undocumented analysis view from printing a blank line.
       duckdb -init "$analysis_file" -noheader -list :memory: \
         "SELECT coalesce(comment, $nag_v)
-         $pub AND view_name = '$view' AND coalesce(comment, $nag_v) <> '';"
+         $pub AND view_name = '$sql_view' AND coalesce(comment, $nag_v) <> '';"
       duckdb -init "$analysis_file" :memory: "DESCRIBE $view;"
     fi
     ;;

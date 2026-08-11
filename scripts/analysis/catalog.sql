@@ -120,6 +120,9 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             requires_year` means a NULL month is "dated to the year", never a month
 --             lost from a fuller date. Nothing above the year is modelled, so a named
 --             quarter or season arrives as a month or as nothing.
+--   production_quantity : text, not a number — a CharField whose empty state is ''
+--             (`= ''`, not `IS NULL`) and whose values nothing validates, so TRY_CAST
+--             for arithmetic and keep the NULLs it produces. Blank is unknown, not zero.
 --   manufacturer : manufacturer_name is the canonical name on the cabinet — display and
 --             group by it.
 --   location: where the MANUFACTURER was based (model -> corporate_entity -> location).
@@ -138,12 +141,13 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             soft-delete `status`. The subgeneration/subtype dims are mostly NULL today.
 --   variant_of_id / remake_of_id / export_edition_of_id : bare self-FKs to the origin
 --             model — `model_lineage` expands them into edge rows.
---   source free-text : ipdb_notes, ipdb_notable_features (prose) and opdb_features
---             (VARCHAR[], empty never NULL; 'Export edition', 'Cocktail', …) — source
---             fields the product doesn't surface, promoted so mining them needs no
---             hand-rolled json_extract.
+--   source free-text : ipdb_notes, ipdb_notable_features, ipdb_toys,
+--             ipdb_marketing_slogans (prose) and opdb_features (VARCHAR[], empty never
+--             NULL; 'Export edition', 'Cocktail', …) — source fields the product doesn't
+--             surface, promoted so mining them needs no hand-rolled json_extract. The
+--             prose ones are sparse: NULL is a fact about the source's coverage.
 --   NOT surfaced : the extra_data long tail (opdb.keywords — use `themes` —
---             ipdb.marketing_slogans, opdb.common_name, …). Promoting one is a single
+--             opdb.common_name, opdb.description, …). Promoting one is a single
 --             line here; see EDITING.md.
 --   label   : "Name (Manufacturer Year)", CE name then '?' as fallbacks; year omitted if
 --             unknown.
@@ -155,7 +159,7 @@ CREATE OR REPLACE VIEW all_models AS
     COALESCE(nk.n, 0) AS namesake_count,
     m.variant_of_id, m.remake_of_id, m.export_edition_of_id,
     m.opdb_id, m.ipdb_id, m.manufacturer_model_identifier,
-    m.year, m.month, m.player_count,
+    m.year, m.month, m.player_count, m.production_quantity,
     m.corporate_entity_id, ce.slug AS corporate_entity_slug,
     ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     cel.location_path, cel.country_slug,
@@ -169,8 +173,10 @@ CREATE OR REPLACE VIEW all_models AS
     cab.slug AS cabinet_slug,
     ps.slug  AS production_status_slug,
     m.description, m.status,
-    json_extract_string(m.extra_data, '$."ipdb.notes"')            AS ipdb_notes,
-    json_extract_string(m.extra_data, '$."ipdb.notable_features"') AS ipdb_notable_features,
+    json_extract_string(m.extra_data, '$."ipdb.notes"')             AS ipdb_notes,
+    json_extract_string(m.extra_data, '$."ipdb.notable_features"')  AS ipdb_notable_features,
+    json_extract_string(m.extra_data, '$."ipdb.toys"')              AS ipdb_toys,
+    json_extract_string(m.extra_data, '$."ipdb.marketing_slogans"') AS ipdb_marketing_slogans,
     COALESCE(json_extract(m.extra_data, '$."opdb.features"')::VARCHAR[], []::VARCHAR[]) AS opdb_features,
     m.extra_data,
     m.name || ' ('
@@ -1227,6 +1233,66 @@ CREATE OR REPLACE VIEW domain_vocab AS
                 FROM duckdb_tables() WHERE database_name = 'fc');
 COMMENT ON VIEW domain_vocab IS
   'One row per controlled-vocabulary term defined in docs/DomainModel.md — dim, slug and the prose definition, parsed from the doc at query time. Join it to a vocabulary view to read what a slug MEANS; the doc stays the only place domain semantics are written.';
+
+-- ═══ ENTITY SUBJECTS — resolving a polymorphic reference ════════════════════
+-- entity_subjects — one row per catalog entity of ANY type, keyed as a polymorphic
+-- reference names it: `(subject_type, subject_id)`, the type spelled as a Django content
+-- type. The `subject_` prefix makes the join `USING (subject_type, subject_id)` and
+-- lands the columns under the names `claims` and `credits` already use.
+--
+-- `subject_public_id`, NOT a slug: it is whatever the model declares as
+-- `public_id_field`, which is `slug` for twenty of the twenty-one and `location_path`
+-- for Location. Naming it for the majority would make it silently ambiguous on the one
+-- exception, where several live places share the slug `victoria`.
+--
+-- `catalog` is the whole set: a claim subject is a `ClaimControlledModel`, and every one
+-- of those lives in that app. The provenance entities `_entity_view` also names (Actor,
+-- ChangeSet, Source) are never a subject.
+--
+-- ADDING A CATALOG ENTITY MEANS ADDING A BRANCH. SQL cannot iterate table names, so this
+-- is a hand-written list; forget one and `unresolved_claim_subject` fires on the first
+-- claim about it. `slug`/`name`/`status` exist on every branch by construction —
+-- `LinkableModel` requires `name`, and the entity set is derived on the other two.
+--
+-- NOT LIVE-FILTERED, matching `claims`, the consumer it exists for: dropping a
+-- soft-deleted row would turn a retired subject into an unresolvable one. Predicate on
+-- `subject_status`.
+CREATE OR REPLACE VIEW entity_subjects AS
+  SELECT
+    subject_type,
+    id        AS subject_id,
+    public_id AS subject_public_id,
+    name      AS subject_name,
+    status    AS subject_status
+  FROM (
+              SELECT 'catalog.machinemodel'  AS subject_type, id, slug AS public_id, name, status FROM fc.catalog_machinemodel
+    UNION ALL SELECT 'catalog.title',            id, slug, name, status FROM fc.catalog_title
+    UNION ALL SELECT 'catalog.manufacturer',     id, slug, name, status FROM fc.catalog_manufacturer
+    UNION ALL SELECT 'catalog.corporateentity',  id, slug, name, status FROM fc.catalog_corporateentity
+    UNION ALL SELECT 'catalog.person',           id, slug, name, status FROM fc.catalog_person
+    -- location_path, not slug: a Location's slug is unique only within its parent, so it
+    -- is not an identifier. `public_id_field` on the model says the same.
+    UNION ALL SELECT 'catalog.location',         id, location_path, name, status FROM fc.catalog_location
+    UNION ALL SELECT 'catalog.franchise',        id, slug, name, status FROM fc.catalog_franchise
+    UNION ALL SELECT 'catalog.series',           id, slug, name, status FROM fc.catalog_series
+    UNION ALL SELECT 'catalog.creditrole',       id, slug, name, status FROM fc.catalog_creditrole
+    UNION ALL SELECT 'catalog.tag',              id, slug, name, status FROM fc.catalog_tag
+    UNION ALL SELECT 'catalog.theme',            id, slug, name, status FROM fc.catalog_theme
+    UNION ALL SELECT 'catalog.gameplayfeature',  id, slug, name, status FROM fc.catalog_gameplayfeature
+    UNION ALL SELECT 'catalog.rewardtype',       id, slug, name, status FROM fc.catalog_rewardtype
+    UNION ALL SELECT 'catalog.gameformat',       id, slug, name, status FROM fc.catalog_gameformat
+    -- The seven taxonomy dims: slug-only on `models`, but a patch edits them like any
+    -- other entity, so they are subjects like any other.
+    UNION ALL SELECT 'catalog.cabinet',          id, slug, name, status FROM fc.catalog_cabinet
+    UNION ALL SELECT 'catalog.displaytype',      id, slug, name, status FROM fc.catalog_displaytype
+    UNION ALL SELECT 'catalog.displaysubtype',   id, slug, name, status FROM fc.catalog_displaysubtype
+    UNION ALL SELECT 'catalog.system',           id, slug, name, status FROM fc.catalog_system
+    UNION ALL SELECT 'catalog.productionstatus', id, slug, name, status FROM fc.catalog_productionstatus
+    UNION ALL SELECT 'catalog.technologygeneration',    id, slug, name, status FROM fc.catalog_technologygeneration
+    UNION ALL SELECT 'catalog.technologysubgeneration', id, slug, name, status FROM fc.catalog_technologysubgeneration
+  );
+COMMENT ON VIEW entity_subjects IS
+  'One row per catalog entity of ANY type, keyed (subject_type, subject_id) the way a polymorphic reference names it — public id, name and status for resolving a claim, changeset or patch entry subject without branching on its type. NOT live-filtered; predicate on subject_status.';
 
 -- ═══ RUN WATERMARK ══════════════════════════════════════════════════════════
 -- analysis_context — the input watermark for a run, printed by every runner above the

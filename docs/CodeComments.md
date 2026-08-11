@@ -2,7 +2,7 @@
 
 ## Explain the why, don't restate the code
 
-Comments should ONLY exist if they explain something the code doesn't.
+Comments should ONLY exist if they explain something the code doesn't. Don't create an alternative source of truth from the code.
 
 ## No planning ephemera
 
@@ -19,3 +19,7 @@ By default, don't talk about the prior state of the system, such as "This does N
 - Regression test comments
 - DB migrations: these are static, frozen, refer to past state
 - It's something a naive reader might legitimately think to change the code back to
+
+## Do not justify over-verbosity with "ratios"
+
+The project is over-documented. Don't defend excessive comments with "it's got the same doc-to-code ratio as the rest of the project". Don't use that as an excuse to avoid the hard work of writing tight just-enough-and-no-more comments.
