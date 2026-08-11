@@ -18,16 +18,25 @@ Decide per patch, not per patch set: a generated bulk patch and hand-written one
 Before referencing a field or entity in a patch, confirm it's claimable and learn its `entity_type` string. From `backend/`:
 
 ```bash
-# Is the field user-inputtable (claimable), and how is it classified?
-# Exempt (system) fields: id, uuid, created_at, updated_at, extra_data. Everything
-# else concrete on a ClaimControlledModel is a claim. FK -> value is target public_id;
-# M2M -> relationship (namespace: [members]); other -> scalar (value as-is).
-uv run python manage.py shell -c "from apps.catalog.models import MachineModel; print([f.name for f in MachineModel._meta.get_fields()])"
+# What's claimable on a model? Scalars take the value as-is, FKs the target's
+# public_id; a relationship namespace takes [members].
+uv run python manage.py shell -c "
+from apps.catalog.models import MachineModel as M
+from apps.provenance.model_bases.claim_relationships import relationships_for
+from apps.provenance.models.introspection import get_claim_fields
+print('scalar/FK:', sorted(get_claim_fields(M)))
+print('relationship:', sorted(b.spec.namespace for b in relationships_for(M)))
+"
 
-# entity_type string for a ref (`<entity_type>.<public_id>`):
-uv run python manage.py shell -c "from apps.catalog.models.taxonomy import GameFormat; print(GameFormat.entity_type)"
-# taxonomy examples: GameFormat -> 'game-format', ProductionStatus -> 'production-status', Tag -> 'tag'
+# entity_type strings for a ref (`<entity_type>.<public_id>`):
+uv run python manage.py shell -c "
+from apps.core.entity_types import all_linkable_models
+from apps.provenance.model_bases import ClaimControlledModel
+print(sorted(m.entity_type for m in all_linkable_models() if issubclass(m, ClaimControlledModel)))
+"
 ```
+
+**Aliases and media declare no spec**, so an empty relationship list means "none declared", not "none allowed" — `Manufacturer` prints `[]` yet takes `manufacturer_alias`.
 
 ## Authoring a good patch
 
@@ -84,20 +93,30 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 
 ### Scheme cites: where the quotable text lives
 
-**A scheme cite's `quote:` verifies against a fixed evidence corpus, not an ad-hoc fetch** (flippatch's `make verify-quotes` checks every quote against it):
+**A scheme cite's `quote:` verifies against a fixed evidence corpus, not an ad-hoc fetch** (flippatch's `make verify-quote-verbatim` checks every quote against it):
 
 - **`ipdb:<id>`** — the `ipdb_machines` table in pinexplore's `explore.duckdb`. The quotable text mirrors what the IPDB page renders: the title as a bare heading, then `Manufacturer:` / `Type:` / `Players:` / `Theme:` label-value rows, then the Notable Features and Notes prose — so a structured-field quote like `Type: Electro-mechanical (EM) [...] Players: 1` is legitimate and stays ctrl-F honest on the page. Cite the machine page whose record carries the field; IPDB has no manufacturer pages, so a manufacturer-level fact (a location, say) cites one of that manufacturer's machine pages.
 - **`opdb:<id>`** — the cached `https://opdb.org/machines/<id>` page in pinexplore's web cache. OPDB renders only label-value fields, so quotes read as terse spans (`Cactus Canyon Continued [...] Manufacturer - Eric Priepke [...] Converted game`); a fact implied by OPDB's group structure (the donor title of a conversion) is never stated as text and stays partially supported.
 - **`youtube:<id>`** — the cached canonical watch URL, whose page text is the video's caption-track transcript. See [Video citations](#video-citations).
 
+**Read the quotable text before you write the quote.** flippatch's `make show-source ARGS="<ref>"` prints the document the gate will match against — the only way to see an `ipdb:` row, which is reconstructed rather than stored. Adding `--check '<span>'` settles a draft span without emitting a patch first.
+
 ### Video citations
 
 **Fetch the video into the web cache like any URL.** Pinexplore's `web_fetch.py` routes any YouTube URL shape (`watch?v=`, `youtu.be/`, `/shorts/`, `/live/`) through yt-dlp and caches the best caption track — manual subtitles over auto-captions, the original spoken language over machine translations — with the spoken-line transcript as the page text. Then:
 
-- **Quote the transcript** like any web quote; `verify-quotes` resolves `youtube:<id>` to the cached watch URL.
+- **Quote the transcript** like any web quote; `verify-quote-verbatim` resolves `youtube:<id>` to the cached watch URL.
 - **Add a timestamp `locator:`** to point at the moment; the stored `.vtt` blob keeps the cue timing for finding it.
 - **Auto-captions are ASR text.** Verbatim means verbatim ASR — a misheard name stays as the transcript has it, like any source typo. A machine-translated caption track is not evidence; quote the original language.
 - **A captionless video can't carry a quote.** Livestream archives often have no caption track at all; the fetcher warns loudly and caches nothing. Cite the written record the video's description usually links (an awards show's results page, a manufacturer's announcement post) for the fact itself, and keep the video footnote — quote-less — as provenance for the event.
+
+### PDF citations
+
+How to _read_ a PDF — finding PDFs, finding and reading sheets within PDFs — is documented in pinexplore's [WebCache.md](https://github.com/deanmoses/pinexplore/blob/main/docs/WebCache.md). What follows is how to _cite_ PDFs.
+
+- **The `locator:` convention is `printed page 17, PDF document page 27`.** The number printed on the sheet and the sheet's ordinal position in the file usually disagree (frontmatter often isn't numbered); render the page to get the printed number, `quote` gives the sheet's ordinal position — the one a PDF reader navigates by. Name both.
+- **Words on a PDF sheet are quotable however you read them.** Quote straight from the extracted text whenever it carries the quote faithfully. Render the page and transcribe by eye when it doesn't. Many cases don't, like when the words are in un-OCR'able images, or tables and matrices are garbled. For this reason, flippatch's `make verify-quote-verbatim` does not gate PDF quotes (it reports them `SKIP-PDF`).
+- **Cite non-text without a quote.** For example: an image of a pinball machine, a checkmark in a feature-matrix column, a diagram arrow. There's no words. `ref` the page URL, `locator` the PDF document page, `note` the visual observation ("the Premium column carries a checkmark for the topper").
 
 ### Prefer primary sources
 
@@ -328,23 +347,20 @@ uv run python manage.py ingest_patches --patches-dir ../../flippatch/patches
 
 #### Verify snapshot
 
-After applying, spot-check that the change resolved the way you intended — pull a representative entity and confirm its winning claim carries the right source, value, `cite:` and `note:` (`citation_instances` carries the cite, `changeset.note` the note):
+After applying, spot-check that the change resolved the way you intended — confirm the winning claim carries the right ingest source, value, cite and note. `rank = 1` is the winner-pick; an active claim is only a contender:
 
-```python
-from apps.catalog.models import MachineModel
-from apps.provenance.models import Claim
-from django.contrib.contenttypes.models import ContentType
-
-ct = ContentType.objects.get_for_model(MachineModel)
-c = Claim.objects.filter(
-    content_type=ct,
-    object_id=MachineModel.objects.get(slug="hyperball").id,
-    field_name="game_format",
-    is_active=True,
-).first()
-print(c.source.slug, c.value, [ci.citation_source.identifier for ci in c.citation_instances.all()])
-print(c.changeset.note)
+```bash
+scripts/analysis/analysis query scripts/analysis/catalog.sql "
+SELECT c.ingest_source_slug, c.value, ci.citation_source_name, ci.locator, ci.quote, cs.note
+FROM model_claims c
+JOIN models m ON m.id = c.model_id
+JOIN changesets cs ON cs.changeset_id = c.changeset_id
+LEFT JOIN claim_citations cc ON cc.claim_id = c.claim_id
+LEFT JOIN citation_instances ci ON ci.citation_instance_id = cc.citation_instance_id
+WHERE m.slug = 'bank-a-ball-6' AND c.field_name = 'year' AND c.rank = 1;"
 ```
+
+For a non-model entity, swap `model_claims`/`models` for `claims` joined on `subject_type = 'catalog.manufacturer'` and that entity's view.
 
 ### Hand off to user
 

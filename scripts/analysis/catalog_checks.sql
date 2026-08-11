@@ -273,6 +273,7 @@ CREATE OR REPLACE VIEW foundation_summary AS
   UNION ALL SELECT 'people',              count(*) FROM people
   UNION ALL SELECT 'title_size',          count(*) FROM title_size
   UNION ALL SELECT 'domain_vocab',        count(*) FROM domain_vocab
+  UNION ALL SELECT 'entity_subjects',     count(*) FROM entity_subjects
   UNION ALL SELECT 'claims',              count(*) FROM claims
   UNION ALL SELECT 'model_claims',        count(*) FROM model_claims
   UNION ALL SELECT 'claim_identity_parts', count(*) FROM claim_identity_parts
@@ -385,6 +386,7 @@ CREATE OR REPLACE VIEW _anchor_scan AS
   UNION ALL SELECT 'model_export_markets',   col, live FROM _dark_cols('model_export_markets')
   UNION ALL SELECT 'title_size',             col, live FROM _dark_cols('title_size')
   UNION ALL SELECT 'domain_vocab',          col, live FROM _dark_cols('domain_vocab')
+  UNION ALL SELECT 'entity_subjects',       col, live FROM _dark_cols('entity_subjects')
   UNION ALL SELECT 'claims',                col, live FROM _dark_cols('claims')
   UNION ALL SELECT 'model_claims',          col, live FROM _dark_cols('model_claims')
   UNION ALL SELECT 'claim_identity_parts',  col, live FROM _dark_cols('claim_identity_parts')

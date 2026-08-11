@@ -26,6 +26,10 @@
 --               as status_unknown in catalog_checks.sql.
 
 CREATE OR REPLACE VIEW _provenance_checks AS
+  -- `claims` decoded ONCE for the branches below, on foundation_checks' reasoning and
+  -- with its shadowing trick — DuckDB re-evaluates a view per REFERENCE, and this is the
+  -- widest decode in the layer.
+  WITH claims AS MATERIALIZED (SELECT * FROM main.claims)
 
   -- ─── AGREEMENT ───────────────────────────────────────────────────────────
   -- Membership: the set of top-ranked, non-tombstoned member claims must equal the set
@@ -141,6 +145,25 @@ CREATE OR REPLACE VIEW _provenance_checks AS
            || ' view=' || (SELECT count(*) FROM changesets)::VARCHAR
   WHERE (SELECT count(*) FROM fc.provenance_changeset)
         IS DISTINCT FROM (SELECT count(*) FROM changesets)
+
+  -- ─── Subject resolution ──────────────────────────────────────────────────
+  -- Every claim's subject resolves through `entity_subjects`. The join there is LEFT, so
+  -- failure costs no rows — it NULLs subject_public_id/name/status, and a consumer gets
+  -- an anonymous claim rather than an error. This is what stands behind that view being a
+  -- hand-written union: a branch forgotten for a new entity, one keyed to the wrong
+  -- constant, and a subject row that no longer exists all surface here. Zero today.
+  --
+  -- NOT EXISTS, not `subject_public_id IS NULL`: the claim is that the SUBJECT resolves, and
+  -- the cheaper spelling stops meaning that as soon as a nullable column joins the set —
+  -- `subject_status` already is one.
+  UNION ALL
+  SELECT 'unresolved_claim_subject',
+         'claim_id=' || c.claim_id::VARCHAR
+           || ' subject=' || c.subject_type || ':' || c.subject_id::VARCHAR
+  FROM claims c
+  WHERE NOT EXISTS (SELECT 1 FROM entity_subjects e
+                    WHERE e.subject_type = c.subject_type
+                      AND e.subject_id = c.subject_id)
 
   -- ─── Actors and changesets ───────────────────────────────────────────────
   -- An actor backs an ingest source XOR a user, and `actor_name`/`actor_slug` coalesce

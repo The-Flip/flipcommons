@@ -182,10 +182,14 @@ CREATE OR REPLACE VIEW _claim_ref AS
 --
 -- NOT LIVE-FILTERED, deliberately, and the one place this file departs from the rest of
 -- the foundation. Provenance of a soft-deleted record is legitimate history (39 claims
--- sit on deleted models today), and liveness is not even expressible uniformly across
--- 21 subject types without a hand-list of tables. `model_claims` below is the live lens
--- for the dominant subject; anything counting claims per ingest source off `claims`
--- itself is counting dead subjects too, which is usually not what was meant.
+-- sit on deleted models today). `model_claims` below is the live lens for the dominant
+-- subject; anything counting claims per ingest source off `claims` itself is counting
+-- dead subjects too, which is usually not what was meant.
+--
+--   subject_public_id / subject_name / subject_status : the subject resolved via
+--             `entity_subjects`, for all 21 types — a per-type entity view can't do this
+--             job, since joining one needs the type known in advance. `subject_status`
+--             is the live filter for a subject type `model_claims` doesn't cover.
 --
 --   register / is_member : see the register block above. Predicate on `register` when
 --             asking "what competed"; `field_name` when asking "what kind of fact".
@@ -228,6 +232,7 @@ CREATE OR REPLACE VIEW claims AS
     c.id                                          AS claim_id,
     ct.app_label || '.' || ct.model               AS subject_type,
     c.object_id                                   AS subject_id,
+    e.subject_public_id, e.subject_name, e.subject_status,
     c.field_name                                  AS field_name,
     c.claim_key                                   AS claim_key,
     p.register                                    AS register,
@@ -258,6 +263,10 @@ CREATE OR REPLACE VIEW claims AS
     c.created_at                                  AS created_at
   FROM fc.provenance_claim c
   JOIN fc.django_content_type ct   ON ct.id = c.content_type_id
+  -- LEFT, though every claim resolves today: an inner join would silently drop a claim
+  -- whose subject row vanished. `unresolved_claim_subject` reports that and names it.
+  LEFT JOIN entity_subjects e      ON e.subject_type = ct.app_label || '.' || ct.model
+                                  AND e.subject_id = c.object_id
   JOIN _claim_key_parts p          ON p.claim_id = c.id
   JOIN fc.provenance_changeset cs  ON cs.id = c.changeset_id
   JOIN _claim_actor a              ON a.actor_id = c.actor_id
@@ -267,11 +276,14 @@ CREATE OR REPLACE VIEW claims AS
   LEFT JOIN fc.provenance_changeset cs_r ON cs_r.id = c.retracted_by_changeset_id
   LEFT JOIN fc.provenance_ingestrun ir_r ON ir_r.id = cs_r.ingest_run_id;
 COMMENT ON VIEW claims IS
-  'One row per claim, every subject type — who asserted what, with rank, member_exists, ref_id, ingest source, changeset and patch_id, plus the changeset/patch that later retracted it. NOT live-filtered; use model_claims for the live-model lens.';
+  'One row per claim, every subject type — who asserted what, with the subject resolved (subject_public_id/name/status), rank, member_exists, ref_id, ingest source, changeset and patch_id, plus the changeset/patch that later retracted it. NOT live-filtered; use model_claims for the live-model lens.';
 
 -- model_claims — claims about LIVE machine models, keyed model_id so it joins straight
 -- to `models` and the grain views. The live-only lens `claims` deliberately isn't, and
 -- the shape 90% of analysis wants.
+--
+-- The model's slug is `subject_public_id`, inherited from `claims`. Only `model_id` is
+-- renamed, because it is the key the model grain views join on.
 --
 -- The canonical attribution join — which ingest source attributed a gameplay feature:
 --
@@ -294,7 +306,7 @@ CREATE OR REPLACE VIEW model_claims AS
   WHERE c.subject_type = 'catalog.machinemodel'
     AND EXISTS (SELECT 1 FROM models m WHERE m.id = c.subject_id);
 COMMENT ON VIEW model_claims IS
-  'One row per claim about a LIVE machine model, keyed model_id — the live lens on claims. Join to a model grain view on (model_id, field_name, ref_id) to attribute a resolved fact to its ingest source.';
+  'One row per claim about a LIVE machine model, keyed model_id, with the model as subject_public_id/subject_name — the live lens on claims. Join to a model grain view on (model_id, field_name, ref_id) to attribute a resolved fact to its ingest source.';
 
 -- claim_identity_parts — the public projection of the parse above. Defined HERE rather
 -- than beside it so `claims` leads this block in definition order, which is the order

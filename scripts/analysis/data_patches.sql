@@ -66,12 +66,15 @@ COMMENT ON MACRO patch_number_of IS
 -- ── What patches asserted ────────────────────────────────────────────────────
 -- One row per claim an ingested patch wrote.
 --
--- `model_slug` is resolved for `catalog.machinemodel` subjects, the dominant subject
--- type; the rest keep `subject_type`/`subject_id` verbatim, and a consumer that wants
--- Titles can join `subject_id` itself. A union resolving every subject type would rot the
--- first time one is added. `model_status` rides along because `all_models` includes
--- soft-deleted rows, and a slug handed back with no signal that the model is retired is
--- the "right data, read the wrong way" failure the liveness contract exists to prevent.
+-- TWO SUBJECT SPELLINGS. `subject_public_id`/`subject_name`/`subject_status` come down from
+-- `claims` and are populated for every subject type; `model_slug`/`model_status` are the
+-- machinemodel projection of them and NULL on every other row. That narrowing is the
+-- column's meaning: it is what lets `WHERE model_slug = …` join against a model without
+-- admitting a Title that shares the slug. Use the subject_* set for anything else.
+--
+-- The status columns ride along because neither view is live-filtered, and a slug handed
+-- back with no signal that its record is retired is the "right data, read the wrong way"
+-- failure the liveness contract exists to prevent.
 --
 -- `changeset_action` is deliberately ABSENT. It looks like the patch operation and is
 -- not: `provenance_changeset_action_iff_interactive` makes it non-null exactly when there
@@ -85,8 +88,11 @@ CREATE OR REPLACE VIEW patch_claims AS
     c.claim_id,
     c.subject_type,
     c.subject_id,
-    m.slug              AS model_slug,
-    m.status            AS model_status,
+    c.subject_public_id,
+    c.subject_name,
+    c.subject_status,
+    CASE WHEN c.subject_type = 'catalog.machinemodel' THEN c.subject_public_id END AS model_slug,
+    CASE WHEN c.subject_type = 'catalog.machinemodel' THEN c.subject_status END AS model_status,
     c.field_name,
     c.claim_key,
     c.register,
@@ -100,11 +106,9 @@ CREATE OR REPLACE VIEW patch_claims AS
     c.ingest_source_slug,
     c.created_at
   FROM claims c
-  LEFT JOIN all_models m
-    ON c.subject_type = 'catalog.machinemodel' AND m.id = c.subject_id
   WHERE c.patch_id IS NOT NULL;
 COMMENT ON VIEW patch_claims IS
-  'One row per claim written by an ingested data patch — patch, changeset, subject (model_slug/model_status for machinemodel subjects) and the claim itself. Neither live- nor rank-filtered, and member_exists=false is a tombstone.';
+  'One row per claim written by an ingested data patch — patch, changeset, the resolved subject (subject_public_id/name/status for any type; model_slug/model_status only for machinemodel) and the claim itself. Neither live- nor rank-filtered, and member_exists=false is a tombstone.';
 
 -- ── What patches killed ──────────────────────────────────────────────────────
 -- One row per claim a patch DEACTIVATED, which `patch_claims` cannot show: a retraction
@@ -123,8 +127,11 @@ CREATE OR REPLACE VIEW patch_retractions AS
     c.claim_id,
     c.subject_type,
     c.subject_id,
-    m.slug              AS model_slug,
-    m.status            AS model_status,
+    c.subject_public_id,
+    c.subject_name,
+    c.subject_status,
+    CASE WHEN c.subject_type = 'catalog.machinemodel' THEN c.subject_public_id END AS model_slug,
+    CASE WHEN c.subject_type = 'catalog.machinemodel' THEN c.subject_status END AS model_status,
     c.field_name,
     c.claim_key,
     c.register,
@@ -136,8 +143,6 @@ CREATE OR REPLACE VIEW patch_retractions AS
     c.ingest_source_slug,
     c.created_at        AS asserted_at
   FROM claims c
-  LEFT JOIN all_models m
-    ON c.subject_type = 'catalog.machinemodel' AND m.id = c.subject_id
   WHERE c.retracted_by_patch_id IS NOT NULL;
 COMMENT ON VIEW patch_retractions IS
   'One row per claim deactivated by a data patch — patch_id is the RETRACTING patch, asserted_by_patch_id whoever wrote the claim originally. The only claim view in which a retraction-only patch appears.';
@@ -178,6 +183,9 @@ CREATE OR REPLACE VIEW patch_cites AS
     pc.claim_id,
     pc.subject_type,
     pc.subject_id,
+    pc.subject_public_id,
+    pc.subject_name,
+    pc.subject_status,
     pc.model_slug,
     pc.model_status,
     pc.field_name,
@@ -207,14 +215,16 @@ COMMENT ON VIEW patch_cites IS
 -- lists in one pass. Private: the two halves are separately available above, and this
 -- shape exists to be aggregated rather than read.
 --
--- `changeset_spans_subjects` scans exactly this. A guard that reads a narrower population
+-- `patch_entry_spans_subjects` scans exactly this. A guard that reads a narrower population
 -- than the thing it guards reports healthy for the case it exists to catch.
 CREATE OR REPLACE VIEW _patch_acts AS
-  SELECT patch_id, changeset_id, subject_type, subject_id, model_slug, model_status,
+  SELECT patch_id, changeset_id, subject_type, subject_id,
+         subject_public_id, subject_name, subject_status, model_slug, model_status,
          field_name, 'assert' AS act
   FROM patch_claims
   UNION ALL
-  SELECT patch_id, changeset_id, subject_type, subject_id, model_slug, model_status,
+  SELECT patch_id, changeset_id, subject_type, subject_id,
+         subject_public_id, subject_name, subject_status, model_slug, model_status,
          field_name, 'retract'
   FROM patch_retractions;
 
@@ -265,6 +275,9 @@ CREATE OR REPLACE VIEW patch_entries AS
       changeset_id,
       any_value(subject_type)                                   AS subject_type,
       any_value(subject_id)                                     AS subject_id,
+      any_value(subject_public_id)                                   AS subject_public_id,
+      any_value(subject_name)                                   AS subject_name,
+      any_value(subject_status)                                 AS subject_status,
       any_value(model_slug)                                     AS model_slug,
       any_value(model_status)                                   AS model_status,
       -- Split rather than one merged list: merged, they equate asserting a field with
@@ -282,6 +295,9 @@ CREATE OR REPLACE VIEW patch_entries AS
     cs.changeset_id,
     a.subject_type,
     a.subject_id,
+    a.subject_public_id,
+    a.subject_name,
+    a.subject_status,
     a.model_slug,
     a.model_status,
     cs.n_claims,
@@ -293,7 +309,7 @@ CREATE OR REPLACE VIEW patch_entries AS
   LEFT JOIN acts a USING (changeset_id)
   WHERE cs.patch_id IS NOT NULL;
 COMMENT ON VIEW patch_entries IS
-  'One row per effectful authored ChangeSet — a flat entry or one grouped changesets: item, any entity as subject — with its subject, asserted and retracted claim counts, and their two separate field lists. The unit a citation attaches to, since a cite reaches every claim in its entry.';
+  'One row per effectful authored ChangeSet — a flat entry or one grouped changesets: item, any entity as subject — with its subject resolved to subject_public_id/subject_name, asserted and retracted claim counts, and their two separate field lists. The unit a citation attaches to, since a cite reaches every claim in its entry.';
 
 -- ── An entry and the FIELD-level evidence it already carries ──────────────────
 -- One row per (entry, citation instance): the grain a rewrite is decided at, since the
@@ -307,9 +323,13 @@ COMMENT ON VIEW patch_entries IS
 -- only evidence is an inline `[[cite:id:N]]` in a description carries no bridge row and
 -- appears here with NO citation. An entry absent from this view is not an uncited entry.
 --
--- `model_status` rides along for the reason it does on `patch_claims`, and it matters
+-- This is where the two subject spellings `patch_claims` documents diverge most: an
+-- entry's subject is any entity's public-id, so `model_slug` is NULL for every entry
+-- about a person, theme or location. Read `subject_public_id`/`subject_name`.
+--
+-- The status columns ride along for the reason they do on `patch_claims`, and it matters
 -- MORE here: this is the grain a rewrite is decided at, so a slug handed over with no
--- signal that the model is retired is not a misreading waiting to happen, it is a patch
+-- signal that the record is retired is not a misreading waiting to happen, it is a patch
 -- waiting to be authored against a soft-deleted record. One entry in the corpus is in
 -- exactly that state today.
 CREATE OR REPLACE VIEW patch_entry_cites AS
@@ -319,6 +339,9 @@ CREATE OR REPLACE VIEW patch_entry_cites AS
     changeset_id,
     any_value(subject_type)                 AS subject_type,
     any_value(subject_id)                   AS subject_id,
+    any_value(subject_public_id)                 AS subject_public_id,
+    any_value(subject_name)                 AS subject_name,
+    any_value(subject_status)               AS subject_status,
     any_value(model_slug)                   AS model_slug,
     any_value(model_status)                 AS model_status,
     citation_instance_id,
@@ -331,9 +354,9 @@ CREATE OR REPLACE VIEW patch_entry_cites AS
     any_value(root_citation_source_name)    AS root_citation_source_name,
     any_value(root_identifier_key)          AS root_identifier_key,
     any_value(root_citation_source_slug)    AS root_citation_source_slug,
-    count(DISTINCT claim_id)                AS n_claims_cited,
+    count(DISTINCT claim_id)                AS n_cited_claims,
     string_agg(DISTINCT field_name, ', ' ORDER BY field_name) AS fields
   FROM patch_cites
   GROUP BY patch_id, changeset_id, citation_instance_id;
 COMMENT ON VIEW patch_entry_cites IS
-  'One row per (patch entry, FIELD-level citation instance) — the entry plus one piece of bridged evidence it records, with the claims it covers. Inherits patch_cites''s limit: inline [[cite:id:N]] evidence is absent, so an entry missing here is not uncited. The grain a citation rewrite is decided at.';
+  'One row per (patch entry, FIELD-level citation instance) — the entry plus one piece of bridged evidence it records, its subject resolved to subject_public_id/subject_name whatever its type, and the claims it covers. Inherits patch_cites''s limit: inline [[cite:id:N]] evidence is absent, so an entry missing here is not uncited. The grain a citation rewrite is decided at.';
