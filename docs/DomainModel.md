@@ -249,9 +249,11 @@ Whether or not a Model reached commercial production. Values:
 Classification labels that don't fit elsewhere. As related clusters of tags emerge, we may shift the cluster to more structured data, such as creating an entity for an exclusive set of tags:
 
 - `home-use`: designed or marketed for home use rather than commercial coin-op routes.
+- `limited-edition`: produced in a deliberately limited, usually numbered run — a manufacturer's LE or collector's trim of a title.
 - `prototype`: an engineering sample, design proof or pre-production test unit.
 - `widebody`: a wider-than-standard cabinet and playfield.
-- `remake`: a newly manufactured recreation of an earlier title (not a restored original). See [Remakes](#remakes); the `remake_of` link records the lineage.
+
+Remakes are not a tag: the `remake_of` [model relationship](#remakes) records that lineage structurally.
 
 ### Cabinet
 

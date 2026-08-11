@@ -448,8 +448,11 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     -- — so this anchors only once a patch retracts a claim about a model that carries a
     -- status at all. Populated on patch_claims, hence qualified.
     ('patch_retractions.model_status',      'pending'),
-    -- no interactive claim is about a machine model yet; a UI edit writes one
-    ('model_claims.changeset_action',       'pending'),
+    -- changeset_action is carried only by interactive claims, and those exist only
+    -- where someone has made UI edits against THIS database — a fresh rebuild from
+    -- patches has none. `sparse`, not `pending`: an expiry keyed to local user
+    -- behavior would make the self-test's verdict differ per machine.
+    ('model_claims.changeset_action',       'sparse'),
     -- no patch has filled a manufacturer QID yet
     ('manufacturers.wikidata_id',           'pending')
   ) AS t(col, kind);
