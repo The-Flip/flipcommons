@@ -99,6 +99,8 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 - **`opdb:<id>`** — the cached `https://opdb.org/machines/<id>` page in pinexplore's web cache. OPDB renders only label-value fields, so quotes read as terse spans (`Cactus Canyon Continued [...] Manufacturer - Eric Priepke [...] Converted game`); a fact implied by OPDB's group structure (the donor title of a conversion) is never stated as text and stays partially supported.
 - **`youtube:<id>`** — the cached canonical watch URL, whose page text is the video's caption-track transcript. See [Video citations](#video-citations).
 
+**Read the quotable text before you write the quote.** flippatch's `make show-source ARGS="<ref>"` prints the document the gate will match against — the only way to see an `ipdb:` row, which is reconstructed rather than stored. Adding `--check '<span>'` settles a draft span without emitting a patch first.
+
 ### Video citations
 
 **Fetch the video into the web cache like any URL.** Pinexplore's `web_fetch.py` routes any YouTube URL shape (`watch?v=`, `youtu.be/`, `/shorts/`, `/live/`) through yt-dlp and caches the best caption track — manual subtitles over auto-captions, the original spoken language over machine translations — with the spoken-line transcript as the page text. Then:
