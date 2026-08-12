@@ -151,6 +151,7 @@ VIDEO = CitationTypeSpec(
     child_skips_locator=False,
     slug_addressed=False,
     child_noun_plural="videos",
+    authored_root_creation=True,
     locator=LocatorContract(
         kind="timestamp",
         placeholder="e.g. 1:02:03",

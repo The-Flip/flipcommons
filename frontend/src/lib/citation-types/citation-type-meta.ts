@@ -14,7 +14,10 @@ export type CitationTypeKey = 'book' | 'periodical' | 'video' | 'web';
  * `slugAddressed` marks types addressed by an authored kebab slug
  * (periodical issues) — the create UI shows a slug field for these.
  * `childNounPlural` is what the type's children are called in UI
- * copy (a periodical's 'issues') — display vocabulary only. */
+ * copy (a periodical's 'issues') — display vocabulary only.
+ * `authoredRootCreation` marks types whose roots may be created
+ * through the authored-create form — the create-stage type picker
+ * offers exactly these. */
 export interface CitationTypeMeta {
   key: CitationTypeKey;
   label: string;
@@ -27,6 +30,7 @@ export interface CitationTypeMeta {
   childSkipsLocator: boolean;
   slugAddressed: boolean;
   childNounPlural: string;
+  authoredRootCreation: boolean;
 }
 
 export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
@@ -42,6 +46,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     childSkipsLocator: false,
     slugAddressed: false,
     childNounPlural: 'editions',
+    authoredRootCreation: true,
   },
   periodical: {
     key: 'periodical',
@@ -55,6 +60,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     childSkipsLocator: false,
     slugAddressed: true,
     childNounPlural: 'issues',
+    authoredRootCreation: true,
   },
   video: {
     key: 'video',
@@ -69,6 +75,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     childSkipsLocator: false,
     slugAddressed: false,
     childNounPlural: 'videos',
+    authoredRootCreation: true,
   },
   web: {
     key: 'web',
@@ -82,5 +89,6 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     childSkipsLocator: true,
     slugAddressed: false,
     childNounPlural: 'pages',
+    authoredRootCreation: false,
   },
 };

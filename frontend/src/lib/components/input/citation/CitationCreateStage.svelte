@@ -3,6 +3,7 @@
   import client from '$lib/api/client';
   import type { ParentContext, CreateSeed } from './citation-types';
   import { citationTypeMeta } from '$lib/citation-types';
+  import { CITATION_TYPE_META } from '$lib/citation-types/citation-type-meta';
   import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
@@ -10,6 +11,13 @@
   import { reconcileSlug, slugifyForCatalog } from '$lib/create-form';
 
   type SourceType = 'book' | 'periodical' | 'video';
+
+  /** The types the picker offers: exactly those whose roots are authored here.
+   *  Web is absent because its flag is off — sites are created by pasting a
+   *  URL (CitationWebCreateStage), never typed in here. */
+  const rootCreatableTypes = Object.values(CITATION_TYPE_META)
+    .filter((m) => m.authoredRootCreation)
+    .map((m) => m.key);
 
   /** The slug column's limit (CITATION_SOURCE_SLUG_MAX_LENGTH backend-side).
    *  Names run to 500 chars, so an unclamped proposal could exceed what the
@@ -169,10 +177,9 @@
 >
   {#if showTypePicker}
     <div class="type-chips">
-      <!-- Authored works only — web sources are created by pasting a URL
-           (CitationWebCreateStage), never typed in here. A video here is a
-           movie (a standalone work); platform videos mint from their URLs. -->
-      {#each ['book', 'periodical', 'video'] as t (t)}
+      <!-- A video here is a movie (a standalone work); platform videos mint
+           from their URLs. -->
+      {#each rootCreatableTypes as t (t)}
         <button
           type="button"
           class="type-chip"

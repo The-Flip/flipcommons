@@ -329,7 +329,18 @@ def create_citation_source(
     """
     user = authed_user(request)
     parent = None
-    if data.parent_id is not None:
+    if data.parent_id is None:
+        # Some types' roots are never authored here — a web site root is
+        # described from its pasted URL. The spec declares which types offer
+        # interactive root creation, so neither the schema nor this endpoint
+        # keeps a type roster.
+        if not citation_type_spec(data.source_type).authored_root_creation:
+            raise HttpError(
+                422,
+                f"A {data.source_type} root isn't created here — roots of "
+                f"this type are minted through their own flow.",
+            )
+    else:
         # A flat-hierarchy type's children (a platform's videos, a site's
         # pages) mint from URLs/identifiers through recognition, never by
         # hand — an authored child would sidestep dedup and fabricate a

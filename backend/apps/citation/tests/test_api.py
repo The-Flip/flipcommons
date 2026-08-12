@@ -471,6 +471,34 @@ class TestCreateCitationSource:
         assert "created standalone" in resp.json()["detail"]
         assert not CitationSource.objects.filter(parent=root).exists()
 
+    def test_web_root_create_rejected(self, client, user):
+        """A web site root is described from its pasted URL (cite-url), never
+        authored here — the type declares authored_root_creation off, and the
+        guard (not a schema roster) is what refuses it."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Some Site", "source_type": "web"},
+        )
+        assert resp.status_code == 422
+        assert "isn't created here" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(name="Some Site").exists()
+
+    def test_web_child_create_rejected(self, client, user):
+        """A web page under an existing root still can't be authored — web is
+        flat-hierarchy, so its children mint from URLs via cite-url/pages/."""
+        client.force_login(user)
+        root = make_citation_source(name="Example Site", source_type="web")
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Some Page", "source_type": "web", "parent_id": root.pk},
+        )
+        assert resp.status_code == 422
+        assert "created standalone" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(parent=root).exists()
+
     def test_cross_type_authored_child_rejected(self, client, user):
         # Authored children extend their own work's hierarchy (an edition
         # under its book, an issue under its periodical) — a book "edition"

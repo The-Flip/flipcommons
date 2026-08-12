@@ -30,12 +30,12 @@ metadata for a pasted URL/ISBN from an external API to prefill a create form
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from ninja import Field, Schema
 from pydantic import ConfigDict, field_validator, model_validator
 
-from apps.citation.citation_types import citation_type_spec
+from apps.citation.citation_types import CitationSourceTypeValue, citation_type_spec
 
 from .models import (
     CITATION_SOURCE_AUTHOR_MAX_LENGTH,
@@ -211,8 +211,11 @@ class CitationSourceCreateSchema(Schema):
 
     This endpoint creates plain authored sources only. Web roots/children are
     minted by ``cite-url``/``pages/`` and scheme children by ``records/``, so
-    ``source_type`` excludes ``web`` and no ``url``/``identifier``/link fields
-    are accepted; ``extra='forbid'`` turns a stray one into a loud 422. A
+    no ``url``/``identifier``/link fields are accepted; ``extra='forbid'``
+    turns a stray one into a loud 422. ``source_type`` accepts every
+    registered type — which types may actually be authored is the endpoint's
+    business, enforced per the type's spec (``authored_root_creation``,
+    ``flat_hierarchy``) so the schema never carries a hand-kept roster. A
     ``video`` create is a **movie** — a parentless-citable work — and is
     root-only (the endpoint 422s a video ``parent_id``: a flat-hierarchy
     type's children mint from URLs/identifiers, never by hand).
@@ -221,8 +224,8 @@ class CitationSourceCreateSchema(Schema):
     model_config = ConfigDict(extra="forbid")
 
     name: NameStr = Field(description="The source's display name.")
-    source_type: Literal["book", "periodical", "video"] = Field(
-        description='Kind of source: "book", "periodical", or "video" (a movie).'
+    source_type: CitationSourceTypeValue = Field(
+        description="The source's citation type."
     )
     author: AuthorStr = Field("", description="Author or creator.")
     publisher: PublisherStr = Field("", description="Publisher.")

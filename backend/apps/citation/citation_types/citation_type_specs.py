@@ -152,6 +152,12 @@ class CitationTypeSpec:
       plural, lowercase: a book's "editions", a periodical's "issues", a
       site's "pages". Display vocabulary only, never branched on; exported to
       the frontend meta so copy never hardcodes a type's noun.
+    - ``authored_root_creation``: whether a parentless source of this type may
+      be created through the authored-create path (the create form and
+      ``create_citation_source``). Off for a type whose roots are minted
+      elsewhere — a web site root is described from a pasted URL. The narrow
+      question only: it says nothing about child creation or about roots
+      arriving from patches.
     - ``locator``: the type's locator contract (grammar, prompt, structured
       value bridge).
     - ``scheme_spec_type``: the spec class this type's schemes implement — the
@@ -170,5 +176,6 @@ class CitationTypeSpec:
     child_skips_locator: bool
     slug_addressed: bool
     child_noun_plural: str
+    authored_root_creation: bool
     locator: LocatorContract = FREEFORM_LOCATOR
     scheme_spec_type: type[SchemeSpec] = SchemeSpec
