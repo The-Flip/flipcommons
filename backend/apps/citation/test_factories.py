@@ -32,7 +32,7 @@ from apps.citation.models import (
     CitationSourceRootDomain,
 )
 
-# CitationSourceTypeValue is the canonical wire Literal (citation_types);
+# CitationSourceTypeValue is the internal source-type Literal (citation_types);
 # LinkTypeValue mirrors the model choices, so a bad link type fails at type-check.
 # Constraint tests that need an invalid value build the model directly.
 # ``identifier_key`` values are discovered plugin keys, so the factory validates
