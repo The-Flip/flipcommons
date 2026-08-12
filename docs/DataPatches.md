@@ -526,7 +526,7 @@ sources:
 claims: []
 ```
 
-A `domains:` entry may also carry a **path**, declaring a path-scoped slice of a **shared multi-tenant CDN host** — the shape for a maker whose documents live only on a host like GoDaddy's `img1.wsimg.com`, where the path segment names the tenant. The path is meaningful: the entry registers the exact `(host, path prefix)` pair, and URLs resolve to the root only when their path sits under the prefix at a segment boundary. Registering such a host **bare is rejected** (it would attribute every tenant's files to one maker), and a path prefix on an ordinary host is rejected too — path scoping exists only for the declared shared hosts (`apps/citation/shared_hosts.py`). Prefixes are case-sensitive and stored verbatim:
+A `domains:` entry may also carry a **path**, declaring a path-scoped slice of a **shared multi-tenant CDN host** — the shape for a manufacturer whose documents live only on a host like GoDaddy's `img1.wsimg.com`, where the path segment names the tenant. The path is meaningful: the entry registers the exact `(host, path prefix)` pair, and URLs resolve to the root only when their path sits under the prefix at a segment boundary. Registering such a host **bare is rejected** (it would attribute every tenant's files to one manufacturer), and a path prefix on an ordinary host is rejected too — path scoping exists only for the declared shared hosts (`apps/citation/shared_hosts.py`). Prefixes are case-sensitive and stored verbatim:
 
 ```yaml
 sources:
