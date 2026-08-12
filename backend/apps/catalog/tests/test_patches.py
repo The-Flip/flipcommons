@@ -2599,6 +2599,28 @@ def test_sources_same_patch_parent_of_wrong_type_rejected():
     assert not CitationSource.objects.filter(slug="wpc-95-schematic-manual").exists()
 
 
+def test_sources_same_patch_cross_type_root_slug_collision_rejected():
+    """Two same-block roots may not share a slug across types — root slugs are
+    globally unique, so at apply the first would create and the second (plus
+    every child under it) would warn-and-skip. The committed-state twin of
+    this check lives in validate_source_node; this one is cross-node, so only
+    the planner can see it.
+    """
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Williams Monthly\n"
+        "    source_type: periodical\n"
+        "    slug: williams\n"
+        "  - name: Williams\n"
+        "    source_type: document\n"
+        "    slug: williams\n"
+    )
+    with pytest.raises(PatchError, match="unique across types"):
+        _apply(text, patch_id="0001-dup-root-slug")
+    assert not CitationSource.objects.filter(slug="williams").exists()
+
+
 def test_sources_duplicate_declared_link_url_rejected():
     text = (
         "attribution: flipcommons-catalog\n"

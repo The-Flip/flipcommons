@@ -904,6 +904,20 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
         for node in sources
         if "slug" in node and "parent" not in node
     )
+    # Root slugs are globally unique, so two same-block roots sharing a slug
+    # across types would create the first and warn-skip the second (and every
+    # child under it) at apply. Cross-node, so only the planner can see it —
+    # the committed-state twin lives in validate_source_node.
+    types_per_slug: dict[str, set[str]] = defaultdict(set)
+    for root in declared_roots:
+        types_per_slug[root.slug].add(root.source_type)
+    for slug, source_types in sorted(types_per_slug.items()):
+        if len(source_types) > 1:
+            raise PatchError(
+                f"sources: root slug {slug!r} is declared as more than one "
+                f"type ({', '.join(sorted(source_types))}) — root slugs are "
+                f"unique across types"
+            )
     for i, node in enumerate(sources):
         try:
             validate_source_node(node, declared_roots=declared_roots)
