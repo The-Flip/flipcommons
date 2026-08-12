@@ -289,6 +289,7 @@ def search_citation_sources(
         | Q(author__icontains=q)
         | Q(publisher__icontains=q)
         | Q(isbn__icontains=q)
+        | Q(slug__icontains=q)
         | Q(links__url__icontains=q)
     )
     # For ISBN-shaped input, also do exact match on normalized ISBN.

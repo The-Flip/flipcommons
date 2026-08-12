@@ -84,6 +84,23 @@ class TestSearchCitationSources:
         assert resp.status_code == 200
         assert len(resp.json()["results"]) == 1
 
+    def test_search_by_slug(self, client, user):
+        """The slug is a slug-addressed source's primary handle (a patent's
+        number, an issue's date), so typing it must find the row even when
+        the display name spells it differently ("US 4,373,731")."""
+        client.force_login(user)
+        root = make_citation_source(name="USPTO", source_type="document", slug="uspto")
+        make_citation_source(
+            name="US 4,373,731 [Ball rolling game]",
+            source_type="document",
+            parent=root,
+            slug="us4373731",
+        )
+        resp = client.get("/api/citation-sources/search/?q=us4373731")
+        assert resp.status_code == 200
+        results = resp.json()["results"]
+        assert [r["slug"] for r in results] == ["us4373731"]
+
     def test_search_by_linked_url(
         self, client, user, citation_source, citation_source_link
     ):
@@ -498,6 +515,48 @@ class TestCreateCitationSource:
         assert resp.status_code == 422
         assert "created standalone" in resp.json()["detail"]
         assert not CitationSource.objects.filter(parent=root).exists()
+
+    def test_document_root_create_rejected(self, client, user):
+        """A parentless document is a publisher container (Williams, USPTO) —
+        roots arrive from patches, so authoring one here would mint an
+        abstract namespace wearing a work's name."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "Tales of the Arabian Nights Operations Manual",
+                "source_type": "document",
+                "slug": "tales-of-the-arabian-nights-operations-manual",
+            },
+        )
+        assert resp.status_code == 422
+        assert "isn't created here" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(source_type="document").exists()
+
+    def test_document_child_created_under_publisher_root(self, client, user):
+        """Adding a document under an existing publisher root is the ordinary
+        authored-child flow, exactly like a periodical issue."""
+        client.force_login(user)
+        root = make_citation_source(
+            name="Williams", source_type="document", slug="williams"
+        )
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "WPC-95 Schematic Manual",
+                "source_type": "document",
+                "parent_id": root.pk,
+                "slug": "wpc-95-schematic-manual",
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["source_type"] == "document"
+        assert data["slug"] == "wpc-95-schematic-manual"
+        created = CitationSource.objects.get(pk=data["id"])
+        assert created.parent_id == root.pk
 
     def test_cross_type_authored_child_rejected(self, client, user):
         # Authored children extend their own work's hierarchy (an edition

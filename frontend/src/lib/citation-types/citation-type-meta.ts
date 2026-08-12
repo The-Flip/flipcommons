@@ -2,7 +2,7 @@
 // Do not edit manually.
 
 /** The registered citation-type keys (`CitationSource.source_type` values). */
-export type CitationTypeKey = 'book' | 'periodical' | 'video' | 'web';
+export type CitationTypeKey = 'book' | 'document' | 'periodical' | 'video' | 'web';
 
 /** Declarative per-type facts, exported from the backend registry.
  * `locatorKind` is the frontend input behavior: `freeform` is a plain
@@ -47,6 +47,20 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     slugAddressed: false,
     childNounPlural: 'editions',
     authoredRootCreation: true,
+  },
+  document: {
+    key: 'document',
+    label: 'Document',
+    locatorKind: 'freeform',
+    locatorLabel: 'Location in source',
+    locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
+    locatorHelp: 'e.g. p. 42, Chapter 3, a timestamp',
+    locatorDisplayPrefix: '',
+    locatorInvalidMessage: '',
+    childSkipsLocator: false,
+    slugAddressed: true,
+    childNounPlural: 'documents',
+    authoredRootCreation: false,
   },
   periodical: {
     key: 'periodical',

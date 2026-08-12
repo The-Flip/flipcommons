@@ -39,6 +39,7 @@ class SourceType(models.TextChoices):
     PERIODICAL = "periodical", "Periodical"
     WEB = "web", "Web"
     VIDEO = "video", "Video"
+    DOCUMENT = "document", "Document"
 
 
 # The Literal twin of ``SourceType``, for **internal** Python contracts
@@ -47,7 +48,7 @@ class SourceType(models.TextChoices):
 # ``docs/Python.md`` so internal renames never surface as schema diffs. A
 # Literal can't be derived from the enum, so the import-time assertion below
 # keeps the hand-mirrored list honest.
-CitationSourceTypeValue = Literal["book", "periodical", "web", "video"]
+CitationSourceTypeValue = Literal["book", "periodical", "web", "video", "document"]
 
 
 def _assert_citation_source_type_literal_current() -> None:
