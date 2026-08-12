@@ -488,6 +488,18 @@ class TestCreateCitationSource:
         assert "created standalone" in resp.json()["detail"]
         assert not CitationSource.objects.filter(parent=root).exists()
 
+    def test_unknown_source_type_rejected(self, client, user):
+        """The schema field is a bare wire string, so the membership check is
+        a validator — an unknown type must 422 there, not 500 in the endpoint."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "A Podcast", "source_type": "podcast"},
+        )
+        assert resp.status_code == 422
+        assert not CitationSource.objects.filter(name="A Podcast").exists()
+
     def test_web_root_create_rejected(self, client, user):
         """A web site root is described from its pasted URL (cite-url), never
         authored here — the type declares authored_root_creation off, and the

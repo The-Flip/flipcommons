@@ -35,7 +35,7 @@ from typing import Annotated
 from ninja import Field, Schema
 from pydantic import ConfigDict, field_validator, model_validator
 
-from apps.citation.citation_types import CitationSourceTypeValue, citation_type_spec
+from apps.citation.citation_types import SourceType, citation_type_spec
 
 from .models import (
     CITATION_SOURCE_AUTHOR_MAX_LENGTH,
@@ -224,9 +224,10 @@ class CitationSourceCreateSchema(Schema):
     model_config = ConfigDict(extra="forbid")
 
     name: NameStr = Field(description="The source's display name.")
-    source_type: CitationSourceTypeValue = Field(
-        description="The source's citation type."
-    )
+    # Bare ``str``, not ``CitationSourceTypeValue`` — wire scalars stay
+    # untyped per that Literal's own contract (internal use only), so the
+    # validator below carries the membership check instead.
+    source_type: str = Field(description="The source's citation type.")
     author: AuthorStr = Field("", description="Author or creator.")
     publisher: PublisherStr = Field("", description="Publisher.")
     year: int | None = Field(None, description="Publication year.")
@@ -253,6 +254,20 @@ class CitationSourceCreateSchema(Schema):
             "otherwise."
         ),
     )
+
+    @field_validator("source_type")
+    @classmethod
+    def source_type_is_registered(cls, v: str) -> str:
+        """Membership in the registered type set, as a clean 422.
+
+        Without this, an unknown value would reach ``citation_type_spec`` in
+        the endpoint and surface as a 500.
+        """
+        if v not in SourceType.values:
+            raise ValueError(
+                f"source_type must be one of {', '.join(SourceType.values)}"
+            )
+        return v
 
     @field_validator("isbn", mode="before")
     @classmethod
