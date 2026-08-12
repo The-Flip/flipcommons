@@ -148,6 +148,10 @@ class CitationTypeSpec:
       exists (a book's ISBN, a site's recognition domain, a scheme's key), so
       only a type with no natural identifier turns this on. Slugs are authored,
       never minted: a cite of an undeclared slug fails, exactly like ``isbn:``.
+    - ``child_noun_plural``: what this type's children are called in UI copy —
+      plural, lowercase: a book's "editions", a periodical's "issues", a
+      site's "pages". Display vocabulary only, never branched on; exported to
+      the frontend meta so copy never hardcodes a type's noun.
     - ``locator``: the type's locator contract (grammar, prompt, structured
       value bridge).
     - ``scheme_spec_type``: the spec class this type's schemes implement — the
@@ -165,5 +169,6 @@ class CitationTypeSpec:
     schemeless_parentless_abstract: bool
     child_skips_locator: bool
     slug_addressed: bool
+    child_noun_plural: str
     locator: LocatorContract = FREEFORM_LOCATOR
     scheme_spec_type: type[SchemeSpec] = SchemeSpec

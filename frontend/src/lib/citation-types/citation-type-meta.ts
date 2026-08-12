@@ -12,7 +12,9 @@ export type CitationTypeKey = 'book' | 'periodical' | 'video' | 'web';
  * `locatorDisplayPrefix` prefixes the locator on the read side
  * (tooltip, references) — e.g. video's `starting at` prefix.
  * `slugAddressed` marks types addressed by an authored kebab slug
- * (periodical issues) — the create UI shows a slug field for these. */
+ * (periodical issues) — the create UI shows a slug field for these.
+ * `childNounPlural` is what the type's children are called in UI
+ * copy (a periodical's 'issues') — display vocabulary only. */
 export interface CitationTypeMeta {
   key: CitationTypeKey;
   label: string;
@@ -24,6 +26,7 @@ export interface CitationTypeMeta {
   locatorInvalidMessage: string;
   childSkipsLocator: boolean;
   slugAddressed: boolean;
+  childNounPlural: string;
 }
 
 export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
@@ -38,6 +41,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorInvalidMessage: '',
     childSkipsLocator: false,
     slugAddressed: false,
+    childNounPlural: 'editions',
   },
   periodical: {
     key: 'periodical',
@@ -50,6 +54,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorInvalidMessage: '',
     childSkipsLocator: false,
     slugAddressed: true,
+    childNounPlural: 'issues',
   },
   video: {
     key: 'video',
@@ -63,6 +68,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
       'Enter a start time like 1:02:03, 95, or 1h2m3s (where to start watching).',
     childSkipsLocator: false,
     slugAddressed: false,
+    childNounPlural: 'videos',
   },
   web: {
     key: 'web',
@@ -75,5 +81,6 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorInvalidMessage: '',
     childSkipsLocator: true,
     slugAddressed: false,
+    childNounPlural: 'pages',
   },
 };

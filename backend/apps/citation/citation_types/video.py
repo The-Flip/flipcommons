@@ -150,6 +150,7 @@ VIDEO = CitationTypeSpec(
     schemeless_parentless_abstract=False,
     child_skips_locator=False,
     slug_addressed=False,
+    child_noun_plural="videos",
     locator=LocatorContract(
         kind="timestamp",
         placeholder="e.g. 1:02:03",
