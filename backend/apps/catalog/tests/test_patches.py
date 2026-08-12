@@ -2574,6 +2574,31 @@ def test_sources_semantic_invalidity_rejected(node_body, match):
         _apply(_bad_source(node_body), patch_id="0001-bad-src")
 
 
+def test_sources_same_patch_parent_of_wrong_type_rejected():
+    """A ``parent:`` may resolve against this patch's own declared roots — but
+    only a root of the child's own type, matching the committed-state branch.
+
+    Regression: the declared-root set once held bare slugs, so a document
+    child naming a same-patch *periodical* root validated clean and then
+    vanished at apply ("skipped the node (no writes)") — a silent skip the
+    author had no way to notice.
+    """
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Williams Monthly\n"
+        "    source_type: periodical\n"
+        "    slug: williams\n"
+        "  - name: WPC-95 Schematic Manual\n"
+        "    source_type: document\n"
+        "    slug: wpc-95-schematic-manual\n"
+        "    parent: williams\n"
+    )
+    with pytest.raises(PatchError, match="neither an existing document root"):
+        _apply(text, patch_id="0001-cross-type-parent")
+    assert not CitationSource.objects.filter(slug="wpc-95-schematic-manual").exists()
+
+
 def test_sources_duplicate_declared_link_url_rejected():
     text = (
         "attribution: flipcommons-catalog\n"
