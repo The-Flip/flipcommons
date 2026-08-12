@@ -73,7 +73,10 @@
   }
 
   // -----------------------------------------------------------------------
-  // Fetch all children on mount (for initial display)
+  // Fetch the initial page of children on mount (for initial display).
+  // Bounded server-side: a periodical has ~20 issues but a document
+  // publisher root has ~1,000 documents, so the stage never pulls the
+  // detail payload's unbounded child list.
   // -----------------------------------------------------------------------
 
   $effect(() => {
@@ -94,7 +97,7 @@
   async function fetchChildren() {
     loading = true;
     loadError = false;
-    const { data, error } = await client.GET('/api/citation-sources/{source_id}/', {
+    const { data, error } = await client.GET('/api/citation-sources/{source_id}/children/', {
       params: { path: { source_id: parentContext.id } },
     });
     if (error || !data) {
@@ -102,13 +105,8 @@
       loadError = true;
       return;
     }
-    // Sort newest-first by year (nulls at end)
-    allChildren = [...(data.children as ChildSource[])].sort((a, b) => {
-      if (a.year == null && b.year == null) return 0;
-      if (a.year == null) return 1;
-      if (b.year == null) return -1;
-      return b.year - a.year;
-    });
+    // Already newest-first (year desc, undated last) from the endpoint.
+    allChildren = data as ChildSource[];
     children = allChildren;
     loading = false;
   }

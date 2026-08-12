@@ -1336,15 +1336,68 @@ class TestListChildren:
         resp = client.get(f"/api/citation-sources/{citation_source.pk}/children/")
         assert resp.status_code in (401, 403)
 
-    def test_empty_q_returns_empty_list(self, client, user, db):
-        parent = make_citation_source(
-            name="Internet Pinball Database", source_type="web"
+    def test_empty_q_returns_newest_first_page(self, client, user, db):
+        """No query = the stage's initial display: newest first, undated last."""
+        parent = make_citation_source(name="Billboard", source_type="periodical")
+        make_citation_source(
+            name="Undated Issue", source_type="periodical", parent=parent
         )
-        make_citation_source(name="IPDB Machine 1000", source_type="web", parent=parent)
+        make_citation_source(
+            name="1945 Issue", source_type="periodical", parent=parent, year=1945
+        )
+        make_citation_source(
+            name="1972 Issue", source_type="periodical", parent=parent, year=1972
+        )
         client.force_login(user)
         resp = client.get(f"/api/citation-sources/{parent.pk}/children/?q=")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert [r["name"] for r in resp.json()] == [
+            "1972 Issue",
+            "1945 Issue",
+            "Undated Issue",
+        ]
+
+    def test_children_are_capped_even_without_a_query(self, client, user, db):
+        """The cap is the point: a document publisher root holds ~1,000
+        children, and the initial display must not pull them all."""
+        parent = make_citation_source(
+            name="Williams", source_type="document", slug="williams"
+        )
+        for i in range(25):
+            make_citation_source(
+                name=f"Manual {i:02d}",
+                source_type="document",
+                parent=parent,
+                slug=f"manual-{i:02d}",
+            )
+        client.force_login(user)
+        resp = client.get(f"/api/citation-sources/{parent.pk}/children/?q=")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 20
+
+    def test_filter_by_child_slug(self, client, user, db):
+        """A document's slug is its primary handle (a patent number), so the
+        in-root filter must match it even when the name spells it differently."""
+        parent = make_citation_source(
+            name="USPTO", source_type="document", slug="uspto"
+        )
+        match = make_citation_source(
+            name="US 4,373,731 [Ball rolling game]",
+            source_type="document",
+            parent=parent,
+            slug="us4373731",
+        )
+        make_citation_source(
+            name="US 4,822,047",
+            source_type="document",
+            parent=parent,
+            slug="us4822047",
+        )
+        client.force_login(user)
+        resp = client.get(f"/api/citation-sources/{parent.pk}/children/?q=us4373731")
+        assert resp.status_code == 200
+        results = resp.json()
+        assert [r["id"] for r in results] == [match.pk]
 
     def test_filter_by_child_name(self, client, user, db):
         parent = make_citation_source(
