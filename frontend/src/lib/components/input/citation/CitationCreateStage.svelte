@@ -3,14 +3,12 @@
   import client from '$lib/api/client';
   import type { ParentContext, CreateSeed } from './citation-types';
   import { citationTypeMeta } from '$lib/citation-types';
-  import { CITATION_TYPE_META } from '$lib/citation-types/citation-type-meta';
+  import { CITATION_TYPE_META, type CitationTypeKey } from '$lib/citation-types/citation-type-meta';
   import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
   import { reconcileSlug, slugifyForCatalog } from '$lib/create-form';
-
-  type SourceType = 'book' | 'periodical' | 'video';
 
   /** The types the picker offers: exactly those whose roots are authored here.
    *  Web is absent because its flag is off — sites are created by pasting a
@@ -60,13 +58,13 @@
   // from the backend's suggested_source_type ("cite the movie itself" →
   // video preselected); the picker stays visible so the user can override.
   // svelte-ignore state_referenced_locally
-  let sourceType = $state<SourceType>(
+  let sourceType = $state<CitationTypeKey>(
     draft
-      ? (draft.source_type as SourceType)
+      ? (draft.source_type as CitationTypeKey)
       : parentContext
-        ? (parentContext.source_type as SourceType)
+        ? (parentContext.source_type as CitationTypeKey)
         : seed.kind === 'name' && seed.sourceType
-          ? (seed.sourceType as SourceType)
+          ? (seed.sourceType as CitationTypeKey)
           : 'book',
   );
   // svelte-ignore state_referenced_locally
@@ -186,7 +184,7 @@
           class:selected={sourceType === t}
           onpointerdown={(e) => {
             e.preventDefault();
-            sourceType = t as SourceType;
+            sourceType = t;
           }}
         >
           {citationTypeMeta(t).label}

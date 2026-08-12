@@ -321,7 +321,7 @@ def search_citation_sources(
 def create_citation_source(
     request: HttpRequest, data: CitationSourceCreateSchema
 ) -> Status[CitationSourceDetailSchema]:
-    """Create an authored root (book/periodical/movie) or a linkless child.
+    """Create an authored root or a linkless child.
 
     This endpoint owns neither URLs nor links: web roots/children are minted by
     ``cite-url``/``pages/`` and scheme children by ``records/``. It creates a
