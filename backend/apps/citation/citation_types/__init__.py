@@ -4,9 +4,9 @@ The package root is the plugin systems' public surface. Two plugin axes live
 here, each with its own author module and its own framework module, meeting
 only at the registry's composition weaves:
 
-- **Citation types** (book, periodical, web, video — first-party, allowed real
-  programming): authors declare in ``citation_type_specs`` and write their
-  grammar code in their type module; the framework runs it via
+- **Citation types** (book, periodical, web, video, document — first-party,
+  allowed real programming): authors declare in ``citation_type_specs`` and
+  write their grammar code in their type module; the framework runs it via
   ``citation_type_driver``.
 - **Citation schemes** (ipdb, youtube, … — third-party, pure configuration):
   authors declare in ``citation_scheme_specs`` and nothing else; the
