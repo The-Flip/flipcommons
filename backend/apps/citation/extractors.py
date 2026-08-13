@@ -701,14 +701,15 @@ def get_isbn_source(isbn: str) -> CitationSource:
 
 
 def get_slug_source(root_slug: str, child_slug: str) -> CitationSource:
-    """Resolve a slug-addressed child (a periodical issue) — never minting one.
+    """Resolve a slug-addressed child (a periodical issue, a publisher's
+    document) — never minting one.
 
     The authored-slug sibling of :func:`get_isbn_source`, for the ingestion
     path that cites a declared child of a slug-addressed root
-    (``billboard:1945-09-29``). An issue is an editorial record — its date,
-    name and place under its periodical are facts someone declares — so an
-    undeclared pair raises ``CitationSource.DoesNotExist`` instead of minting
-    a nameless row. The message names the known scheme keys because a typo'd
+    (``billboard:1945-09-29``, ``williams:wpc-95-schematic-manual``). The
+    child is an editorial record — its date, name and place under its root
+    are facts someone declares — so an undeclared pair raises
+    ``CitationSource.DoesNotExist`` instead of minting a nameless row. The message names the known scheme keys because a typo'd
     scheme cite (``ipddb:4443``) parses as this form and lands here — the
     did-you-mean for that mistake.
 
@@ -725,9 +726,9 @@ def get_slug_source(root_slug: str, child_slug: str) -> CitationSource:
         known = ", ".join(sorted(known_scheme_keys()))
         raise CitationSource.DoesNotExist(
             f"No citation source child {root_slug}:{child_slug} exists; declare "
-            f"the issue in a sources: block (or an earlier patch) before citing "
-            f"it. (If you meant a scheme record, the known schemes are: "
-            f"{known}.)"
+            f"the child (a periodical issue, a publisher's document) in a "
+            f"sources: block (or an earlier patch) before citing it. (If you "
+            f"meant a scheme record, the known schemes are: {known}.)"
         )
     if source.children.exists():
         raise ValueError(

@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final, NamedTuple
 
-from apps.citation.citation_types import book, periodical, video, web
+from apps.citation.citation_types import book, document, periodical, video, web
 from apps.citation.citation_types import schemes as scheme_package
 from apps.citation.citation_types.citation_scheme_driver import (
     SchemeDriver,
@@ -35,6 +35,7 @@ _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
     periodical.PERIODICAL,
     web.WEB,
     video.VIDEO,
+    document.DOCUMENT,
 )
 
 _SCHEME_EXPORT: Final = "SCHEME"

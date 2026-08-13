@@ -15,6 +15,7 @@ from apps.citation.models import CitationSource, CitationSourceRootDomain
 from apps.citation.source_node import SourceLinkNode
 from apps.citation.source_upsert import (
     DeclaredDomain,
+    DeclaredRoot,
     _declared_domains,
     _declared_homepage_hosts,
     _declared_recognition_hosts,
@@ -711,7 +712,7 @@ class TestSlugAddressedValidation:
     def test_reserved_handle_fine_on_a_child(self):
         validate_source_node(
             _mag("The ISBN Issue", "isbn", parent="a-periodical"),
-            declared_root_slugs={"a-periodical"},
+            declared_roots={DeclaredRoot("periodical", "a-periodical")},
         )  # does not raise
 
     def test_unresolvable_parent_rejected(self):
@@ -721,7 +722,7 @@ class TestSlugAddressedValidation:
     def test_parent_resolves_via_declared_block(self):
         validate_source_node(
             _mag("Sep 1945", "1945-09", parent="billboard"),
-            declared_root_slugs={"billboard"},
+            declared_roots={DeclaredRoot("periodical", "billboard")},
         )  # does not raise
 
     def test_parent_resolves_via_committed_state(self):
@@ -732,11 +733,55 @@ class TestSlugAddressedValidation:
             _mag("Sep 1945", "1945-09", parent="billboard")
         )  # does not raise
 
+    def test_same_patch_parent_of_wrong_type_rejected(self):
+        # The same-patch branch filters (source_type, slug) exactly as the
+        # committed-state branch does — a document child cannot resolve its
+        # parent to a same-patch periodical root.
+        with pytest.raises(ValidationError, match="neither an existing"):
+            validate_source_node(
+                {
+                    "name": "A Manual",
+                    "source_type": "document",
+                    "slug": "a-manual",
+                    "parent": "williams",
+                },
+                declared_roots={DeclaredRoot("periodical", "williams")},
+            )
+
+    def test_committed_parent_of_wrong_type_rejected(self):
+        make_citation_source(
+            name="Billboard", source_type="periodical", slug="billboard"
+        )
+        with pytest.raises(ValidationError, match="neither an existing"):
+            validate_source_node(
+                {
+                    "name": "A Manual",
+                    "source_type": "document",
+                    "slug": "a-manual",
+                    "parent": "billboard",
+                }
+            )
+
+    def test_root_slug_colliding_with_another_types_root_rejected(self):
+        # Root slugs are globally unique, so a document root re-using a
+        # periodical root's slug could only mis-adopt it at apply.
+        make_citation_source(
+            name="Billboard", source_type="periodical", slug="billboard"
+        )
+        with pytest.raises(ValidationError, match="unique across types"):
+            validate_source_node(
+                {
+                    "name": "Billboard Docs",
+                    "source_type": "document",
+                    "slug": "billboard",
+                }
+            )
+
     def test_domains_on_a_child_rejected(self):
         with pytest.raises(ValidationError, match="roots only"):
             validate_source_node(
                 _mag("Sep 1945", "1945-09", parent="billboard", domains=["a.test"]),
-                declared_root_slugs={"billboard"},
+                declared_roots={DeclaredRoot("periodical", "billboard")},
             )
 
     def test_overlong_slug_rejected_at_read_phase(self):
@@ -750,7 +795,7 @@ class TestSlugAddressedValidation:
         with pytest.raises(ValidationError, match="200"):
             validate_source_node(
                 _mag("Sep 1945", "1945-09", parent="a" * 201),
-                declared_root_slugs={"a" * 201},
+                declared_roots={DeclaredRoot("periodical", "a" * 201)},
             )
 
 
@@ -775,6 +820,25 @@ class TestSlugRootUpsert:
         assert not result.source_created
         assert warnings == []
         assert CitationSource.objects.filter(slug="billboard").count() == 1
+
+    def test_wrong_type_slug_collision_warns_and_skips(self, actor):
+        # Read phase rejects this; reaching apply means state changed in
+        # between. The never-fail contract wants a warn-and-skip, not a
+        # mis-adoption (untyped lookup) or an IntegrityError (typed create
+        # under the global root-slug unique).
+        make_citation_source(
+            name="Billboard", source_type="periodical", slug="billboard"
+        )
+        warnings: list[str] = []
+        result = ensure_source(
+            {"name": "Billboard Docs", "source_type": "document", "slug": "billboard"},
+            actor=actor,
+            warnings=warnings,
+        )
+        assert not result.source_created
+        assert any("already addresses" in w for w in warnings)
+        assert CitationSource.objects.filter(slug="billboard").count() == 1
+        assert CitationSource.objects.get(slug="billboard").source_type == "periodical"
 
     def test_slug_is_the_identity_not_the_name(self, actor):
         # A renamed periodical re-declared under its slug is found, not duplicated,

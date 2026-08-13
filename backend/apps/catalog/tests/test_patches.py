@@ -2574,6 +2574,53 @@ def test_sources_semantic_invalidity_rejected(node_body, match):
         _apply(_bad_source(node_body), patch_id="0001-bad-src")
 
 
+def test_sources_same_patch_parent_of_wrong_type_rejected():
+    """A ``parent:`` may resolve against this patch's own declared roots — but
+    only a root of the child's own type, matching the committed-state branch.
+
+    Regression: the declared-root set once held bare slugs, so a document
+    child naming a same-patch *periodical* root validated clean and then
+    vanished at apply ("skipped the node (no writes)") — a silent skip the
+    author had no way to notice.
+    """
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Williams Monthly\n"
+        "    source_type: periodical\n"
+        "    slug: williams\n"
+        "  - name: WPC-95 Schematic Manual\n"
+        "    source_type: document\n"
+        "    slug: wpc-95-schematic-manual\n"
+        "    parent: williams\n"
+    )
+    with pytest.raises(PatchError, match="neither an existing document root"):
+        _apply(text, patch_id="0001-cross-type-parent")
+    assert not CitationSource.objects.filter(slug="wpc-95-schematic-manual").exists()
+
+
+def test_sources_same_patch_cross_type_root_slug_collision_rejected():
+    """Two same-block roots may not share a slug across types — root slugs are
+    globally unique, so at apply the first would create and the second (plus
+    every child under it) would warn-and-skip. The committed-state twin of
+    this check lives in validate_source_node; this one is cross-node, so only
+    the planner can see it.
+    """
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Williams Monthly\n"
+        "    source_type: periodical\n"
+        "    slug: williams\n"
+        "  - name: Williams\n"
+        "    source_type: document\n"
+        "    slug: williams\n"
+    )
+    with pytest.raises(PatchError, match="unique across types"):
+        _apply(text, patch_id="0001-dup-root-slug")
+    assert not CitationSource.objects.filter(slug="williams").exists()
+
+
 def test_sources_duplicate_declared_link_url_rejected():
     text = (
         "attribution: flipcommons-catalog\n"
@@ -4200,6 +4247,52 @@ def test_periodical_issue_declared_and_cited(machine_model):
     assert inst.locator == "p. 83"
 
 
+def test_document_declared_and_cited(machine_model):
+    # The document twin of the billboard headline flow: declare the publisher
+    # root + document, cite the document by slug with a page locator, all in
+    # one patch — the resolver serves both slug-addressed types.
+    text = f"""
+attribution: flipcommons-catalog
+sources:
+  - slug: williams
+    name: Williams
+    source_type: document
+
+  - parent: williams
+    slug: wpc-95-schematic-manual
+    name: Williams WPC-95 Schematic Manual
+    source_type: document
+    links:
+      - {{ url: "https://archive.org/details/wpc95-schematic", link_type: archive }}
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite:
+        - ref: williams:wpc-95-schematic-manual
+          locator: p. 12
+"""
+    report = _apply(text, patch_id="0001-williams-manual")
+    assert report.rejected == 0
+    assert report.sources_created == 2
+    manual = CitationSource.objects.get(slug="wpc-95-schematic-manual")
+    assert manual.parent == CitationSource.objects.get(slug="williams")
+    inst = CitationInstance.objects.get()
+    assert inst.citation_source_id == manual.pk
+    assert inst.locator == "p. 12"
+
+
+def test_cite_of_an_undeclared_document_fails_at_build(machine_model):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite: williams:wpc-95-schematic-manual
+"""
+    with pytest.raises(PatchError, match="declare\\s+the child"):
+        _apply(text, patch_id="0001-undeclared-doc")
+
+
 def test_periodical_sources_redeclare_as_a_noop(machine_model):
     # A later patch re-declaring the same periodical + issue finds both rows —
     # by slug, not name — and creates nothing. (The claim entry is not
@@ -4289,7 +4382,7 @@ claims:
       year: 1990
       cite: billboard:1945-09-29
 """
-    with pytest.raises(PatchError, match="declare\\s+the issue"):
+    with pytest.raises(PatchError, match="declare\\s+the child"):
         _apply(text, patch_id="0001-undeclared")
 
 

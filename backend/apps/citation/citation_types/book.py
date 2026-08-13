@@ -13,4 +13,6 @@ BOOK = CitationTypeSpec(
     schemeless_parentless_abstract=False,
     child_skips_locator=False,
     slug_addressed=False,
+    child_noun_plural="editions",
+    authored_root_creation=True,
 )

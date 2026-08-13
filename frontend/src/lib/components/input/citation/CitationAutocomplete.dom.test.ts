@@ -12,7 +12,6 @@ import {
   IPDB_DETAIL_RESPONSE,
   JJP_SOURCE,
   BOOK_CHILDREN,
-  BOOK_DETAIL_RESPONSE,
   CREATED_SOURCE,
   EXTRACT_ISBN_DRAFT,
   EXTRACT_ISBN_MATCH,
@@ -81,8 +80,8 @@ async function selectSource(source: { name: string }) {
 async function enterBookIdentifyStage(user: ReturnType<typeof userEvent.setup>) {
   mockGET.mockImplementation((url: string) => {
     if (url === '/api/citation-sources/search/') return mockSearchReturning([ABSTRACT_BOOK_SOURCE]);
-    if (url === '/api/citation-sources/{source_id}/')
-      return Promise.resolve({ data: BOOK_DETAIL_RESPONSE });
+    if (url === '/api/citation-sources/{source_id}/children/')
+      return Promise.resolve({ data: BOOK_CHILDREN });
     return Promise.resolve({ data: [] });
   });
 
@@ -414,7 +413,7 @@ describe('CitationAutocomplete (component-level)', () => {
       await user.click(screen.getByRole('button', { name: /continue/i }));
 
       await vi.waitFor(() => {
-        expect(screen.getByPlaceholderText('Filter editions...')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Filter issues...')).toBeInTheDocument();
       });
       expect(screen.queryByRole('textbox', { name: /location in source/i })).toBeNull();
     });

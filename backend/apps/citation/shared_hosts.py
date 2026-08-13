@@ -54,6 +54,11 @@ SHARED_HOSTS: tuple[SharedHostSpec, ...] = (
     SharedHostSpec(label="GoDaddy Website Builder CDN", hosts=("wsimg.com",)),
     SharedHostSpec(label="Shopify CDN", hosts=("cdn.shopify.com",)),
     SharedHostSpec(label="Google Cloud Storage", hosts=("storage.googleapis.com",)),
+    # Not a CDN, but the same recognition shape: every facebook.com URL is a
+    # tenant's page, addressed by path (/<page-slug>), and a maker's own page
+    # is first-party evidence. Declared whole — www./m. variants are label
+    # suffixes of the registrable domain.
+    SharedHostSpec(label="Facebook", hosts=("facebook.com",)),
 )
 
 

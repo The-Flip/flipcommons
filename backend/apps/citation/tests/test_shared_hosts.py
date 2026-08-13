@@ -30,6 +30,10 @@ class TestSharedHostFor:
             ("cdn.shopify.com", "Shopify CDN"),
             ("assets.cdn.shopify.com", "Shopify CDN"),
             ("storage.googleapis.com", "Google Cloud Storage"),
+            # Facebook is declared at its registrable domain: every
+            # facebook.com URL is a tenant page, path-addressed.
+            ("facebook.com", "Facebook"),
+            ("m.facebook.com", "Facebook"),
         ],
     )
     def test_matches(self, host, label):

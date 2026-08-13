@@ -282,8 +282,11 @@ COMMENT ON VIEW claims IS
 -- to `models` and the grain views. The live-only lens `claims` deliberately isn't, and
 -- the shape 90% of analysis wants.
 --
--- The model's slug is `subject_public_id`, inherited from `claims`. Only `model_id` is
--- renamed, because it is the key the model grain views join on.
+-- Two aliases over the inherited subject columns, for the two jobs a key does here:
+-- `model_id` (from `subject_id`) is what the model grain views JOIN on, and `model_slug`
+-- (from `subject_public_id`) is what an analysis EMITS — a data patch addresses
+-- records by slug, and a PK is machine-local. No `model_status` rides along as it does
+-- on the `patch_*` views: this one is live-filtered, so no retired subject to warn about.
 --
 -- The canonical attribution join — which ingest source attributed a gameplay feature:
 --
@@ -301,12 +304,12 @@ COMMENT ON VIEW claims IS
 -- resolved; `rank = 1` names the attribution and the rest are the corroboration (or the
 -- disagreement), which is exactly the question a data patch campaign is asking.
 CREATE OR REPLACE VIEW model_claims AS
-  SELECT c.*, c.subject_id AS model_id
+  SELECT c.*, c.subject_id AS model_id, c.subject_public_id AS model_slug
   FROM claims c
   WHERE c.subject_type = 'catalog.machinemodel'
     AND EXISTS (SELECT 1 FROM models m WHERE m.id = c.subject_id);
 COMMENT ON VIEW model_claims IS
-  'One row per claim about a LIVE machine model, keyed model_id, with the model as subject_public_id/subject_name — the live lens on claims. Join to a model grain view on (model_id, field_name, ref_id) to attribute a resolved fact to its ingest source.';
+  'One row per claim about a LIVE machine model, keyed model_id to join and model_slug to emit, with the model also as subject_public_id/subject_name — the live lens on claims. Join to a model grain view on (model_id, field_name, ref_id) to attribute a resolved fact to its ingest source.';
 
 -- claim_identity_parts — the public projection of the parse above. Defined HERE rather
 -- than beside it so `claims` leads this block in definition order, which is the order

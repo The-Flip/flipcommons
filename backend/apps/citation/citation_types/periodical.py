@@ -15,4 +15,6 @@ PERIODICAL = CitationTypeSpec(
     schemeless_parentless_abstract=True,
     child_skips_locator=False,
     slug_addressed=True,
+    child_noun_plural="issues",
+    authored_root_creation=True,
 )

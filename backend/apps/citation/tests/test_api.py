@@ -84,6 +84,23 @@ class TestSearchCitationSources:
         assert resp.status_code == 200
         assert len(resp.json()["results"]) == 1
 
+    def test_search_by_slug(self, client, user):
+        """The slug is a slug-addressed source's primary handle (a patent's
+        number, an issue's date), so typing it must find the row even when
+        the display name spells it differently ("US 4,373,731")."""
+        client.force_login(user)
+        root = make_citation_source(name="USPTO", source_type="document", slug="uspto")
+        make_citation_source(
+            name="US 4,373,731 [Ball rolling game]",
+            source_type="document",
+            parent=root,
+            slug="us4373731",
+        )
+        resp = client.get("/api/citation-sources/search/?q=us4373731")
+        assert resp.status_code == 200
+        results = resp.json()["results"]
+        assert [r["slug"] for r in results] == ["us4373731"]
+
     def test_search_by_linked_url(
         self, client, user, citation_source, citation_source_link
     ):
@@ -470,6 +487,88 @@ class TestCreateCitationSource:
         assert resp.status_code == 422
         assert "created standalone" in resp.json()["detail"]
         assert not CitationSource.objects.filter(parent=root).exists()
+
+    def test_unknown_source_type_rejected(self, client, user):
+        """The schema field is a bare wire string, so the membership check is
+        a validator — an unknown type must 422 there, not 500 in the endpoint."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "A Podcast", "source_type": "podcast"},
+        )
+        assert resp.status_code == 422
+        assert not CitationSource.objects.filter(name="A Podcast").exists()
+
+    def test_web_root_create_rejected(self, client, user):
+        """A web site root is described from its pasted URL (cite-url), never
+        authored here — the type declares authored_root_creation off, and the
+        guard (not a schema roster) is what refuses it."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Some Site", "source_type": "web"},
+        )
+        assert resp.status_code == 422
+        assert "isn't created here" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(name="Some Site").exists()
+
+    def test_web_child_create_rejected(self, client, user):
+        """A web page under an existing root still can't be authored — web is
+        flat-hierarchy, so its children mint from URLs via cite-url/pages/."""
+        client.force_login(user)
+        root = make_citation_source(name="Example Site", source_type="web")
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Some Page", "source_type": "web", "parent_id": root.pk},
+        )
+        assert resp.status_code == 422
+        assert "created standalone" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(parent=root).exists()
+
+    def test_document_root_create_rejected(self, client, user):
+        """A parentless document is a publisher container (Williams, USPTO) —
+        roots arrive from patches, so authoring one here would mint an
+        abstract namespace wearing a work's name."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "Tales of the Arabian Nights Operations Manual",
+                "source_type": "document",
+                "slug": "tales-of-the-arabian-nights-operations-manual",
+            },
+        )
+        assert resp.status_code == 422
+        assert "isn't created here" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(source_type="document").exists()
+
+    def test_document_child_created_under_publisher_root(self, client, user):
+        """Adding a document under an existing publisher root is the ordinary
+        authored-child flow, exactly like a periodical issue."""
+        client.force_login(user)
+        root = make_citation_source(
+            name="Williams", source_type="document", slug="williams"
+        )
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "WPC-95 Schematic Manual",
+                "source_type": "document",
+                "parent_id": root.pk,
+                "slug": "wpc-95-schematic-manual",
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["source_type"] == "document"
+        assert data["slug"] == "wpc-95-schematic-manual"
+        created = CitationSource.objects.get(pk=data["id"])
+        assert created.parent_id == root.pk
 
     def test_cross_type_authored_child_rejected(self, client, user):
         # Authored children extend their own work's hierarchy (an edition
@@ -1249,15 +1348,68 @@ class TestListChildren:
         resp = client.get(f"/api/citation-sources/{citation_source.pk}/children/")
         assert resp.status_code in (401, 403)
 
-    def test_empty_q_returns_empty_list(self, client, user, db):
-        parent = make_citation_source(
-            name="Internet Pinball Database", source_type="web"
+    def test_empty_q_returns_newest_first_page(self, client, user, db):
+        """No query = the stage's initial display: newest first, undated last."""
+        parent = make_citation_source(name="Billboard", source_type="periodical")
+        make_citation_source(
+            name="Undated Issue", source_type="periodical", parent=parent
         )
-        make_citation_source(name="IPDB Machine 1000", source_type="web", parent=parent)
+        make_citation_source(
+            name="1945 Issue", source_type="periodical", parent=parent, year=1945
+        )
+        make_citation_source(
+            name="1972 Issue", source_type="periodical", parent=parent, year=1972
+        )
         client.force_login(user)
         resp = client.get(f"/api/citation-sources/{parent.pk}/children/?q=")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert [r["name"] for r in resp.json()] == [
+            "1972 Issue",
+            "1945 Issue",
+            "Undated Issue",
+        ]
+
+    def test_children_are_capped_even_without_a_query(self, client, user, db):
+        """The cap is the point: a document publisher root holds ~1,000
+        children, and the initial display must not pull them all."""
+        parent = make_citation_source(
+            name="Williams", source_type="document", slug="williams"
+        )
+        for i in range(25):
+            make_citation_source(
+                name=f"Manual {i:02d}",
+                source_type="document",
+                parent=parent,
+                slug=f"manual-{i:02d}",
+            )
+        client.force_login(user)
+        resp = client.get(f"/api/citation-sources/{parent.pk}/children/?q=")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 20
+
+    def test_filter_by_child_slug(self, client, user, db):
+        """A document's slug is its primary handle (a patent number), so the
+        in-root filter must match it even when the name spells it differently."""
+        parent = make_citation_source(
+            name="USPTO", source_type="document", slug="uspto"
+        )
+        match = make_citation_source(
+            name="US 4,373,731 [Ball rolling game]",
+            source_type="document",
+            parent=parent,
+            slug="us4373731",
+        )
+        make_citation_source(
+            name="US 4,822,047",
+            source_type="document",
+            parent=parent,
+            slug="us4822047",
+        )
+        client.force_login(user)
+        resp = client.get(f"/api/citation-sources/{parent.pk}/children/?q=us4373731")
+        assert resp.status_code == 200
+        results = resp.json()
+        assert [r["id"] for r in results] == [match.pk]
 
     def test_filter_by_child_name(self, client, user, db):
         parent = make_citation_source(

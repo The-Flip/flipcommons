@@ -73,9 +73,19 @@ Three boundaries:
 
 **Reuse before re-derive.** When a footnote states the same fact as an already-verified quote for the same entity and source elsewhere in the patches, reuse that quote verbatim (or widen it) rather than minting a divergent transcription of the same evidence.
 
-### Note only when there's something to explain
+### `note:`
 
-**`note:` is the edit summary — rationale beyond the evidence.** Uncertainty, cleanup comments, merge explanations, disambiguations and paraphrased source facts ("what the source states, in my words, and why the value follows") belong here; a verbatim excerpt does NOT — that's the `quote:`. A cite with a quote usually needs no note at all. Do not write the legacy `<source> says "<quote>"` scaffolding: the citation already names the source and the quote carries the evidence.
+**The changeset `note:` is an optional edit summary**. It's rationale beyond the evidence. Uncertainty, cleanup comments, merge explanations, disambiguations and paraphrased source facts ("what the source states, in my words, and why the value follows") belong here.
+
+**A `cite:` with a `quote:` usually needs no `note:` at all**. Only include a `note:` when there's something to explain beyond the quote. A test: if you can delete the `note:` and the citation still carries the change, delete the `note:`.
+
+**The `note:` should be durable**. It renders publicly on the Edit History page and must read standalone, without reference to other patches or documents or some "user" the reader won't know about in 30 years:
+
+- **Never reference the authoring process or its participants**, such as "ingest", "user approval" / "approved", "as discussed", "per the campaign README", "flagged in review", "confirmed with the operator".
+- **Don't talk about the field's prior values** like "previous value"; the UI shows that. Though you CAN talk about non-obvious prior state like "this entry duplicates xxx; deleting" that contextualizes the change.
+- **Never write a present-tense absence or uniqueness claim** ("the only known…", "documented nowhere else"); those will become false tomorrow.
+- **Never use internal terms or jargon** like "node", "edge", "taxonomy", "namespace". Speak in non-technical general-purpose human.
+- **Don't say you looked** like "corroborating sources were sought and none found". The fact of searching is not evidence. Delete.
 
 ### Cite most entries
 
@@ -229,7 +239,7 @@ A value can be hedged; a record cannot. When the source itself is unsure a machi
 
 ### Single-source facts
 
-Corroborate wherever possible — IPDB first (scheme-citable, quotable), then targeted web research — but a fact citable from only one original-research archive (eremeka, tilt.it) is still assertable: these archives are effectively primary for obscure machines. When corroboration was sought and not found, say so in the `note:` on the create — and phrase it as the **authoring act, not a claim about the world**: "corroborating sources were sought at authoring time and none found" stays true forever, while "no other source documents the firm" is falsified by the first new website that mentions it. The same durability rule applies to any note: never write a present-tense absence or uniqueness claim ("the only known…", "documented nowhere else") when a past-tense search statement carries the same information. Descriptions still aim for two distinct root sources; where corroboration hasn't surfaced, multiple footnotes from the one root beat no description.
+Corroborate wherever possible — IPDB first (scheme-citable, quotable), then targeted web research — but a fact citable from only one original-research archive (eremeka, tilt.it) is still assertable: these archives are effectively primary for obscure machines. Descriptions still aim for two distinct root sources; where corroboration hasn't surfaced, multiple footnotes from the one root beat no description.
 
 ### Titles for one-off machines
 

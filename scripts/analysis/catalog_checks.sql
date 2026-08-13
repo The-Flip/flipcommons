@@ -1057,7 +1057,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
               FROM model_themes mt JOIN theme_vocab tv ON tv.id = mt.theme_id
              WHERE mt.model_id = m.id) AS grain,
            th.themes                   AS list
-    FROM models m LEFT JOIN themes th ON th.id = m.id
+    FROM models m LEFT JOIN themes th ON th.model_id = m.id
   ) WHERE grain IS DISTINCT FROM list
 
   -- model_edges_bidir mirrors exactly the resolved edges and nothing else: one 'out'

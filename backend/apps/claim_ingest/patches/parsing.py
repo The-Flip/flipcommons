@@ -356,8 +356,9 @@ def _parse_source_node(entry: object, where: str) -> SourceNode:
     if "children" in entry:
         raise PatchError(
             f"{where}: nested 'children' is unsupported — nesting is expressed "
-            f"by reference, not structure: declare a periodical issue as its own "
-            f"node with 'parent: <root-slug>', or create web pages via 'cite:'"
+            f"by reference, not structure: declare a slug-addressed child (a "
+            f"periodical issue, a publisher's document) as its own node with "
+            f"'parent: <root-slug>', or create web pages via 'cite:'"
         )
     unknown = set(entry) - ALLOWED_SOURCE_KEYS
     if unknown:
