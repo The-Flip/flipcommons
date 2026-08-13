@@ -83,7 +83,9 @@ Three boundaries:
 
 - **Never reference the authoring process or its participants**, such as "ingest", "user approval" / "approved", "as discussed", "per the campaign README", "flagged in review", "confirmed with the operator".
 - **Don't talk about the field's prior values** like "previous value"; the UI shows that. Though you CAN talk about non-obvious prior state like "this entry duplicates xxx; deleting" that contextualizes the change.
-- **Never write a present-tense absence or uniqueness claim** ("the only known…", "documented nowhere else"); those will become false tomorrow. A past-tense search statement carries the same information"; see [Single-source facts](#single-source-facts).
+- **Never write a present-tense absence or uniqueness claim** ("the only known…", "documented nowhere else"); those will become false tomorrow.
+- **Never use internal terms or jargon** like "node", "edge", "taxonomy", "namespace". Speak in non-technical general-purpose human.
+- **Don't say you looked** like "corroborating sources were sought and none found". The fact of searching is not evidence. Delete.
 
 ### Cite most entries
 
@@ -237,7 +239,7 @@ A value can be hedged; a record cannot. When the source itself is unsure a machi
 
 ### Single-source facts
 
-Corroborate wherever possible — IPDB first (scheme-citable, quotable), then targeted web research — but a fact citable from only one original-research archive (eremeka, tilt.it) is still assertable: these archives are effectively primary for obscure machines. When corroboration was sought and not found, say so in the `note:` on the create — and phrase it as the **authoring act, not a claim about the world**: "corroborating sources were sought at authoring time and none found" stays true forever, while "no other source documents the firm" is falsified by the first new website that mentions it. Descriptions still aim for two distinct root sources; where corroboration hasn't surfaced, multiple footnotes from the one root beat no description.
+Corroborate wherever possible — IPDB first (scheme-citable, quotable), then targeted web research — but a fact citable from only one original-research archive (eremeka, tilt.it) is still assertable: these archives are effectively primary for obscure machines. Descriptions still aim for two distinct root sources; where corroboration hasn't surfaced, multiple footnotes from the one root beat no description.
 
 ### Titles for one-off machines
 
