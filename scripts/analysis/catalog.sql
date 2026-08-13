@@ -140,7 +140,10 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             the slug mangles. production_status is the ProductionStatus FK, NOT the
 --             soft-delete `status`. The subgeneration/subtype dims are mostly NULL today.
 --   variant_of_id / remake_of_id / export_edition_of_id : bare self-FKs to the origin
---             model — `model_lineage` expands them into edge rows.
+--             model. No matching _slug columns, deliberately — resolving the far end is
+--             `model_lineage`'s job (join it on model_id and edge_kind, then read
+--             target_slug), and one facet copied here starts a second target_* block to
+--             keep in step with that one.
 --   source free-text : ipdb_notes, ipdb_notable_features, ipdb_toys,
 --             ipdb_marketing_slogans (prose) and opdb_features (VARCHAR[], empty never
 --             NULL; 'Export edition', 'Cocktail', …) — source fields the product doesn't
@@ -503,25 +506,26 @@ COMMENT ON VIEW corporate_entities IS
   'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts, location and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
--- rewards — sorted reward-type names per model (only models that have any). Keyed by id,
--- so it inherits live/all from whichever model view you join to.
+-- rewards — sorted reward-type names per model (only models that have any). Keyed
+-- model_id; the reward types are live-filtered but the models are not, so it inherits
+-- live/all from whichever model view you join to.
 CREATE OR REPLACE VIEW rewards AS
-  SELECT rt2.machinemodel_id AS id, list_sort(list(rt.name)) AS rewards
+  SELECT rt2.machinemodel_id AS model_id, list_sort(list(rt.name)) AS rewards
   FROM fc.catalog_machinemodel_reward_types rt2
   JOIN fc.catalog_rewardtype rt ON rt.id = rt2.rewardtype_id AND rt.status IS DISTINCT FROM 'deleted'
   GROUP BY rt2.machinemodel_id;
 COMMENT ON VIEW rewards IS
-  'One row per model with any — sorted reward-type NAMES for display, keyed by id. Pure enrichment; carries no ids or slugs.';
+  'One row per model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
--- themes — sorted theme names per model (only models that have any). Keyed by id like
+-- themes — sorted theme names per model (only models that have any). Keyed model_id like
 -- `rewards`, and the canonical home for theme data.
 CREATE OR REPLACE VIEW themes AS
-  SELECT mt.machinemodel_id AS id, list_sort(list(t.name)) AS themes
+  SELECT mt.machinemodel_id AS model_id, list_sort(list(t.name)) AS themes
   FROM fc.catalog_machinemodel_themes mt
   JOIN fc.catalog_theme t ON t.id = mt.theme_id AND t.status IS DISTINCT FROM 'deleted'
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW themes IS
-  'One row per model with any — sorted theme NAMES for display, keyed by id. Use model_themes to predicate on a theme, theme_vocab for questions about the vocabulary itself.';
+  'One row per model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, theme_vocab for questions about the vocabulary itself.';
 
 -- ─── Theme vocabulary ───────────────────────────────────────────────────────
 -- `themes` above is a per-model DISPLAY list of NAMES — right for enrichment, useless for
@@ -599,17 +603,17 @@ CREATE OR REPLACE VIEW theme_vocab AS
 COMMENT ON VIEW theme_vocab IS
   'One row per live theme — the theme VOCABULARY: usage count n, DAG parents/children, aliases. Reach for it when the subject is the themes rather than the models.';
 
--- tags — sorted list of TAG SLUGS per tagged model (only models with any). Keyed by id
+-- tags — sorted list of TAG SLUGS per tagged model (only models with any). Keyed model_id
 -- like rewards/themes. SLUGS, not names: unlike those display lists, tags are the
 -- classification vocabulary you PREDICATE on (`'widebody' IN tags`). NB `conversion_kit`
 -- and re-themes are NOT tags and won't appear here — they're ModelRelationship types.
 CREATE OR REPLACE VIEW tags AS
-  SELECT mt.machinemodel_id AS id, list_sort(list(tg.slug)) AS tags
+  SELECT mt.machinemodel_id AS model_id, list_sort(list(tg.slug)) AS tags
   FROM fc.catalog_machinemodel_tags mt
   JOIN fc.catalog_tag tg ON tg.id = mt.tag_id AND tg.status IS DISTINCT FROM 'deleted'
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW tags IS
-  'One row per tagged model — sorted list of tag SLUGS (the stable key you predicate on), keyed by id. conversion_kit and re-themes are ModelRelationship types, not tags.';
+  'One row per tagged model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
 
 -- tag_vocab — one row per live TAG: the vocabulary behind the `tags` name-list. `tags` is
 -- keyed by MODEL and answers "what is this tagged"; this is keyed by tag and answers "what
@@ -737,7 +741,7 @@ CREATE OR REPLACE VIEW _model_target AS
     m.location_path                     AS target_location_path,
     m.country_slug                      AS target_country_slug
   FROM models m
-  LEFT JOIN rewards rw ON rw.id = m.id;
+  LEFT JOIN rewards rw ON rw.model_id = m.id;
 
 -- ═══ MODEL-TO-MODEL RELATIONSHIPS — start with model_edges ══════════════════
 -- `model_edges` is the DEFAULT — every edge out of a model, lineage + typed, in one
@@ -1060,16 +1064,16 @@ CREATE OR REPLACE VIEW credits AS
 COMMENT ON VIEW credits IS
   'One row per credit (person, role, live subject) — the credit GRAIN, and the definition people/credit_roles count. Subject is a model XOR a series, decoded into subject_type/id/slug/name; model_credits is the model half.';
 
--- model_credits — the model-attached half of `credits`, keyed model_id so it joins
--- straight to `models` and the other model-grain views (the same move `model_claims` is on
--- the provenance side). A handful of credits hang off a Series instead and are reachable
--- only from `credits`, so a total taken here is not a total.
+-- model_credits — the model-attached half of `credits`, keyed model_id to join and
+-- model_slug to emit (the same move `model_claims` is on the provenance side). A handful
+-- of credits hang off a Series instead and are reachable only from `credits`, so a total
+-- taken here is not a total.
 CREATE OR REPLACE VIEW model_credits AS
-  SELECT c.*, c.subject_id AS model_id
+  SELECT c.*, c.subject_id AS model_id, c.subject_slug AS model_slug
   FROM credits c
   WHERE c.subject_type = 'catalog.machinemodel';
 COMMENT ON VIEW model_credits IS
-  'One row per credit on a LIVE machine model, keyed model_id — the model half of credits; Series-attached credits appear only there.';
+  'One row per credit on a LIVE machine model, keyed model_id to join and model_slug to emit — the model half of credits; Series-attached credits appear only there.';
 
 -- credit_roles — the credit-role vocabulary (designer, artist, …) at entity grain with
 -- usage. The role-keyed counterpart to `people`; `credits` is where either goes to say
