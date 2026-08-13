@@ -1,5 +1,7 @@
+<!-- @component Cite-picker stage that finds or creates a child under a known parent source (a periodical's issues, a site's pages). -->
 <script lang="ts">
   import client from '$lib/api/client';
+  import { citationTypeMeta } from '$lib/citation-types';
   import { createDebouncedSearch } from '$lib/components/input/dropdown/search-helpers';
   import {
     createChildByIdentifier,
@@ -46,10 +48,11 @@
   let createError = $state('');
 
   let isWeb = $derived(parentContext.source_type === 'web');
-  let placeholder = $derived(isWeb ? 'Search pages...' : 'Filter editions...');
-  let emptyMessage = $derived(
-    isWeb ? 'No pages yet — type to create one' : 'No editions yet — type to create one',
-  );
+  let childNoun = $derived(citationTypeMeta(parentContext.source_type).childNounPlural);
+  // Web's verb differs because its create flow does too: selecting "create"
+  // hands off to the web page flow rather than filtering locally.
+  let placeholder = $derived(isWeb ? `Search ${childNoun}...` : `Filter ${childNoun}...`);
+  let emptyMessage = $derived(`No ${childNoun} yet — type to create one`);
 
   // For parents with identifier_key, the filter input doubles as identifier
   // entry. When the input doesn't match any existing children, offer a
@@ -70,7 +73,10 @@
   }
 
   // -----------------------------------------------------------------------
-  // Fetch all children on mount (for initial display)
+  // Fetch the initial page of children on mount (for initial display).
+  // Bounded server-side: a periodical has ~20 issues but a document
+  // publisher root has ~1,000 documents, so the stage never pulls the
+  // detail payload's unbounded child list.
   // -----------------------------------------------------------------------
 
   $effect(() => {
@@ -91,7 +97,7 @@
   async function fetchChildren() {
     loading = true;
     loadError = false;
-    const { data, error } = await client.GET('/api/citation-sources/{source_id}/', {
+    const { data, error } = await client.GET('/api/citation-sources/{source_id}/children/', {
       params: { path: { source_id: parentContext.id } },
     });
     if (error || !data) {
@@ -99,13 +105,8 @@
       loadError = true;
       return;
     }
-    // Sort newest-first by year (nulls at end)
-    allChildren = [...(data.children as ChildSource[])].sort((a, b) => {
-      if (a.year == null && b.year == null) return 0;
-      if (a.year == null) return 1;
-      if (b.year == null) return -1;
-      return b.year - a.year;
-    });
+    // Already newest-first (year desc, undated last) from the endpoint.
+    allChildren = data as ChildSource[];
     children = allChildren;
     loading = false;
   }
@@ -268,9 +269,7 @@
   {#if loading}
     <div class="status-msg">Loading…</div>
   {:else if loadError}
-    <div class="status-msg status-error">
-      {isWeb ? 'Failed to load pages.' : 'Failed to load editions.'}
-    </div>
+    <div class="status-msg status-error">Failed to load {childNoun}.</div>
   {:else}
     {#each children as child, i (child.id)}
       <DropdownItem

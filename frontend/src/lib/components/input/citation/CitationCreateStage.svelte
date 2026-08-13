@@ -3,13 +3,19 @@
   import client from '$lib/api/client';
   import type { ParentContext, CreateSeed } from './citation-types';
   import { citationTypeMeta } from '$lib/citation-types';
+  import { CITATION_TYPE_META, type CitationTypeKey } from '$lib/citation-types/citation-type-meta';
   import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
   import { reconcileSlug, slugifyForCatalog } from '$lib/create-form';
 
-  type SourceType = 'book' | 'periodical' | 'video';
+  /** The types the picker offers: exactly those whose roots are authored here.
+   *  Web is absent because its flag is off — sites are created by pasting a
+   *  URL (CitationWebCreateStage), never typed in here. */
+  const rootCreatableTypes = Object.values(CITATION_TYPE_META)
+    .filter((m) => m.authoredRootCreation)
+    .map((m) => m.key);
 
   /** The slug column's limit (CITATION_SOURCE_SLUG_MAX_LENGTH backend-side).
    *  Names run to 500 chars, so an unclamped proposal could exceed what the
@@ -52,13 +58,13 @@
   // from the backend's suggested_source_type ("cite the movie itself" →
   // video preselected); the picker stays visible so the user can override.
   // svelte-ignore state_referenced_locally
-  let sourceType = $state<SourceType>(
+  let sourceType = $state<CitationTypeKey>(
     draft
-      ? (draft.source_type as SourceType)
+      ? (draft.source_type as CitationTypeKey)
       : parentContext
-        ? (parentContext.source_type as SourceType)
+        ? (parentContext.source_type as CitationTypeKey)
         : seed.kind === 'name' && seed.sourceType
-          ? (seed.sourceType as SourceType)
+          ? (seed.sourceType as CitationTypeKey)
           : 'book',
   );
   // svelte-ignore state_referenced_locally
@@ -169,17 +175,16 @@
 >
   {#if showTypePicker}
     <div class="type-chips">
-      <!-- Authored works only — web sources are created by pasting a URL
-           (CitationWebCreateStage), never typed in here. A video here is a
-           movie (a standalone work); platform videos mint from their URLs. -->
-      {#each ['book', 'periodical', 'video'] as t (t)}
+      <!-- A video here is a movie (a standalone work); platform videos mint
+           from their URLs. -->
+      {#each rootCreatableTypes as t (t)}
         <button
           type="button"
           class="type-chip"
           class:selected={sourceType === t}
           onpointerdown={(e) => {
             e.preventDefault();
-            sourceType = t as SourceType;
+            sourceType = t;
           }}
         >
           {citationTypeMeta(t).label}

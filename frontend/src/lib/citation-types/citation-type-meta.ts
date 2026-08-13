@@ -2,7 +2,7 @@
 // Do not edit manually.
 
 /** The registered citation-type keys (`CitationSource.source_type` values). */
-export type CitationTypeKey = 'book' | 'periodical' | 'video' | 'web';
+export type CitationTypeKey = 'book' | 'document' | 'periodical' | 'video' | 'web';
 
 /** Declarative per-type facts, exported from the backend registry.
  * `locatorKind` is the frontend input behavior: `freeform` is a plain
@@ -12,7 +12,12 @@ export type CitationTypeKey = 'book' | 'periodical' | 'video' | 'web';
  * `locatorDisplayPrefix` prefixes the locator on the read side
  * (tooltip, references) — e.g. video's `starting at` prefix.
  * `slugAddressed` marks types addressed by an authored kebab slug
- * (periodical issues) — the create UI shows a slug field for these. */
+ * (periodical issues) — the create UI shows a slug field for these.
+ * `childNounPlural` is what the type's children are called in UI
+ * copy (a periodical's 'issues') — display vocabulary only.
+ * `authoredRootCreation` marks types whose roots may be created
+ * through the authored-create form — the create-stage type picker
+ * offers exactly these. */
 export interface CitationTypeMeta {
   key: CitationTypeKey;
   label: string;
@@ -24,6 +29,8 @@ export interface CitationTypeMeta {
   locatorInvalidMessage: string;
   childSkipsLocator: boolean;
   slugAddressed: boolean;
+  childNounPlural: string;
+  authoredRootCreation: boolean;
 }
 
 export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
@@ -38,6 +45,22 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorInvalidMessage: '',
     childSkipsLocator: false,
     slugAddressed: false,
+    childNounPlural: 'editions',
+    authoredRootCreation: true,
+  },
+  document: {
+    key: 'document',
+    label: 'Document',
+    locatorKind: 'freeform',
+    locatorLabel: 'Location in source',
+    locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
+    locatorHelp: 'e.g. p. 42, Chapter 3, a timestamp',
+    locatorDisplayPrefix: '',
+    locatorInvalidMessage: '',
+    childSkipsLocator: false,
+    slugAddressed: true,
+    childNounPlural: 'documents',
+    authoredRootCreation: false,
   },
   periodical: {
     key: 'periodical',
@@ -50,6 +73,8 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorInvalidMessage: '',
     childSkipsLocator: false,
     slugAddressed: true,
+    childNounPlural: 'issues',
+    authoredRootCreation: true,
   },
   video: {
     key: 'video',
@@ -63,6 +88,8 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
       'Enter a start time like 1:02:03, 95, or 1h2m3s (where to start watching).',
     childSkipsLocator: false,
     slugAddressed: false,
+    childNounPlural: 'videos',
+    authoredRootCreation: true,
   },
   web: {
     key: 'web',
@@ -75,5 +102,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorInvalidMessage: '',
     childSkipsLocator: true,
     slugAddressed: false,
+    childNounPlural: 'pages',
+    authoredRootCreation: false,
   },
 };

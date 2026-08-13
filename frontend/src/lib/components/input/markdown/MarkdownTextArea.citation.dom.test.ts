@@ -8,7 +8,6 @@ import {
   IPDB_SOURCE,
   IPDB_CHILD,
   BOOK_CHILDREN,
-  BOOK_DETAIL_RESPONSE,
 } from '$lib/components/input/citation/citation-fixtures';
 
 vi.mock('$lib/api/link-types', async () => {
@@ -136,8 +135,8 @@ async function enterBookIdentifyStage(
     if (url === '/api/citation-sources/search/') {
       return Promise.resolve({ data: { results: [ABSTRACT_BOOK_SOURCE], recognition: null } });
     }
-    if (url === '/api/citation-sources/{source_id}/') {
-      return Promise.resolve({ data: BOOK_DETAIL_RESPONSE });
+    if (url === '/api/citation-sources/{source_id}/children/') {
+      return Promise.resolve({ data: BOOK_CHILDREN });
     }
     return Promise.resolve({ data: [] });
   });

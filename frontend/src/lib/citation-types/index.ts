@@ -22,6 +22,7 @@ const CITATION_TYPE_FRONTENDS: Record<CitationTypeKey, CitationTypeFrontend> = {
   periodical: freeformType,
   web: freeformType,
   video: videoType,
+  document: freeformType,
 };
 
 function isCitationTypeKey(sourceType: string): sourceType is CitationTypeKey {

@@ -191,6 +191,20 @@ class DeclaredDomain(NamedTuple):
         return f"{self.host}{self.path_prefix}"
 
 
+class DeclaredRoot(NamedTuple):
+    """One parentless slug-addressed node a patch's ``sources:`` block declares.
+
+    A ``parent:`` ref resolves within its own type's namespace — a document
+    child cannot nest under a periodical root — so same-patch resolution
+    carries the pair, exactly as the committed-state branch filters
+    ``(slug, source_type)``. ``source_type`` is the node's raw string: an
+    unregistered value simply never matches.
+    """
+
+    source_type: str
+    slug: str
+
+
 def _declared_homepage_hosts(links: Sequence[SourceLinkNode]) -> list[DeclaredDomain]:
     """Recognition hosts a node declares via its ``homepage`` links, bare.
 
@@ -374,7 +388,7 @@ def _ensure_root_domains(
 
 
 def _validate_slug_addressing(
-    node: SourceNode, declared_root_slugs: Collection[str]
+    node: SourceNode, declared_roots: Collection[DeclaredRoot]
 ) -> None:
     """Read-phase checks for the ``slug``/``parent`` verbs on a source node.
 
@@ -382,13 +396,14 @@ def _validate_slug_addressing(
     ``full_clean`` because the partial-unique validations would reject the
     legitimate re-declare case): ``slug``/``parent`` only on a slug-addressed
     type, and required there; both in the system slug grammar; a root slug clear
-    of the reserved cite handles; and every ``parent:`` resolving to a root of
-    the same type — already in the DB, or declared elsewhere in the same block
-    (``declared_root_slugs``, the caller's parentless-node slugs). The
-    committed-state read is what lets a typo'd parent fail as a clean
-    ``PatchError`` naming the node, before the batch writes anything, instead of
-    skipping at apply. A parented node may not declare recognition ``domains`` —
-    those are root-only.
+    of the reserved cite handles and of other types' root slugs (root slugs are
+    globally unique, so a cross-type collision could only mis-adopt); and every
+    ``parent:`` resolving to a root of the same type — already in the DB, or
+    declared elsewhere in the same block (``declared_roots``, the caller's
+    parentless ``(source_type, slug)`` nodes). The committed-state read is what
+    lets a typo'd parent fail as a clean ``PatchError`` naming the node, before
+    the batch writes anything, instead of skipping at apply. A parented node
+    may not declare recognition ``domains`` — those are root-only.
     """
     from django.core.exceptions import ValidationError
 
@@ -446,7 +461,7 @@ def _validate_slug_addressing(
             )
         if node.get("domains"):
             raise ValidationError({"domains": "recognition domains live on roots only"})
-        if parent_ref not in declared_root_slugs and not (
+        if DeclaredRoot(source_type, parent_ref) not in declared_roots and not (
             CitationSource.objects.roots()
             .filter(slug=parent_ref, source_type=source_type)
             .exists()
@@ -465,10 +480,25 @@ def _validate_slug_addressing(
                 f"citation form (isbn: or a scheme key)"
             }
         )
+    else:
+        clash = (
+            CitationSource.objects.roots()
+            .filter(slug=slug)
+            .exclude(source_type=source_type)
+            .first()
+        )
+        if clash is not None:
+            raise ValidationError(
+                {
+                    "slug": f"root slug {slug!r} already addresses the "
+                    f"{clash.source_type} root {clash.name!r} — root slugs are "
+                    f"unique across types"
+                }
+            )
 
 
 def validate_source_node(
-    node: SourceNode, *, declared_root_slugs: Collection[str] = ()
+    node: SourceNode, *, declared_roots: Collection[DeclaredRoot] = ()
 ) -> None:
     """Field-validate a patch ``sources:`` node in memory (no writes).
 
@@ -485,8 +515,9 @@ def validate_source_node(
     keeps the host guard single-sourced (no forked predicate check). The
     ``slug``/``parent`` verbs are validated by
     :func:`_validate_slug_addressing` (see there for why they sit outside the
-    model ``full_clean``); ``declared_root_slugs`` is the same-block declared
-    parentless slugs a ``parent:`` may resolve against. Raises
+    model ``full_clean``); ``declared_roots`` is the same-block declared
+    parentless ``(source_type, slug)`` set a ``parent:`` may resolve against.
+    Raises
     :class:`django.core.exceptions.ValidationError`; the patch adapter maps it
     to a ``PatchError`` naming the node, before the batch writes anything.
     """
@@ -507,7 +538,7 @@ def validate_source_node(
     source = CitationSource(**_source_fields(node))
     source.full_clean(exclude=[*attribution, "slug"], validate_unique=False)
 
-    _validate_slug_addressing(node, declared_root_slugs)
+    _validate_slug_addressing(node, declared_roots)
 
     seen_urls: set[str] = set()
     for link in node.get("links", []):
@@ -649,17 +680,34 @@ def _ensure_slug_root(
 ) -> SourceUpsertResult:
     """Get-or-create a slug-addressed root, resolved by its authored slug.
 
-    The slug is the identity — the name key never runs, so a renamed periodical
-    re-declared under its slug is found, not duplicated. Recognition-domain
-    handling matches the plain-root path (a periodical may declare a homepage).
+    The slug is the identity **within the node's type** — the name key never
+    runs, so a renamed periodical re-declared under its slug is found, not
+    duplicated. Root slugs are globally unique, so a same-slug root of another
+    type warns and skips the node whole (read phase rejects this; reaching it
+    here means state changed between read and apply) rather than mis-adopting
+    it or crashing on the unique constraint. Recognition-domain handling
+    matches the plain-root path (a periodical may declare a homepage).
     """
     from apps.citation.models import CitationSource
 
     fields = _source_fields(node)
     links = node.get("links", [])
     recognition_domains = _declared_recognition_hosts(node)
-    obj = CitationSource.objects.roots().filter(slug=fields["slug"]).first()
+    obj = (
+        CitationSource.objects.roots()
+        .filter(slug=fields["slug"], source_type=fields["source_type"])
+        .first()
+    )
     if obj is None:
+        clash = CitationSource.objects.roots().filter(slug=fields["slug"]).first()
+        if clash is not None:
+            warnings.append(
+                f"Citation source {fields['name']!r} declares root slug "
+                f"{fields['slug']!r}, which already addresses the "
+                f"{clash.source_type} root {clash.name!r}; skipped the node "
+                f"(no writes)."
+            )
+            return SourceUpsertResult(source_created=False, links_created=0)
         obj = _create_source(fields, actor=actor)
         for link in links:
             _create_link(obj, link, actor=actor)

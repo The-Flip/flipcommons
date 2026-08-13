@@ -618,7 +618,7 @@ containers = ["apps.citation.citation_types"]
 layers = [
     "registry",
     "schemes | citation_scheme_driver | citation_type_driver",
-    "book | periodical | video | web",
+    "book | document | periodical | video | web",
     "citation_type_specs",
     "citation_scheme_specs",
     "vocabulary | plugin_discovery",

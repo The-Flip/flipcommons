@@ -12,7 +12,7 @@ from typing import Protocol, assert_never, cast
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Exists, F, OuterRef, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router
@@ -289,6 +289,7 @@ def search_citation_sources(
         | Q(author__icontains=q)
         | Q(publisher__icontains=q)
         | Q(isbn__icontains=q)
+        | Q(slug__icontains=q)
         | Q(links__url__icontains=q)
     )
     # For ISBN-shaped input, also do exact match on normalized ISBN.
@@ -321,7 +322,7 @@ def search_citation_sources(
 def create_citation_source(
     request: HttpRequest, data: CitationSourceCreateSchema
 ) -> Status[CitationSourceDetailSchema]:
-    """Create an authored root (book/periodical/movie) or a linkless child.
+    """Create an authored root or a linkless child.
 
     This endpoint owns neither URLs nor links: web roots/children are minted by
     ``cite-url``/``pages/`` and scheme children by ``records/``. It creates a
@@ -329,7 +330,18 @@ def create_citation_source(
     """
     user = authed_user(request)
     parent = None
-    if data.parent_id is not None:
+    if data.parent_id is None:
+        # Some types' roots are never authored here — a web site root is
+        # described from its pasted URL. The spec declares which types offer
+        # interactive root creation, so neither the schema nor this endpoint
+        # keeps a type roster.
+        if not citation_type_spec(data.source_type).authored_root_creation:
+            raise HttpError(
+                422,
+                f"A {data.source_type} root isn't created here — roots of "
+                f"this type are minted through their own flow.",
+            )
+    else:
         # A flat-hierarchy type's children (a platform's videos, a site's
         # pages) mint from URLs/identifiers through recognition, never by
         # hand — an authored child would sidestep dedup and fabricate a
@@ -641,23 +653,28 @@ def extract_citation_source(
 def list_citation_source_children(
     request: HttpRequest, source_id: int, q: str = ""
 ) -> list[CitationSourceChildSchema]:
-    """Filtered children of a source, searched by name, URL, identifier, or ISBN."""
+    """Bounded children of a source — the identify stage's whole child read.
+
+    With a query, filtered by name, slug, URL, identifier, or ISBN and ordered
+    by name; without one, the newest children (year desc, undated last) as the
+    stage's initial display. Always capped: a periodical root has ~20 issues
+    but a document publisher root has ~1,000 documents, so an unbounded child
+    list is a payload problem, not a display option.
+    """
     parent = get_object_or_404(CitationSource, pk=source_id)
     q = q.strip()
-    if not q:
-        return []
-    children = (
-        CitationSource.objects.filter(parent=parent)
-        .filter(
+    qs = CitationSource.objects.filter(parent=parent)
+    if q:
+        qs = qs.filter(
             Q(name__icontains=q)
+            | Q(slug__icontains=q)
             | Q(links__url__icontains=q)
             | Q(identifier__icontains=q)
             | Q(isbn__icontains=q)
-        )
-        .prefetch_related("links")
-        .distinct()
-        .order_by("name")[:20]
-    )
+        ).order_by("name")
+    else:
+        qs = qs.order_by(F("year").desc(nulls_last=True), "name")
+    children = qs.prefetch_related("links").distinct()[:20]
     return [_serialize_child(child) for child in children]
 
 

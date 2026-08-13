@@ -10,11 +10,12 @@ irrelevant.
 
 Only the fields a stale artifact would make the frontend act on are pinned: the
 key union, plus each type's declarative flags (``locatorKind`` drives the input
-behavior, ``childSkipsLocator`` drives whether the locator field appears, and
-``slugAddressed`` drives whether authored sources require a slug). The copy
-fields (labels, help, placeholders) are prose the emitter passes through, and
-prettier wraps them across lines — pinning them would buy little and cost a
-brittle parser.
+behavior, ``childSkipsLocator`` drives whether the locator field appears,
+``slugAddressed`` drives whether authored sources require a slug, and
+``authoredRootCreation`` drives which types the create-stage picker offers).
+The copy fields (labels, help, placeholders, the child noun) are prose the
+emitter passes through, and prettier wraps them across lines — pinning them
+would buy little and cost a brittle parser.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ class ParsedType(NamedTuple):
     locator_kind: str
     child_skips_locator: bool
     slug_addressed: bool
+    authored_root_creation: bool
 
 
 def _parse_flags(source: str) -> dict[str, ParsedType]:
@@ -52,12 +54,13 @@ def _parse_flags(source: str) -> dict[str, ParsedType]:
     file has been through prettier (`key: 'copy'`).
     """
     return {
-        key: ParsedType(kind, skips == "true", slugged == "true")
-        for key, kind, skips, slugged in re.findall(
+        key: ParsedType(kind, skips == "true", slugged == "true", rooted == "true")
+        for key, kind, skips, slugged, rooted in re.findall(
             r"""["']?key["']?:\s*["'](\w+)["'],.*?"""
             r"""["']?locatorKind["']?:\s*["'](\w+)["'],.*?"""
             r"""["']?childSkipsLocator["']?:\s*(true|false),.*?"""
-            r"""["']?slugAddressed["']?:\s*(true|false)""",
+            r"""["']?slugAddressed["']?:\s*(true|false),.*?"""
+            r"""["']?authoredRootCreation["']?:\s*(true|false)""",
             source,
             re.DOTALL,
         )
@@ -67,7 +70,10 @@ def _parse_flags(source: str) -> dict[str, ParsedType]:
 def _expected_flags() -> dict[str, ParsedType]:
     return {
         str(spec.source_type.value): ParsedType(
-            spec.locator.kind, spec.child_skips_locator, spec.slug_addressed
+            spec.locator.kind,
+            spec.child_skips_locator,
+            spec.slug_addressed,
+            spec.authored_root_creation,
         )
         for spec in CITATION_TYPE_SPECS.values()
     }

@@ -246,9 +246,9 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         validators=[RegexValidator(SLUG_RE, SLUG_FORMAT_MESSAGE)],
         help_text=(
             "Authored kebab handle addressing this source in patch cite refs "
-            "(<periodical-slug>:<issue-slug>, e.g. billboard:1945-09-29). "
-            "Present exactly on slug-addressed types (periodical); null "
-            "everywhere else."
+            "(<root-slug>:<child-slug>, e.g. billboard:1945-09-29 or "
+            "williams:wpc-95-schematic-manual). Present exactly on "
+            "slug-addressed types (periodical, document); null everywhere else."
         ),
     )
 

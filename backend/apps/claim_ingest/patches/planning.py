@@ -23,6 +23,7 @@ from django.db import models
 from apps.actors.models import Actor
 from apps.citation.source_node import SourceNode
 from apps.citation.source_upsert import (
+    DeclaredRoot,
     ensure_source,
     validate_source_node,
 )
@@ -892,17 +893,34 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
     author-controllable shape/value errors raise.
 
     A node's ``parent:`` may reference a root declared elsewhere in the same
-    block (``declared_root_slugs``), in either file order — the hook processes
-    parentless nodes first, so an author may list issues before their periodical.
+    block (``declared_roots``, matched on the ``(source_type, slug)`` pair), in
+    either file order — the hook processes parentless nodes first, so an author
+    may list issues before their periodical.
     """
     if not sources:
         return
-    declared_root_slugs = frozenset(
-        node["slug"] for node in sources if "slug" in node and "parent" not in node
+    declared_roots = frozenset(
+        DeclaredRoot(node["source_type"], node["slug"])
+        for node in sources
+        if "slug" in node and "parent" not in node
     )
+    # Root slugs are globally unique, so two same-block roots sharing a slug
+    # across types would create the first and warn-skip the second (and every
+    # child under it) at apply. Cross-node, so only the planner can see it —
+    # the committed-state twin lives in validate_source_node.
+    types_per_slug: dict[str, set[str]] = defaultdict(set)
+    for root in declared_roots:
+        types_per_slug[root.slug].add(root.source_type)
+    for slug, source_types in sorted(types_per_slug.items()):
+        if len(source_types) > 1:
+            raise PatchError(
+                f"sources: root slug {slug!r} is declared as more than one "
+                f"type ({', '.join(sorted(source_types))}) — root slugs are "
+                f"unique across types"
+            )
     for i, node in enumerate(sources):
         try:
-            validate_source_node(node, declared_root_slugs=declared_root_slugs)
+            validate_source_node(node, declared_roots=declared_roots)
         except ValidationError as exc:
             raise PatchError(
                 f"sources[{i}] ({node['name']!r}): {_format_validation_error(exc)}"
