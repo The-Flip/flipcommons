@@ -370,7 +370,7 @@ claims:
       year: 1997
 ```
 
-`note:` is the entity's ChangeSet note, shown on its Edit History page. Write it **sparingly** — it's the edit summary, for rationale the citation can't carry: uncertainty, a cleanup or merge explanation, a disambiguation, or why the value follows from what the source states. A **verbatim excerpt does not belong here** — it goes in `quote:` on the `cite:` mapping (below), where the citation already names the source, so the legacy `<source> says "<quote>"` note form is obsolete. A cite carrying a quote usually needs no note at all. See [DataPatchAuthoring.md → Note only when there's something to explain](DataPatchAuthoring.md#note-only-when-theres-something-to-explain).
+`note:` is the entity's ChangeSet note, shown on its Edit History page. Write it **sparingly** — it's the edit summary, for rationale the citation can't carry: uncertainty, a cleanup or merge explanation, a disambiguation, or why the value follows from what the source states. A **verbatim excerpt does not belong here** — it goes in `quote:` on the `cite:` mapping (below), where the citation already names the source, so the legacy `<source> says "<quote>"` note form is obsolete. A cite carrying a quote usually needs no note at all. See [DataPatchAuthoring.md → `note:`](DataPatchAuthoring.md#note).
 
 `cite:` is external evidence, attached to each of the entry's authored claims and shown beside the field on the edit-history page. Its ref is one of the following forms:
 
