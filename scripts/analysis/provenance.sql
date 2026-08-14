@@ -347,6 +347,7 @@ CREATE OR REPLACE VIEW ingest_sources AS
     a.actor_resolution_status AS resolution_status,
     s.is_enabled            AS is_enabled,
     s.url                   AS url,
+    s.description           AS ingest_source_description,
     a.ingest_source_default_license_slug AS default_license_slug,
     count(c.claim_id)                                          AS n_claims,
     count(*) FILTER (c.is_active)                              AS n_active_claims,
@@ -376,6 +377,9 @@ CREATE OR REPLACE VIEW ingest_runs AS
     ir.records_parsed, ir.records_matched, ir.records_created,
     ir.claims_asserted, ir.claims_retracted, ir.claims_rejected,
     ir.citation_sources_created, ir.citation_source_links_created,
+    -- Why a run failed or complained. Modelled since the first ingest and never surfaced;
+    -- the reason to read them is a run whose status is not 'success'.
+    ir.errors, ir.warnings,
     ir.note             AS note
   FROM fc.provenance_ingestrun ir
   LEFT JOIN fc.provenance_source s ON s.id = ir.source_id;
@@ -504,6 +508,7 @@ CREATE OR REPLACE VIEW citation_sources AS
     coalesce(c.parent_id, c.id)               AS root_citation_source_id,
     coalesce(r.name, c.name)                  AS root_citation_source_name,
     c.parent_id IS NULL                       AS is_root,
+    c.description                             AS citation_source_description,
     c.author, c.publisher,
     c.year, c.month, c.day, c.date_note,
     c.isbn,

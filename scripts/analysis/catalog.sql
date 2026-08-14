@@ -71,6 +71,215 @@ CREATE OR REPLACE MACRO name_key(s) AS name_norm(name_strip_paren(s));
 COMMENT ON MACRO name_key IS
   'name_norm(name_strip_paren(s)) — the name comparison key for the common case. Use name_norm alone when a trailing parenthetical distinguishes the records.';
 
+-- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
+-- locations — one row per live Location, at EVERY level. THE entity: a country is simply
+-- a Location with no parent (`is_country`), and there is no separate country table or
+-- country view — filter this one.
+--
+--   location_path : the stable key ('usa/il/chicago'), and the one to join on. `slug` is
+--             unique only WITHIN a parent — there is more than one 'victoria' in the
+--             world — so a join on slug silently merges places. The path is also the
+--             hierarchy: country_slug is its first segment, and a place's descendants are
+--             the rows whose path starts with its path plus '/'.
+--   location_type : an OPEN vocabulary, not a 3-level ladder — country, state,
+--             province, department, community, region, prefecture, constituent_country,
+--             district, city. Only `country` is structurally guaranteed (exactly the
+--             parentless rows); the rest reflect how each country subdivides itself, so
+--             an analysis assuming country/state/city silently drops the live places that
+--             are none of those. Predicate on path depth when you mean depth.
+--   code / short_name / divisions : sparse by construction. `code` is the subdivision's
+--             own code (VIC, WA), empty on every country and city; `divisions` is on
+--             countries alone, naming how that country subdivides; `short_name` is rarer
+--             still. Read each at the level that carries it.
+--   n_corporate_entities : live corporate entities based here DIRECTLY — a country does
+--             not inherit its cities' counts. Roll up with a location_path prefix.
+CREATE OR REPLACE VIEW locations AS
+  SELECT
+    l.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
+    -- The ONE place location_path is split. Everything downstream reads country_slug
+    -- from here rather than splitting the path again.
+    split_part(l.location_path, '/', 1)      AS country_slug,
+    l.parent_id IS NULL                      AS is_country
+  FROM fc.catalog_location l
+  WHERE l.status IS DISTINCT FROM 'deleted';
+-- corporate_entity_locations — one row per (live corporate entity, live location) it is
+-- based in. THE bridge: CorporateEntityLocation is a through model owned by
+-- CorporateEntity ("existence is controlled by `location` relationship claims on
+-- CorporateEntity"), which is why the count of CEs per location does NOT live on
+-- `locations` — a Location knows nothing about corporate entities, and having the entity
+-- view reach across a relationship it doesn't own is what made three separate views read
+-- this table. Group this by location_id for that count.
+-- The CE join is physical because `corporate_entities` aggregates over `models`, so
+-- composing it here would be circular; the location side goes through `locations`.
+CREATE OR REPLACE VIEW corporate_entity_locations AS
+  SELECT
+    cel.corporate_entity_id,
+    ce.slug          AS corporate_entity_slug,
+    l.id             AS location_id,
+    l.location_path,
+    l.country_slug,
+    l.is_country
+  FROM fc.catalog_corporateentitylocation cel
+  JOIN locations l ON l.id = cel.location_id
+  -- Physical, not `corporate_entities`: that view aggregates over `models`, which reaches
+  -- back here through _ce_location. The location side composes; this side cannot.
+  JOIN fc.catalog_corporateentity ce
+    ON ce.id = cel.corporate_entity_id AND ce.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW corporate_entity_locations IS
+  'One row per (live corporate entity, live location) — THE CE-to-Location bridge and the only reader of the through table; group by location_id for corporate entities per place.';
+
+COMMENT ON VIEW locations IS
+  'One row per live Location at EVERY level — THE entity; a country is just a row with is_country. Join on location_path, never slug: slug is unique only within a parent.';
+-- location_aliases — every alias of every live Location: countries, regions and cities.
+-- Keyed on location_path, not slug (see `locations`). Filter is_country for the country slice.
+CREATE OR REPLACE VIEW location_aliases AS
+  SELECT
+    la.location_id,
+    l.location_path,
+    l.country_slug,
+    l.is_country,
+    la.value AS alias
+  FROM fc.catalog_locationalias la
+  JOIN locations l ON l.id = la.location_id;
+COMMENT ON VIEW location_aliases IS
+  'One row per alias of a live Location at any level — alias GRAIN, keyed on location_path because Location.slug is unique only within a parent. Filter is_country for countries.';
+
+-- game_formats — the machine-genre vocabulary. Join models.game_format_id to it, or check
+-- that a format slug you hardcode still exists.
+CREATE OR REPLACE VIEW game_formats AS
+  SELECT * EXCLUDE (
+    status,           -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ) FROM fc.catalog_gameformat
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW game_formats IS
+  'One row per live game format — the machine-genre vocabulary; join models.game_format_id, or check that a slug you hardcode still exists.';
+
+-- reward_types — what a machine pays out: the VOCABULARY behind the `rewards` name-list.
+-- `rewards` says which types a model has, this says what the closed set is, and
+-- `reward_type_aliases` resolves a source's phrasing into it.
+CREATE OR REPLACE VIEW reward_types AS
+  SELECT * EXCLUDE (
+    status,           -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ) FROM fc.catalog_rewardtype
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW reward_types IS
+  'One row per live reward type — the payout vocabulary behind the rewards name-list; join reward_type_aliases to resolve a source phrasing into it.';
+
+-- ─── Taxonomy dims, at entity grain ─────────────────────────────────────────
+-- One view per taxonomy dim. `models` carries these as SLUG ONLY and still does — these
+-- are the other half of that decision rather than a reversal of it. The slug is what you
+-- predicate and group on, so it is all a model row needs; the rest of the RECORD lives
+-- here, where the subject is the vocabulary itself.
+--
+-- `description` is the field that forced them. It is authored prose that no `models`
+-- column could carry, and while these tables were reachable only by raw-joining
+-- fc.catalog_<dim>, "which vocabulary terms are still undocumented" had no answer in the
+-- foundation at all — the shape EDITING.md warns about, where a column missing from a
+-- view gets read as a field the Django model does not have.
+--
+-- Uniform shape: id, slug, name, description, plus the decoded parent where the dim has
+-- one. Live rows only, and every parent join live-filtered, as everywhere else here.
+CREATE OR REPLACE VIEW technology_generations AS
+  SELECT * EXCLUDE (
+    status,           -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ) FROM fc.catalog_technologygeneration
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW technology_generations IS
+  'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State) behind models.technology_generation_slug.';
+
+CREATE OR REPLACE VIEW technology_subgenerations AS
+  SELECT
+    tsg.* EXCLUDE (
+    status,           -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ),
+    tg.slug AS technology_generation_slug
+  FROM fc.catalog_technologysubgeneration tsg
+  LEFT JOIN technology_generations tg ON tg.id = tsg.technology_generation_id
+  WHERE tsg.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW technology_subgenerations IS
+  'One row per live technology subgeneration — the subdivision vocabulary, carrying its parent generation decoded to a slug.';
+
+CREATE OR REPLACE VIEW display_types AS
+  SELECT * EXCLUDE (
+    status,           -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ) FROM fc.catalog_displaytype
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW display_types IS
+  'One row per live display type — the display-technology vocabulary (Score Reels, DMD, LCD) behind models.display_type_slug.';
+
+CREATE OR REPLACE VIEW display_subtypes AS
+  SELECT
+    dst.* EXCLUDE (
+    status,           -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ),
+    dt.slug AS display_type_slug
+  FROM fc.catalog_displaysubtype dst
+  LEFT JOIN display_types dt ON dt.id = dst.display_type_id
+  WHERE dst.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW display_subtypes IS
+  'One row per live display subtype — the subdivision vocabulary, carrying its parent display type decoded to a slug.';
+
+-- systems — the one dim whose name is not a mangled slug (`Bally AS-2518-35`), which is
+-- why `models` keeps system_name alongside system_slug. Manufacturer is a required FK:
+-- a system belongs to whoever built it.
+CREATE OR REPLACE VIEW systems AS
+  SELECT
+    s.* EXCLUDE (
+    status,           -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ),
+    mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
+    tsg.slug AS technology_subgeneration_slug
+  FROM fc.catalog_system s
+  -- Physical, not `manufacturers`: that view aggregates over `models`, and `all_models`
+  -- joins `systems`, so composing it here would close a cycle.
+  LEFT JOIN fc.catalog_manufacturer mf ON mf.id = s.manufacturer_id
+                                      AND mf.status IS DISTINCT FROM 'deleted'
+  LEFT JOIN technology_subgenerations tsg ON tsg.id = s.technology_subgeneration_id
+  WHERE s.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW systems IS
+  'One row per live system — the hardware-generation vocabulary (WPC-95, SAM, SPIKE) with its manufacturer and technology subgeneration decoded.';
+
+CREATE OR REPLACE VIEW cabinets AS
+  SELECT * EXCLUDE (
+    status,           -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ) FROM fc.catalog_cabinet
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW cabinets IS
+  'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail) behind models.cabinet_slug.';
+
+-- production_statuses is the ProductionStatus vocabulary, NOT the soft-delete `status`
+-- every other view here filters on. Same trap as the column on `models`.
+CREATE OR REPLACE VIEW production_statuses AS
+  SELECT * EXCLUDE (
+    status,           -- the SOFT-DELETE flag, not the production status this view is about;
+                      -- the view IS the live rows, and carrying it would be doubly confusing
+    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at        -- so it describes the local db state rather than catalog state
+  ) FROM fc.catalog_productionstatus
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW production_statuses IS
+  'One row per live production status — the commercial-production vocabulary (produced, announced, one-off) behind models.production_status_slug; NOT the soft-delete status.';
+
 -- ═══ MODELS — the spine; start here ═════════════════════════════════════════
 -- _ce_location — the MANUFACTURER's home location per corporate entity, collapsed to ONE
 -- row per CE so joining it can't fan out the one-row-per-model grain. CorporateEntity-
@@ -79,17 +288,18 @@ COMMENT ON MACRO name_key IS
 -- known place AND the stable key; country_slug is its root segment, the join key.
 CREATE OR REPLACE VIEW _ce_location AS
   SELECT
-    cel.corporate_entity_id,
-    min(l.location_path)                     AS location_path,
-    split_part(min(l.location_path), '/', 1) AS country_slug
-  FROM fc.catalog_corporateentitylocation cel
-  JOIN fc.catalog_location l
-    ON l.id = cel.location_id AND l.status IS DISTINCT FROM 'deleted'
-  GROUP BY cel.corporate_entity_id;
+    corporate_entity_id,
+    min(location_path)                            AS location_path,
+    -- country_slug comes from `locations`, which is the one place location_path is split.
+    -- min_by, not min: it reads country_slug off the SAME row min(location_path) picks,
+    -- so the pair stays coherent if a CE ever carries two locations (ce_multi_location
+    -- fires then, but this shouldn't quietly mix two places in the meantime).
+    min_by(country_slug, location_path)           AS country_slug
+  FROM corporate_entity_locations
+  GROUP BY corporate_entity_id;
 
 -- _title_live_n — live models per Title. Reads the physical table because `all_models`
--- consumes it; reading `models` would be circular. The public `title_size` view is a
--- projection of this, so the two cannot disagree about a Title's size.
+-- consumes it; reading `models` would be circular.
 CREATE OR REPLACE VIEW _title_live_n AS
   SELECT title_id, count(*) AS n
   FROM fc.catalog_machinemodel
@@ -140,7 +350,7 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             Its ORIGIN, NOT an export-market destination — those are
 --             `model_export_markets`. location_path ('usa/il/chicago') is the most-
 --             specific known place and the stable key; country_slug ('usa') is its root,
---             the field to join/group by (-> countries.slug for the name).
+--             the field to join/group by (-> locations, is_country, for the name).
 --   game_format_*   : machine genre, id/slug, NULL if untyped; `game_formats` has the name.
 --   taxonomy dims   : technology_generation / technology_subgeneration, display_type /
 --             display_subtype, system, cabinet, production_status — SLUG ONLY (DomainModel
@@ -167,18 +377,27 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             unknown.
 CREATE OR REPLACE VIEW all_models AS
   SELECT
-    m.id, m.name, m.slug,
-    m.title_id, t.slug AS title_slug, t.name AS title_name,
+    -- Every MachineModel column, minus the ones named below. `m.*` rather than a list on
+    -- purpose: with a list, a field deliberately left out and a field nobody noticed look
+    -- identical — both are simply absent — so the layer had no way to record an omission
+    -- as a decision. EXCLUDE is that record. A new field on the model now surfaces here on
+    -- its own, and the only way it stays out is if someone writes down why, right here.
+    m.* EXCLUDE (
+      ipdb_rating,      -- third-party ratings: not ours to republish, and not wanted
+      pinside_rating,
+      flipper_count,    -- near-empty scalar; model_gameplay_features.count is the signal
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
+    t.slug AS title_slug, t.name AS title_name,
     COALESCE(tn.n, 0) AS title_size,
     COALESCE(nk.n, 0) AS namesake_count,
-    m.variant_of_id, m.remake_of_id, m.export_edition_of_id,
-    m.opdb_id, m.ipdb_id, m.manufacturer_model_identifier,
-    m.year, m.month, m.player_count, m.production_quantity,
-    m.corporate_entity_id, ce.slug AS corporate_entity_slug,
+    ce.slug AS corporate_entity_slug,
     ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     cel.location_path, cel.country_slug,
-    m.game_format_id, gf.slug AS game_format_slug,
-    -- Single-FK taxonomy dims — slug only; see the note above.
+    gf.slug AS game_format_slug,
+    -- Single-FK taxonomy dims — the SLUG is the join key and the label; the raw FK id
+    -- rides along from m.* and is not the column to predicate on.
     tg.slug  AS technology_generation_slug,
     tsg.slug AS technology_subgeneration_slug,
     dt.slug  AS display_type_slug,
@@ -186,13 +405,11 @@ CREATE OR REPLACE VIEW all_models AS
     sys.slug AS system_slug,   sys.name AS system_name,
     cab.slug AS cabinet_slug,
     ps.slug  AS production_status_slug,
-    m.description, m.status,
     json_extract_string(m.extra_data, '$."ipdb.notes"')             AS ipdb_notes,
     json_extract_string(m.extra_data, '$."ipdb.notable_features"')  AS ipdb_notable_features,
     json_extract_string(m.extra_data, '$."ipdb.toys"')              AS ipdb_toys,
     json_extract_string(m.extra_data, '$."ipdb.marketing_slogans"') AS ipdb_marketing_slogans,
     COALESCE(json_extract(m.extra_data, '$."opdb.features"')::VARCHAR[], []::VARCHAR[]) AS opdb_features,
-    m.extra_data,
     m.name || ' ('
       || COALESCE(NULLIF(mf.name, ''), NULLIF(ce.name, ''), '?')
       || COALESCE(' ' || m.year::VARCHAR, '')
@@ -201,6 +418,9 @@ CREATE OR REPLACE VIEW all_models AS
   -- never bite (the FKs are PROTECT and the soft-delete walker blocks it) and
   -- model_dim_not_live fires if it does.
   FROM fc.catalog_machinemodel m
+  -- Title, corporate entity and manufacturer stay PHYSICAL joins on purpose: `titles`,
+  -- `corporate_entities` and `manufacturers` all aggregate over `models`, so composing
+  -- them here would be circular. Only the leaf dims below can be composed.
   LEFT JOIN fc.catalog_title t             ON t.id  = m.title_id
                                           AND t.status  IS DISTINCT FROM 'deleted'
   LEFT JOIN _title_live_n tn               ON tn.title_id = m.title_id
@@ -210,22 +430,18 @@ CREATE OR REPLACE VIEW all_models AS
   LEFT JOIN fc.catalog_manufacturer mf     ON mf.id = ce.manufacturer_id
                                           AND mf.status IS DISTINCT FROM 'deleted'
   LEFT JOIN _ce_location cel               ON cel.corporate_entity_id = m.corporate_entity_id
-  LEFT JOIN fc.catalog_gameformat gf       ON gf.id = m.game_format_id
-                                          AND gf.status IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_technologygeneration    tg  ON tg.id  = m.technology_generation_id
-                                          AND tg.status  IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_technologysubgeneration tsg ON tsg.id = m.technology_subgeneration_id
-                                          AND tsg.status IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_displaytype             dt  ON dt.id  = m.display_type_id
-                                          AND dt.status  IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_displaysubtype          dst ON dst.id = m.display_subtype_id
-                                          AND dst.status IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_system                  sys ON sys.id = m.system_id
-                                          AND sys.status IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_cabinet                 cab ON cab.id = m.cabinet_id
-                                          AND cab.status IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_productionstatus        ps  ON ps.id  = m.production_status_id
-                                          AND ps.status  IS DISTINCT FROM 'deleted';
+  -- The dim joins go through the dim VIEWS, which are defined above and are already
+  -- live-only, so the liveness rule for each dimension is stated once — in that view —
+  -- rather than restated here. A soft-deleted dim still de-enriches to NULL, unchanged,
+  -- because the view simply does not contain the row.
+  LEFT JOIN game_formats               gf  ON gf.id  = m.game_format_id
+  LEFT JOIN technology_generations     tg  ON tg.id  = m.technology_generation_id
+  LEFT JOIN technology_subgenerations  tsg ON tsg.id = m.technology_subgeneration_id
+  LEFT JOIN display_types              dt  ON dt.id  = m.display_type_id
+  LEFT JOIN display_subtypes           dst ON dst.id = m.display_subtype_id
+  LEFT JOIN systems                    sys ON sys.id = m.system_id
+  LEFT JOIN cabinets                   cab ON cab.id = m.cabinet_id
+  LEFT JOIN production_statuses        ps  ON ps.id  = m.production_status_id;
 COMMENT ON VIEW all_models IS
   'One row per MachineModel, live AND deleted — the escape hatch; filter on status yourself. Use models unless you specifically want the deleted rows.';
 
@@ -234,183 +450,6 @@ CREATE OR REPLACE VIEW models AS
   SELECT * FROM all_models WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW models IS
   'One row per LIVE MachineModel — the default view; build analyses on this.';
-
--- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
--- locations — one row per live Location, at EVERY level. THE entity: a country is simply
--- a Location with no parent, there is no separate country table, and `countries` below is
--- the parentless projection of this view.
---
---   location_path : the stable key ('usa/il/chicago'), and the one to join on. `slug` is
---             unique only WITHIN a parent — there is more than one 'victoria' in the
---             world — so a join on slug silently merges places. The path is also the
---             hierarchy: country_slug is its first segment, and a place's descendants are
---             the rows whose path starts with its path plus '/'.
---   location_type : an OPEN vocabulary, not a 3-level ladder — country, state,
---             province, department, community, region, prefecture, constituent_country,
---             district, city. Only `country` is structurally guaranteed (exactly the
---             parentless rows); the rest reflect how each country subdivides itself, so
---             an analysis assuming country/state/city silently drops the live places that
---             are none of those. Predicate on path depth when you mean depth.
---   code / short_name / divisions : sparse by construction. `code` is the subdivision's
---             own code (VIC, WA), empty on every country and city; `divisions` is on
---             countries alone, naming how that country subdivides; `short_name` is rarer
---             still. Read each at the level that carries it.
---   n_corporate_entities : live corporate entities based here DIRECTLY — a country does
---             not inherit its cities' counts. Roll up with a location_path prefix.
-CREATE OR REPLACE VIEW locations AS
-  WITH ce_n AS (
-    SELECT cel.location_id, count(*) AS n
-    FROM fc.catalog_corporateentitylocation cel
-    JOIN fc.catalog_corporateentity ce
-      ON ce.id = cel.corporate_entity_id AND ce.status IS DISTINCT FROM 'deleted'
-    GROUP BY cel.location_id
-  )
-  SELECT
-    l.id, l.slug, l.name,
-    l.location_path,
-    split_part(l.location_path, '/', 1)      AS country_slug,
-    l.location_type,
-    l.parent_id,
-    l.parent_id IS NULL                      AS is_country,
-    l.code, l.short_name, l.divisions,
-    COALESCE(n.n, 0)                         AS n_corporate_entities,
-    l.description
-  FROM fc.catalog_location l
-  LEFT JOIN ce_n n ON n.location_id = l.id
-  WHERE l.status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW locations IS
-  'One row per live Location at EVERY level — the entity; countries is the parentless projection of it. Join on location_path, never slug: slug is unique only within a parent.';
-
--- countries — the country slice of `locations`: the parentless rows. Its own view because
--- models.country_slug and target_country_slug join here for the name, and joining a region
--- or city by accident is the failure that prevents.
-CREATE OR REPLACE VIEW countries AS
-  SELECT id, slug, name FROM locations WHERE is_country;
-COMMENT ON VIEW countries IS
-  'One row per live country (a root Location) — join models.country_slug or target_country_slug here for the name. The parentless projection of locations.';
-
--- location_aliases — every alias of every live Location: countries, regions and cities.
--- Keyed on location_path, not slug (see `locations`). country_aliases is the country slice.
-CREATE OR REPLACE VIEW location_aliases AS
-  SELECT
-    la.location_id,
-    l.location_path,
-    split_part(l.location_path, '/', 1) AS country_slug,
-    la.value                            AS alias
-  FROM fc.catalog_locationalias la
-  JOIN fc.catalog_location l
-    ON l.id = la.location_id AND l.status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW location_aliases IS
-  'One row per alias of a live Location at any level — alias GRAIN, keyed on location_path because Location.slug is unique only within a parent. country_aliases is the country slice.';
-
--- country_aliases — the country slice of location_aliases. Joining through `countries` is
--- what stops a region or city alias resolving as a country. (Alias family rules — one row
--- per alias, values as entered — are in the ALIASES section below.)
-CREATE OR REPLACE VIEW country_aliases AS
-  SELECT la.location_id AS country_id, c.slug AS country_slug, la.value AS alias
-  FROM fc.catalog_locationalias la
-  JOIN countries c ON c.id = la.location_id;
-COMMENT ON VIEW country_aliases IS
-  'One row per alias of a live country — alias GRAIN, for resolving a source phrasing ("West Germany", "England") to the modelled country. The country slice of location_aliases.';
-
--- game_formats — the machine-genre vocabulary. Join models.game_format_id to it, or check
--- that a format slug you hardcode still exists.
-CREATE OR REPLACE VIEW game_formats AS
-  SELECT id, slug, name, description FROM fc.catalog_gameformat
-  WHERE status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW game_formats IS
-  'One row per live game format — the machine-genre vocabulary; join models.game_format_id, or check that a slug you hardcode still exists.';
-
--- reward_types — what a machine pays out: the VOCABULARY behind the `rewards` name-list.
--- `rewards` says which types a model has, this says what the closed set is, and
--- `reward_type_aliases` resolves a source's phrasing into it.
-CREATE OR REPLACE VIEW reward_types AS
-  SELECT id, slug, name, description FROM fc.catalog_rewardtype
-  WHERE status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW reward_types IS
-  'One row per live reward type — the payout vocabulary behind the rewards name-list; join reward_type_aliases to resolve a source phrasing into it.';
-
--- ─── Taxonomy dims, at entity grain ─────────────────────────────────────────
--- One view per taxonomy dim. `models` carries these as SLUG ONLY and still does — these
--- are the other half of that decision rather than a reversal of it. The slug is what you
--- predicate and group on, so it is all a model row needs; the rest of the RECORD lives
--- here, where the subject is the vocabulary itself.
---
--- `description` is the field that forced them. It is authored prose that no `models`
--- column could carry, and while these tables were reachable only by raw-joining
--- fc.catalog_<dim>, "which vocabulary terms are still undocumented" had no answer in the
--- foundation at all — the shape EDITING.md warns about, where a column missing from a
--- view gets read as a field the Django model does not have.
---
--- Uniform shape: id, slug, name, description, plus the decoded parent where the dim has
--- one. Live rows only, and every parent join live-filtered, as everywhere else here.
-CREATE OR REPLACE VIEW technology_generations AS
-  SELECT id, slug, name, description FROM fc.catalog_technologygeneration
-  WHERE status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW technology_generations IS
-  'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State) behind models.technology_generation_slug.';
-
-CREATE OR REPLACE VIEW technology_subgenerations AS
-  SELECT
-    tsg.id, tsg.slug, tsg.name, tsg.description,
-    tsg.technology_generation_id,
-    tg.slug AS technology_generation_slug
-  FROM fc.catalog_technologysubgeneration tsg
-  LEFT JOIN fc.catalog_technologygeneration tg ON tg.id = tsg.technology_generation_id
-                                          AND tg.status IS DISTINCT FROM 'deleted'
-  WHERE tsg.status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW technology_subgenerations IS
-  'One row per live technology subgeneration — the subdivision vocabulary, carrying its parent generation decoded to a slug.';
-
-CREATE OR REPLACE VIEW display_types AS
-  SELECT id, slug, name, description FROM fc.catalog_displaytype
-  WHERE status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW display_types IS
-  'One row per live display type — the display-technology vocabulary (Score Reels, DMD, LCD) behind models.display_type_slug.';
-
-CREATE OR REPLACE VIEW display_subtypes AS
-  SELECT
-    dst.id, dst.slug, dst.name, dst.description,
-    dst.display_type_id,
-    dt.slug AS display_type_slug
-  FROM fc.catalog_displaysubtype dst
-  LEFT JOIN fc.catalog_displaytype dt ON dt.id = dst.display_type_id
-                                     AND dt.status IS DISTINCT FROM 'deleted'
-  WHERE dst.status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW display_subtypes IS
-  'One row per live display subtype — the subdivision vocabulary, carrying its parent display type decoded to a slug.';
-
--- systems — the one dim whose name is not a mangled slug (`Bally AS-2518-35`), which is
--- why `models` keeps system_name alongside system_slug. Manufacturer is a required FK:
--- a system belongs to whoever built it.
-CREATE OR REPLACE VIEW systems AS
-  SELECT
-    s.id, s.slug, s.name, s.description,
-    s.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
-    s.technology_subgeneration_id,
-    tsg.slug AS technology_subgeneration_slug
-  FROM fc.catalog_system s
-  LEFT JOIN fc.catalog_manufacturer mf ON mf.id = s.manufacturer_id
-                                      AND mf.status IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_technologysubgeneration tsg ON tsg.id = s.technology_subgeneration_id
-                                      AND tsg.status IS DISTINCT FROM 'deleted'
-  WHERE s.status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW systems IS
-  'One row per live system — the hardware-generation vocabulary (WPC-95, SAM, SPIKE) with its manufacturer and technology subgeneration decoded.';
-
-CREATE OR REPLACE VIEW cabinets AS
-  SELECT id, slug, name, description FROM fc.catalog_cabinet
-  WHERE status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW cabinets IS
-  'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail) behind models.cabinet_slug.';
-
--- production_statuses is the ProductionStatus vocabulary, NOT the soft-delete `status`
--- every other view here filters on. Same trap as the column on `models`.
-CREATE OR REPLACE VIEW production_statuses AS
-  SELECT id, slug, name, description FROM fc.catalog_productionstatus
-  WHERE status IS DISTINCT FROM 'deleted';
-COMMENT ON VIEW production_statuses IS
-  'One row per live production status — the commercial-production vocabulary (produced, announced, one-off) behind models.production_status_slug; NOT the soft-delete status.';
 
 -- ═══ MANUFACTURERS AND CORPORATE ENTITIES ═══════════════════════════════════
 -- presumed_producing — the still-producing verdict the SITE publishes, which is not
@@ -523,7 +562,11 @@ CREATE OR REPLACE VIEW manufacturers AS
     GROUP BY manufacturer_id
   )
   SELECT
-    mf.id, mf.slug, mf.name,
+    mf.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
     COALESCE(a.n_models, 0)            AS n_models,
     COALESCE(a.n_nonvariant_models, 0) AS n_nonvariant_models,
     COALESCE(a.n_dated, 0)             AS n_dated,
@@ -534,8 +577,7 @@ CREATE OR REPLACE VIEW manufacturers AS
     COALESCE(l.n_locations, 0) AS n_locations,
     l.location_path,
     COALESCE(l.n_countries, 0) AS n_countries,
-    l.country_slug,
-    mf.website, mf.wikidata_id
+    l.country_slug
   FROM fc.catalog_manufacturer mf
   LEFT JOIN agg a           ON a.manufacturer_id = mf.id
   LEFT JOIN _mfr_status s   ON s.manufacturer_id = mf.id
@@ -579,11 +621,21 @@ CREATE OR REPLACE VIEW corporate_entities AS
     GROUP BY corporate_entity_id
   )
   SELECT
-    ce.id, ce.slug, ce.name,
-    ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
-    ce.operating_status,
+    ce.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at,       -- so it describes the local db state rather than catalog state
+      -- RETIRED on the Django model, whose help_text reads "DEAD FIELD — do not read or
+      -- write": a company can incorporate years before its first machine and linger years
+      -- after its last, so these answer the wrong question. The rows survive only to keep
+      -- the cited claims behind them. Exposing them here would be worse than not having
+      -- them, because they sit beside year_of_first_model/year_of_last_model under nearly
+      -- the same name and disagree with them on 22 of 35 and 16 of 30 entities.
+      year_start,
+      year_end
+    ),
+    mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     presumed_producing(ce.operating_status, a.year_of_last_model) AS presumed_producing,
-    ce.ipdb_manufacturer_id,
     cel.location_path, cel.country_slug,
     COALESCE(a.n_models, 0)            AS n_models,
     COALESCE(a.n_nonvariant_models, 0) AS n_nonvariant_models,
@@ -605,17 +657,25 @@ COMMENT ON VIEW corporate_entities IS
 CREATE OR REPLACE VIEW rewards AS
   SELECT rt2.machinemodel_id AS model_id, list_sort(list(rt.name)) AS rewards
   FROM fc.catalog_machinemodel_reward_types rt2
-  JOIN fc.catalog_rewardtype rt ON rt.id = rt2.rewardtype_id AND rt.status IS DISTINCT FROM 'deleted'
+  JOIN reward_types rt ON rt.id = rt2.rewardtype_id
   GROUP BY rt2.machinemodel_id;
 COMMENT ON VIEW rewards IS
   'One row per model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
+
+CREATE OR REPLACE VIEW _live_theme AS
+  SELECT * EXCLUDE (
+    status,             -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,         -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at          -- so it describes the local db state rather than catalog state
+  ) FROM fc.catalog_theme
+  WHERE status IS DISTINCT FROM 'deleted';
 
 -- themes — sorted theme names per model (only models that have any). Keyed model_id like
 -- `rewards`, and the canonical home for theme data.
 CREATE OR REPLACE VIEW themes AS
   SELECT mt.machinemodel_id AS model_id, list_sort(list(t.name)) AS themes
   FROM fc.catalog_machinemodel_themes mt
-  JOIN fc.catalog_theme t ON t.id = mt.theme_id AND t.status IS DISTINCT FROM 'deleted'
+  JOIN _live_theme t ON t.id = mt.theme_id
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW themes IS
   'One row per model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, theme_vocab for questions about the vocabulary itself.';
@@ -629,10 +689,6 @@ COMMENT ON VIEW themes IS
 --   <term>_vocab     one row per live term — identity, usage count, DAG, aliases
 --   <term>_aliases   alias GRAIN, so you can join and compare on an alias
 --   model_<terms>    slug-keyed model↔term grain (the twin of the display list)
-CREATE OR REPLACE VIEW _live_theme AS
-  SELECT id, slug, name, description FROM fc.catalog_theme
-  WHERE status IS DISTINCT FROM 'deleted';
-
 -- model_themes — one row per (live model, live theme). The GRAIN twin of `themes`; the
 -- display name is in theme_vocab, not here. Direct attachments ONLY, DAG not rolled up: a
 -- model tagged `black-magic` does NOT gain `occult`. Resolve ancestors analysis-locally
@@ -683,7 +739,7 @@ CREATE OR REPLACE VIEW theme_vocab AS
     SELECT theme_id, list_sort(list(alias)) AS aliases FROM theme_aliases GROUP BY theme_id
   )
   SELECT
-    t.id, t.slug, t.name, t.description,
+    t.*,
     COALESCE(u.n, 0)                  AS n,
     COALESCE(p.parents,  []::VARCHAR[]) AS parents,
     COALESCE(c.children, []::VARCHAR[]) AS children,
@@ -696,25 +752,17 @@ CREATE OR REPLACE VIEW theme_vocab AS
 COMMENT ON VIEW theme_vocab IS
   'One row per live theme — the theme VOCABULARY: usage count n, DAG parents/children, aliases. Reach for it when the subject is the themes rather than the models.';
 
--- tags — sorted list of TAG SLUGS per tagged model (only models with any). Keyed model_id
--- like rewards/themes. SLUGS, not names: unlike those display lists, tags are the
--- classification vocabulary you PREDICATE on (`'widebody' IN tags`). NB `conversion_kit`
--- and re-themes are NOT tags and won't appear here — they're ModelRelationship types.
-CREATE OR REPLACE VIEW tags AS
-  SELECT mt.machinemodel_id AS model_id, list_sort(list(tg.slug)) AS tags
-  FROM fc.catalog_machinemodel_tags mt
-  JOIN fc.catalog_tag tg ON tg.id = mt.tag_id AND tg.status IS DISTINCT FROM 'deleted'
-  GROUP BY mt.machinemodel_id;
-COMMENT ON VIEW tags IS
-  'One row per tagged model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
-
 -- tag_vocab — one row per live TAG: the vocabulary behind the `tags` name-list. `tags` is
 -- keyed by MODEL and answers "what is this tagged"; this is keyed by tag and answers "what
 -- tags exist, and how much is each used". Much of the vocabulary is soft-deleted, so check
 -- a hardcoded slug against this view before trusting it. Flat, no DAG.
 CREATE OR REPLACE VIEW tag_vocab AS
   SELECT
-    tg.id, tg.slug, tg.name, tg.description,
+    tg.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
     -- count(m.id), not the link: the through-row survives its model's soft-delete.
     count(m.id) AS n
   FROM fc.catalog_tag tg
@@ -726,7 +774,27 @@ CREATE OR REPLACE VIEW tag_vocab AS
 COMMENT ON VIEW tag_vocab IS
   'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of the model-keyed tags name-list. Flat, no DAG.';
 
+-- tags — sorted list of TAG SLUGS per tagged model (only models with any). Keyed model_id
+-- like rewards/themes. SLUGS, not names: unlike those display lists, tags are the
+-- classification vocabulary you PREDICATE on (`'widebody' IN tags`). NB `conversion_kit`
+-- and re-themes are NOT tags and won't appear here — they're ModelRelationship types.
+CREATE OR REPLACE VIEW tags AS
+  SELECT mt.machinemodel_id AS model_id, list_sort(list(tg.slug)) AS tags
+  FROM fc.catalog_machinemodel_tags mt
+  JOIN tag_vocab tg ON tg.id = mt.tag_id
+  GROUP BY mt.machinemodel_id;
+COMMENT ON VIEW tags IS
+  'One row per tagged model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
+
 -- ═══ GAMEPLAY FEATURES ══════════════════════════════════════════════════════
+CREATE OR REPLACE VIEW _live_gameplay_feature AS
+  SELECT * EXCLUDE (
+    status,             -- the view IS the live rows; the soft-delete flag adds nothing
+    created_at,         -- row bookkeeping: differs between any two copies of the catalog,
+    updated_at          -- so it describes the local db state rather than catalog state
+  ) FROM fc.catalog_gameplayfeature
+  WHERE status IS DISTINCT FROM 'deleted';
+
 -- model_gameplay_features — one row per (model, directly-attached gameplay feature) with
 -- its optional count. A grain view, NOT a flattened name-list like rewards/themes, because
 -- most of these rows carry a count (Flippers x2; Trap Holes x25, the 5x5 bingo card) that
@@ -744,8 +812,7 @@ CREATE OR REPLACE VIEW model_gameplay_features AS
     gf.slug             AS feature_slug,
     mgf.count           AS count
   FROM fc.catalog_machinemodelgameplayfeature mgf
-  JOIN fc.catalog_gameplayfeature gf
-    ON gf.id = mgf.gameplayfeature_id AND gf.status IS DISTINCT FROM 'deleted'
+  JOIN _live_gameplay_feature gf ON gf.id = mgf.gameplayfeature_id
   WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = mgf.machinemodel_id);  -- live subjects
 COMMENT ON VIEW model_gameplay_features IS
   'One row per (live model, gameplay feature) with its optional count (Flippers x2, Trap Holes x25) — the counted grain. Direct attachments only, DAG not rolled up.';
@@ -758,10 +825,6 @@ COMMENT ON VIEW model_gameplay_features IS
 -- The difference from themes is DEPTH. This vocabulary is curated rather than imported and
 -- the DAG is genuinely deep — kickback-lanes → right-kickback-lanes →
 -- upper-right-kickback-lanes — with interior nodes that carry no models by design.
-CREATE OR REPLACE VIEW _live_gameplay_feature AS
-  SELECT id, slug, name, description FROM fc.catalog_gameplayfeature
-  WHERE status IS DISTINCT FROM 'deleted';
-
 -- gameplay_feature_aliases — one row per alias of a live feature. GRAIN for the same
 -- reason theme_aliases is, here to resolve a source's phrasing ("Autoplunger",
 -- "Left-Side Kickback Lane") to the canonical feature.
@@ -928,7 +991,7 @@ CREATE OR REPLACE VIEW model_export_markets AS
     c.name                              AS target_country_name,
     NULLIF(em.target_market_label, '')  AS target_label
   FROM fc.catalog_modelexportmarket em
-  LEFT JOIN countries c ON c.id = em.target_market_location_id
+  LEFT JOIN locations c ON c.id = em.target_market_location_id AND c.is_country
   WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = em.machine_model_id);
 COMMENT ON VIEW model_export_markets IS
   'One row per export destination of a live model — the target is a LOCATION, not a model, so this is NOT part of model_edges. The target ladder is optional: a country, a free-text region, or neither.';
@@ -1023,13 +1086,14 @@ COMMENT ON VIEW model_edges_bidir IS
 --             description.
 CREATE OR REPLACE VIEW titles AS
   SELECT
-    t.id, t.slug, t.name,
-    t.opdb_id,
-    t.franchise_id, f.slug  AS franchise_slug, f.name  AS franchise_name,
-    t.series_id,    se.slug AS series_slug,    se.name AS series_name,
-    t.fandom_page_id,
-    COALESCE(tn.n, 0) AS n_models,
-    t.description
+    t.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
+    f.slug  AS franchise_slug, f.name  AS franchise_name,
+    se.slug AS series_slug,    se.name AS series_name,
+    COALESCE(tn.n, 0) AS n_models
   FROM fc.catalog_title t
   LEFT JOIN _title_live_n tn         ON tn.title_id = t.id
   LEFT JOIN fc.catalog_franchise f   ON f.id  = t.franchise_id
@@ -1046,7 +1110,11 @@ COMMENT ON VIEW titles IS
 -- curator-maintained — which makes `n_titles = 0` the interesting row rather than a
 -- defect: a grouping someone created and never attached, invisible from `titles` alone.
 CREATE OR REPLACE VIEW franchises AS
-  SELECT f.id, f.slug, f.name, f.description,
+  SELECT f.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
          count(t.id) AS n_titles
   FROM fc.catalog_franchise f
   LEFT JOIN fc.catalog_title t
@@ -1057,7 +1125,11 @@ COMMENT ON VIEW franchises IS
   'One row per live Franchise — the IP grouping (Star Trek), spanning manufacturers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
 
 CREATE OR REPLACE VIEW series AS
-  SELECT s.id, s.slug, s.name, s.description,
+  SELECT s.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
          count(t.id) AS n_titles
   FROM fc.catalog_series s
   LEFT JOIN fc.catalog_title t
@@ -1174,7 +1246,11 @@ COMMENT ON VIEW model_credits IS
 -- count(c.credit_id), never count(*): the LEFT JOIN would count an unused role as 1.
 CREATE OR REPLACE VIEW credit_roles AS
   SELECT
-    r.id, r.slug, r.name, r.description,
+    r.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
     count(c.credit_id) AS n_credits
   FROM fc.catalog_creditrole r
   LEFT JOIN credits c ON c.role_id = r.id
@@ -1210,11 +1286,14 @@ CREATE OR REPLACE VIEW people AS
     GROUP BY person_id
   )
   SELECT
-    p.id, p.slug, p.name,
+    p.* EXCLUDE (
+      status,           -- the view IS the live rows; the soft-delete flag adds nothing
+      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
+      updated_at        -- so it describes the local db state rather than catalog state
+    ),
     COALESCE(a.n_credits, 0)         AS n_credits,
     COALESCE(a.n_credited_models, 0) AS n_credited_models,
-    COALESCE(a.n_roles, 0)           AS n_roles,
-    p.birth_year, p.death_year
+    COALESCE(a.n_roles, 0)           AS n_roles
   FROM fc.catalog_person p
   LEFT JOIN agg a ON a.person_id = p.id
   WHERE p.status IS DISTINCT FROM 'deleted';
@@ -1226,7 +1305,7 @@ COMMENT ON VIEW people IS
 -- (location_aliases uses location_path — Location slugs are parent-scoped). Values are
 -- stored AS ENTERED, mixed case included; whether 'Playing Cards' should match
 -- 'playing-cards' is the consuming analysis's call, and name_norm(alias) is the usual
--- starting point. location_aliases, country_aliases, theme_aliases and
+-- starting point. location_aliases, theme_aliases and
 -- gameplay_feature_aliases sit beside their vocabularies above.
 
 CREATE OR REPLACE VIEW reward_type_aliases AS

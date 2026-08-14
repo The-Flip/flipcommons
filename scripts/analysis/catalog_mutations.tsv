@@ -61,7 +61,7 @@ manufacturer location pinned to one place	mfr_location_rollup_disagrees	CREATE T
 edge union lossy	union_integrity	CREATE OR REPLACE VIEW model_edges AS SELECT model_id, 'lineage_fk' AS edge_source, edge_kind AS relationship_type, NULL::VARCHAR AS license_status, target_id, NULL::VARCHAR AS target_label, * EXCLUDE (model_id, edge_kind, target_id) FROM model_lineage;
 view added unanchored	unanchored_view	CREATE OR REPLACE VIEW brand_new_view AS SELECT 1 AS x;
 alias table no longer read by any view	unexposed_alias_table	CREATE TABLE _m AS SELECT * FROM person_aliases; CREATE OR REPLACE VIEW person_aliases AS SELECT * FROM _m;
-view comment dropped	undocumented_view	COMMENT ON VIEW countries IS NULL;
+view comment dropped	undocumented_view	COMMENT ON VIEW locations IS NULL;
 vocab definition dropped	undocumented_vocab	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m WHERE slug <> 'floor';
 vocab defines a dead term	stale_vocab_doc	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m UNION ALL SELECT 'cabinet','no-such-cabinet','invented',1;
 vocab dim not in _dim_vocab	unmapped_vocab_dim	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m UNION ALL SELECT 'corporateentity','acme','invented',1;

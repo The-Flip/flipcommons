@@ -41,11 +41,9 @@
 -- to ONE row on the assumption that every CE has exactly one live location; this states
 -- that assumption as a number so ce_multi_location can test it.
 CREATE OR REPLACE VIEW _ce_location_n AS
-  SELECT cel.corporate_entity_id, count(*) AS n
-  FROM fc.catalog_corporateentitylocation cel
-  JOIN fc.catalog_location l
-    ON l.id = cel.location_id AND l.status IS DISTINCT FROM 'deleted'
-  GROUP BY cel.corporate_entity_id;
+  SELECT corporate_entity_id, count(*) AS n
+  FROM corporate_entity_locations
+  GROUP BY corporate_entity_id;
 
 -- _alias_tables — the physical alias/abbreviation lookup tables, derived from the
 -- attached catalog rather than hand-listed. Every `AliasModel` subclass gets a
@@ -273,7 +271,7 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'theme_vocab'         FROM theme_vocab
     UNION ALL SELECT 'theme_aliases'       FROM theme_aliases
     UNION ALL SELECT 'model_export_markets' FROM model_export_markets
-    UNION ALL SELECT 'countries'           FROM countries
+    UNION ALL SELECT 'corporate_entity_locations' FROM corporate_entity_locations
     UNION ALL SELECT 'locations'           FROM locations
     UNION ALL SELECT 'tag_vocab'           FROM tag_vocab
     UNION ALL SELECT 'franchises'          FROM franchises
@@ -281,7 +279,6 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'credit_roles'        FROM credit_roles
     UNION ALL SELECT 'credits'             FROM credits
     UNION ALL SELECT 'model_credits'       FROM model_credits
-    UNION ALL SELECT 'country_aliases'     FROM country_aliases
     UNION ALL SELECT 'location_aliases'    FROM location_aliases
     UNION ALL SELECT 'reward_types'          FROM reward_types
     UNION ALL SELECT 'reward_type_aliases'   FROM reward_type_aliases
@@ -379,7 +376,7 @@ CREATE OR REPLACE MACRO _dark_cols(vn) AS TABLE
 CREATE OR REPLACE VIEW _anchor_scan AS
             SELECT 'all_models'              AS view_name, col, live FROM _dark_cols('all_models')
   UNION ALL SELECT 'models',                 col, live FROM _dark_cols('models')
-  UNION ALL SELECT 'countries',              col, live FROM _dark_cols('countries')
+  UNION ALL SELECT 'corporate_entity_locations', col, live FROM _dark_cols('corporate_entity_locations')
   UNION ALL SELECT 'locations',              col, live FROM _dark_cols('locations')
   UNION ALL SELECT 'tag_vocab',              col, live FROM _dark_cols('tag_vocab')
   UNION ALL SELECT 'franchises',             col, live FROM _dark_cols('franchises')
@@ -387,7 +384,6 @@ CREATE OR REPLACE VIEW _anchor_scan AS
   UNION ALL SELECT 'credit_roles',           col, live FROM _dark_cols('credit_roles')
   UNION ALL SELECT 'credits',                col, live FROM _dark_cols('credits')
   UNION ALL SELECT 'model_credits',          col, live FROM _dark_cols('model_credits')
-  UNION ALL SELECT 'country_aliases',        col, live FROM _dark_cols('country_aliases')
   UNION ALL SELECT 'location_aliases',       col, live FROM _dark_cols('location_aliases')
   UNION ALL SELECT 'reward_types',             col, live FROM _dark_cols('reward_types')
   UNION ALL SELECT 'reward_type_aliases',      col, live FROM _dark_cols('reward_type_aliases')
@@ -463,6 +459,16 @@ CREATE OR REPLACE VIEW _anchor_skip AS
   SELECT * FROM (VALUES
     ('technology_subgeneration_slug',     'sparse'),
     ('display_subtype_slug',              'sparse'),
+    -- The FK id behind display_subtype_slug, riding along from `m.*`. Same facet, same
+    -- reason: no model carries a subtype yet. Bare, so one entry covers models and
+    -- all_models, as with the slug.
+    ('display_subtype_id',                'sparse'),
+    -- Pinside is modelled on MachineModel but nothing populates it — no ingest source
+    -- reads Pinside and no patch has set one. `pending`, not `sparse`: the day a pinside
+    -- id lands this must start anchoring, and expired_anchor_skip is what makes that
+    -- happen without anyone remembering. (pinside_rating is EXCLUDEd from the view
+    -- outright — we don't republish third-party ratings — so only the id is swept.)
+    ('pinside_id',                        'pending'),
     -- free-text region label, used only when a market isn't a resolvable country
     ('model_export_markets.target_label', 'sparse'),
     -- Licensing is modelled end to end but nothing populates it yet: no ingest source
@@ -492,8 +498,25 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     -- patches has none. `sparse`, not `pending`: an expiry keyed to local user
     -- behavior would make the self-test's verdict differ per machine.
     ('model_claims.changeset_action',       'sparse'),
-    -- no patch has filled a manufacturer QID yet
-    ('manufacturers.wikidata_id',           'pending')
+    -- Wikidata QIDs are modelled on both manufacturers and people; no patch has filled
+    -- one on either. Bare, so a single entry covers both — same facet, same reason.
+    ('wikidata_id',                         'pending'),
+    -- Person biography beyond the birth/death YEAR. All of it is modelled and none of it
+    -- is ingested: no source we read carries it and no patch has asserted one. These
+    -- surfaced the moment `people` moved to p.*, which is the point — they were invisible
+    -- before, so "we have nowhere to put a person's nationality" was indistinguishable
+    -- from "we do and it's empty". `pending`, not `sparse`: the first patch to write any
+    -- of them should make its column start anchoring, and expired_anchor_skip is what
+    -- makes that happen without anyone remembering.
+    ('birth_month',                         'pending'),
+    ('birth_day',                           'pending'),
+    ('death_month',                         'pending'),
+    ('death_day',                           'pending'),
+    ('birth_place',                         'pending'),
+    ('nationality',                         'pending'),
+    ('photo_url',                           'pending'),
+    -- Same story one entity over: modelled, never populated.
+    ('manufacturers.logo_url',              'pending')
   ) AS t(col, kind);
 
 -- Every LIST-typed facet in a swept view (any element type), and how it is anchored.
