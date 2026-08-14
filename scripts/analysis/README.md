@@ -6,7 +6,7 @@ This is how to use our DuckDB analytics layer to explore the Flipcommons localho
 
 **A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks. Consequences:
 
-- **A view is not its table.** `models` is live-filtered and denormalized across a dozen joins; `tags` is keyed by model while `tag_vocab` is keyed by tag. Matching names do not mean matching columns or matching grain.
+- **A view is not its table.** `models` is live-filtered and denormalized across a dozen joins; `credits` resolves a subject that is a model XOR a series. Matching names do not mean matching columns or matching grain — though the name does tell you the grain: a bare plural is one row per that entity, a `model_` prefix is one row per model.
 
 ## Quick start
 
@@ -102,10 +102,10 @@ Three traps. A membership claim with `member_exists = false` is a **tombstone** 
 
 The foundation surfaces a model's relationships in three shapes, plus a fourth for the controlled vocabularies behind them. Reach for the one that fits:
 
-- **Flat name-list** — `rewards`, `themes`, `tags`. One row per model, a sorted list of the related names (or, for `tags`, slugs). Pure enrichment: join to a model view and display, or test membership. Use when the relationship has no per-edge payload and you only need _which ones_. A name-list **cannot** answer anything about the vocabulary itself — it carries no id, no slug, no DAG. When that's the question, use the vocabulary shape below rather than reaching past the foundation into `fc.catalog_*`.
+- **Flat name-list** — `model_reward_names`, `model_theme_names`, `model_tag_slugs`. One row per model, a sorted list of the related names (or, for `model_tag_slugs`, slugs). Pure enrichment: join to a model view and display, or test membership. Use when the relationship has no per-edge payload and you only need _which ones_. A name-list **cannot** answer anything about the vocabulary itself — it carries no id, no slug, no DAG. When that's the question, use the vocabulary shape below rather than reaching past the foundation into `fc.catalog_*`.
 - **Resolved-edge grain** — `model_edges` and its `model_lineage` / `model_relationships` components. One row per edge, the far end resolved into the shared `target_*` block. Use when each edge points at another model you need to identify.
 - **Counted-payload grain** — `model_gameplay_features`. One row per edge that carries a payload (here, the feature `count`: Flippers ×2, Trap Holes ×25). Use when flattening to a name-list would drop a per-edge value.
-- **Vocabulary** — `theme_vocab` / `theme_aliases` / `model_themes`, and `gameplay_feature_vocab` / `gameplay_feature_aliases` / `model_gameplay_features`. Not a model relationship at all: one row per _term_, with its usage count (`n`), its place in the DAG and its aliases. Reach for it when the subject is the controlled vocabulary rather than the models — auditing near-duplicates, finding unparented or unused terms, checking whether an alias collides with a live term. The alias views are their own grain so you can join and compare on an alias. The flat vocabularies (`tag_vocab`, `game_formats`, the taxonomy dims) are the same shape without the DAG.
+- **Vocabulary** — `themes` / `theme_aliases` / `model_themes`, and `gameplay_features` / `gameplay_feature_aliases` / `model_gameplay_features`. Not a model relationship at all: one row per _term_, with its usage count (`n`), its place in the DAG and its aliases. Reach for it when the subject is the controlled vocabulary rather than the models — auditing near-duplicates, finding unparented or unused terms, checking whether an alias collides with a live term. The alias views are their own grain so you can join and compare on an alias. The flat vocabularies (`tags`, `game_formats`, the taxonomy dims) are the same shape without the DAG.
 
 ### `model_edges` is outbound only
 

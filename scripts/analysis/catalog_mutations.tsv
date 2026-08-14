@@ -18,9 +18,9 @@
 # both directions: a check with no mutation fails the run, and an entry naming a check
 # that no longer exists fails it too.
 
-theme dropped from vocab	theme_not_in_vocab	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * FROM _m WHERE id <> (SELECT min(theme_id) FROM model_themes);
-feature dropped from vocab	feature_not_in_vocab	CREATE TABLE _m AS SELECT * FROM gameplay_feature_vocab; CREATE OR REPLACE VIEW gameplay_feature_vocab AS SELECT * FROM _m WHERE id <> (SELECT min(feature_id) FROM model_gameplay_features);
-vocab DAG one-sided	vocab_dag_asymmetric	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * REPLACE ([]::VARCHAR[] AS children) FROM _m;
+theme dropped from vocab	theme_not_in_vocab	CREATE TABLE _m AS SELECT * FROM themes; CREATE OR REPLACE VIEW themes AS SELECT * FROM _m WHERE id <> (SELECT min(theme_id) FROM model_themes);
+feature dropped from vocab	feature_not_in_vocab	CREATE TABLE _m AS SELECT * FROM gameplay_features; CREATE OR REPLACE VIEW gameplay_features AS SELECT * FROM _m WHERE id <> (SELECT min(feature_id) FROM model_gameplay_features);
+vocab DAG one-sided	vocab_dag_asymmetric	CREATE TABLE _m AS SELECT * FROM themes; CREATE OR REPLACE VIEW themes AS SELECT * REPLACE ([]::VARCHAR[] AS children) FROM _m;
 bidir mirror missing	bidir_mirror_broken	CREATE OR REPLACE VIEW model_edges_bidir AS SELECT 'out' AS direction, * FROM model_edges;
 bidir not re-enriched	bidir_target_mismatch	CREATE OR REPLACE VIEW model_edges_bidir AS SELECT 'out' AS direction, * FROM model_edges UNION ALL BY NAME SELECT 'in' AS direction, e.target_id AS model_id, e.edge_source, e.relationship_type, e.license_status, e.model_id AS target_id, NULL::VARCHAR AS target_label, e.* EXCLUDE (model_id, edge_source, relationship_type, license_status, target_id, target_label) FROM model_edges e WHERE e.target_id IS NOT NULL;
 bidir mirrors only lineage	bidir_asymmetric	CREATE OR REPLACE VIEW model_edges_bidir AS SELECT 'out' AS direction, * FROM model_edges UNION ALL BY NAME SELECT 'in' AS direction, e.target_id AS model_id, e.edge_source, e.relationship_type, e.license_status, e.model_id AS target_id, NULL::VARCHAR AS target_label, t.* EXCLUDE (id) FROM model_edges e JOIN _model_target t ON t.id = e.model_id WHERE e.target_id IS NOT NULL AND e.edge_source = 'lineage_fk';

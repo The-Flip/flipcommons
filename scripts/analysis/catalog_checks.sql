@@ -198,9 +198,9 @@ CREATE OR REPLACE VIEW _entity_view AS
     ('catalog_franchise',               'franchises'),
     ('catalog_series',                  'series'),
     ('catalog_creditrole',              'credit_roles'),
-    ('catalog_tag',                     'tag_vocab'),
-    ('catalog_theme',                   'theme_vocab'),
-    ('catalog_gameplayfeature',         'gameplay_feature_vocab'),
+    ('catalog_tag',                     'tags'),
+    ('catalog_theme',                   'themes'),
+    ('catalog_gameplayfeature',         'gameplay_features'),
     ('catalog_rewardtype',              'reward_types'),
     ('catalog_gameformat',              'game_formats'),
     -- Taxonomy dims — slug-only on `models`, entity-grain here.
@@ -278,21 +278,21 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'model_edges_bidir'   FROM model_edges_bidir
     UNION ALL SELECT 'manufacturers'       FROM manufacturers
     UNION ALL SELECT 'model_number_collisions' FROM model_number_collisions
-    UNION ALL SELECT 'rewards'             FROM rewards
-    UNION ALL SELECT 'themes'              FROM themes
-    UNION ALL SELECT 'tags'                FROM tags
+    UNION ALL SELECT 'model_reward_names'             FROM model_reward_names
+    UNION ALL SELECT 'model_theme_names'              FROM model_theme_names
+    UNION ALL SELECT 'model_tag_slugs'                FROM model_tag_slugs
     UNION ALL SELECT 'model_gameplay_features' FROM model_gameplay_features
-    UNION ALL SELECT 'gameplay_feature_vocab'   FROM gameplay_feature_vocab
+    UNION ALL SELECT 'gameplay_features'   FROM gameplay_features
     UNION ALL SELECT 'gameplay_feature_aliases' FROM gameplay_feature_aliases
     UNION ALL SELECT 'model_themes'        FROM model_themes
     UNION ALL SELECT 'model_tags'          FROM model_tags
     UNION ALL SELECT 'model_rewards'       FROM model_rewards
-    UNION ALL SELECT 'theme_vocab'         FROM theme_vocab
+    UNION ALL SELECT 'themes'         FROM themes
     UNION ALL SELECT 'theme_aliases'       FROM theme_aliases
     UNION ALL SELECT 'model_export_markets' FROM model_export_markets
     UNION ALL SELECT 'corporate_entity_locations' FROM corporate_entity_locations
     UNION ALL SELECT 'locations'           FROM locations
-    UNION ALL SELECT 'tag_vocab'           FROM tag_vocab
+    UNION ALL SELECT 'tags'           FROM tags
     UNION ALL SELECT 'franchises'          FROM franchises
     UNION ALL SELECT 'series'              FROM series
     UNION ALL SELECT 'credit_roles'        FROM credit_roles
@@ -386,11 +386,11 @@ CREATE OR REPLACE VIEW foundation_checks AS
   model_edges         AS MATERIALIZED (SELECT * FROM main.model_edges),
   model_lineage       AS MATERIALIZED (SELECT * FROM main.model_lineage),
   model_relationships AS MATERIALIZED (SELECT * FROM main.model_relationships),
-  themes              AS MATERIALIZED (SELECT * FROM main.themes),
+  model_theme_names              AS MATERIALIZED (SELECT * FROM main.model_theme_names),
   model_themes        AS MATERIALIZED (SELECT * FROM main.model_themes),
-  theme_vocab         AS MATERIALIZED (SELECT * FROM main.theme_vocab),
+  themes         AS MATERIALIZED (SELECT * FROM main.themes),
   model_gameplay_features AS MATERIALIZED (SELECT * FROM main.model_gameplay_features),
-  gameplay_feature_vocab  AS MATERIALIZED (SELECT * FROM main.gameplay_feature_vocab),
+  gameplay_features  AS MATERIALIZED (SELECT * FROM main.gameplay_features),
   model_number_collisions AS MATERIALIZED (SELECT * FROM main.model_number_collisions),
   _ce_location_n      AS MATERIALIZED (SELECT * FROM main._ce_location_n),
   model_export_markets    AS MATERIALIZED (SELECT * FROM main.model_export_markets),
@@ -947,7 +947,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   SELECT 'theme_subject_not_live', 'model_id=' || model_id::VARCHAR
   FROM model_themes WHERE model_id NOT IN (SELECT id FROM models)
 
-  -- the tag family, mirroring the three theme checks above. `tags` and `tag_vocab` are
+  -- the tag family, mirroring the three theme checks above. `model_tag_slugs` and `tags` are
   -- both built from model_tags, so these guard the one definition they share.
   UNION ALL
   SELECT 'tag_grain_dup',
@@ -1136,11 +1136,11 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- applied to the grain view and not the vocab view, or vice versa)
   UNION ALL
   SELECT DISTINCT 'theme_not_in_vocab', 'theme_id=' || theme_id::VARCHAR
-  FROM model_themes WHERE theme_id NOT IN (SELECT id FROM theme_vocab)
+  FROM model_themes WHERE theme_id NOT IN (SELECT id FROM themes)
 
   UNION ALL
   SELECT DISTINCT 'feature_not_in_vocab', 'feature_id=' || feature_id::VARCHAR
-  FROM model_gameplay_features WHERE feature_id NOT IN (SELECT id FROM gameplay_feature_vocab)
+  FROM model_gameplay_features WHERE feature_id NOT IN (SELECT id FROM gameplay_features)
 
   -- vocab DAG edges point at rows in the vocab on BOTH ends — parents and children are
   -- derived from one table, so a live filter applied unevenly shows up here as a slug
@@ -1148,15 +1148,15 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'vocab_dag_asymmetric', v || ' ' || slug || '→' || p
   FROM (
-    SELECT 'theme_vocab' AS v, slug, unnest(parents) AS p FROM theme_vocab
+    SELECT 'themes' AS v, slug, unnest(parents) AS p FROM themes
     UNION ALL
-    SELECT 'gameplay_feature_vocab', slug, unnest(parents) FROM gameplay_feature_vocab
+    SELECT 'gameplay_features', slug, unnest(parents) FROM gameplay_features
   ) e
   WHERE NOT EXISTS (
     SELECT 1 FROM (
-      SELECT 'theme_vocab' AS v, slug, unnest(children) AS c FROM theme_vocab
+      SELECT 'themes' AS v, slug, unnest(children) AS c FROM themes
       UNION ALL
-      SELECT 'gameplay_feature_vocab', slug, unnest(children) FROM gameplay_feature_vocab
+      SELECT 'gameplay_features', slug, unnest(children) FROM gameplay_features
     ) r WHERE r.v = e.v AND r.slug = e.p AND r.c = e.slug
   )
 
