@@ -102,7 +102,7 @@ citation root stops resolving to itself	citation_root_not_self	CREATE TABLE _m A
 evidence bridge dangles	orphan_claim_citation	CREATE TABLE _m AS SELECT * FROM claim_citations; CREATE OR REPLACE VIEW claim_citations AS SELECT claim_id, 999999999::BIGINT AS citation_instance_id FROM _m;
 actor kind outside its domain	unknown_actor_kind	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('robot' AS actor_kind) FROM _m;
 actor resolution status outside its domain	unknown_actor_resolution_status	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('paused' AS actor_resolution_status) FROM _m;
-changeset action outside its domain	unknown_changeset_action	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('merge' AS changeset_action) FROM _m;
+changeset action outside its domain	unknown_changeset_action	CREATE TABLE _m AS SELECT * FROM _changeset_action; CREATE OR REPLACE VIEW _changeset_action AS SELECT * REPLACE ('merge' AS action) FROM _m;
 ingest run status outside its domain	unknown_ingest_run_status	CREATE TABLE _m AS SELECT * FROM ingest_runs; CREATE OR REPLACE VIEW ingest_runs AS SELECT * REPLACE ('paused' AS status) FROM _m;
 ingest source type outside its domain	unknown_ingest_source_type	CREATE TABLE _m AS SELECT * FROM ingest_sources; CREATE OR REPLACE VIEW ingest_sources AS SELECT * REPLACE ('zine' AS ingest_source_type) FROM _m;
 citation source type outside its domain	unknown_citation_source_type	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE ('scroll' AS citation_source_type) FROM _m;
@@ -119,7 +119,7 @@ actor resolution status absent	unknown_actor_resolution_status	CREATE TABLE _m A
 # The one that inverts: `action` is nullable and NULL is the INGEST state, so NULL must
 # stay silent. '' satisfies the interactive half of provenance_changeset_action_iff_
 # interactive while naming no action at all, which is the state worth catching.
-changeset action blank	unknown_changeset_action	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('' AS changeset_action) FROM _m;
+changeset action blank	unknown_changeset_action	CREATE TABLE _m AS SELECT * FROM _changeset_action; CREATE OR REPLACE VIEW _changeset_action AS SELECT * REPLACE ('' AS action) FROM _m;
 host_norm stops stripping www	macro_host_norm	CREATE OR REPLACE MACRO host_norm(h) AS lower(trim(h));
 url_host keeps the port	macro_url_host	CREATE OR REPLACE MACRO url_host(u) AS host_norm(regexp_extract(coalesce(u, ''), '^(?:[a-z][a-z0-9+.-]*:)?//(?:[^/@]*@)?([^/?#]*)', 1));
 host match loses the label boundary	macro_citation_root_for_host	CREATE OR REPLACE MACRO citation_root_for_host(h) AS (SELECT d.root_citation_source_id FROM citation_root_domains d WHERE ends_with(host_norm(h), d.host) ORDER BY length(d.host) DESC LIMIT 1);

@@ -25,6 +25,18 @@
 --   VOCABULARY  closed enum domains, asserted rather than assumed — the same reasoning
 --               as status_unknown in catalog_checks.sql.
 
+-- _changeset_action — every changeset's action AS STORED, at full changeset grain.
+-- Check-only scaffolding, because no public view carries both halves a vocabulary check
+-- needs. `claims` holds the raw value but names only changesets that WROTE a claim, so
+-- the retraction-only ones are outside it entirely — the population `changesets` exists
+-- to reach. `changesets` is that complete grain but reads through blanks_null, which
+-- folds a stored '' onto the NULL that legitimately marks an ingest changeset, making
+-- the defect indistinguishable from the healthy shape.
+-- A VIEW and not a read of `fc`, so check-mutations can break it: `fc` is attached
+-- READ_ONLY and its tables cannot be shadowed. Same reasoning as _citation_parent_chain.
+CREATE OR REPLACE VIEW _changeset_action AS
+  SELECT id AS changeset_id, action FROM fc.provenance_changeset;
+
 CREATE OR REPLACE VIEW _provenance_checks AS
   -- `claims` decoded ONCE for the branches below, on foundation_checks' reasoning and
   -- with its shadowing trick — DuckDB re-evaluates a view per REFERENCE, and this is the
@@ -370,9 +382,14 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   -- exactly when there is no ingest run, so every ingest changeset carries one. `''` is
   -- NOT that state — it satisfies the constraint's interactive half while naming no
   -- action at all — so absence is admitted by an explicit NULL test and nothing wider.
+  --
+  -- Scanned over _changeset_action, the scaffolding, and not over `claims`: this is a
+  -- fact about CHANGESETS, and `claims.changeset_id` names only the ones that wrote,
+  -- leaving the retraction-only rows — the population `changesets` exists to reach —
+  -- outside a check that claims to police the whole vocabulary.
   UNION ALL
   SELECT 'unknown_changeset_action', coalesce(v, 'NULL')
-  FROM (SELECT DISTINCT changeset_action AS v FROM claims)
+  FROM (SELECT DISTINCT action AS v FROM _changeset_action)
   WHERE v IS NOT NULL AND v NOT IN ('create', 'edit', 'delete', 'revert')
 
   UNION ALL
