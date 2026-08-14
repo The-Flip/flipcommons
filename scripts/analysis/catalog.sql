@@ -185,6 +185,9 @@ CREATE OR REPLACE VIEW locations AS
     split_part(l.location_path, '/', 1)      AS country_slug,
     l.parent_id IS NULL                      AS is_country
   FROM live('fc.catalog_location') l;
+COMMENT ON VIEW locations IS
+  'One row per live Location at EVERY level — THE entity; a country is just a row with is_country. Join on location_path, never slug: slug is unique only within a parent.';
+
 -- corporate_entity_locations — one row per (live corporate entity, live location) it is
 -- based in. THE bridge: CorporateEntityLocation is a through model owned by
 -- CorporateEntity ("existence is controlled by `location` relationship claims on
@@ -192,8 +195,9 @@ CREATE OR REPLACE VIEW locations AS
 -- `locations` — a Location knows nothing about corporate entities, and having the entity
 -- view reach across a relationship it doesn't own is what made three separate views read
 -- this table. Group this by location_id for that count.
--- The CE join is physical because `corporate_entities` aggregates over `models`, so
--- composing it here would be circular; the location side goes through `locations`.
+-- The two sides resolve at different layers on purpose: the CE contributes only its slug,
+-- so it comes from the base layer, while the location side goes through `locations`, which
+-- is where location_path gets split into country_slug and is_country.
 CREATE OR REPLACE VIEW corporate_entity_locations AS
   SELECT
     cel.corporate_entity_id,
@@ -208,8 +212,6 @@ CREATE OR REPLACE VIEW corporate_entity_locations AS
 COMMENT ON VIEW corporate_entity_locations IS
   'One row per (live corporate entity, live location) — THE CE-to-Location bridge and the only reader of the through table; group by location_id for corporate entities per place.';
 
-COMMENT ON VIEW locations IS
-  'One row per live Location at EVERY level — THE entity; a country is just a row with is_country. Join on location_path, never slug: slug is unique only within a parent.';
 -- location_aliases — every alias of every live Location: countries, regions and cities.
 -- Keyed on location_path, not slug (see `locations`). Filter is_country for the country slice.
 CREATE OR REPLACE VIEW location_aliases AS
@@ -295,10 +297,7 @@ CREATE OR REPLACE VIEW cabinets AS SELECT * FROM live('fc.catalog_cabinet');
 COMMENT ON VIEW cabinets IS
   'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail).';
 
--- production_statuses is the ProductionStatus vocabulary, NOT the soft-delete `status`
--- every other view here filters on. Same trap as the column on `models`.
--- NB the `status` live() drops here is the SOFT-DELETE flag, not the production status
--- this view is about — carrying it would have been doubly confusing.
+-- production_statuses is the ProductionStatus vocabulary, NOT soft-delete status
 CREATE OR REPLACE VIEW production_statuses AS SELECT * FROM live('fc.catalog_productionstatus');
 COMMENT ON VIEW production_statuses IS
   'One row per live production status — the commercial-production vocabulary (produced, announced, one-off).';
@@ -321,14 +320,19 @@ CREATE OR REPLACE VIEW _ce_location AS
   FROM corporate_entity_locations
   GROUP BY corporate_entity_id;
 
--- _title_live_n — live models per Title. Reads the physical table because `models`
--- consumes it; reading `models` would be circular.
+-- _title_live_n — live models per Title. Reads the base layer because `models` consumes
+-- it, so reading `models` would be circular.
+-- Read from OUTSIDE this section, unlike the helpers around it: it is the single source
+-- for `models.title_size` here AND `titles.n_models` several hundred lines down, which is
+-- the whole point — the two agreeing is a property of there being one definition, not a
+-- coincidence to re-establish. Changing the grain or the name moves both, plus the checks
+-- that compare them.
 CREATE OR REPLACE VIEW _title_live_n AS
   SELECT title_id, count(*) AS n
   FROM _live_machine_model
   GROUP BY title_id;
 
--- _namesake_live_n — live models per name_key, physical-table-read for the same reason.
+-- _namesake_live_n — live models per name_key, base-layer read for the same reason.
 CREATE OR REPLACE VIEW _namesake_live_n AS
   SELECT name_key(name) AS name_key, count(*) AS n
   FROM _live_machine_model
@@ -856,32 +860,6 @@ CREATE OR REPLACE VIEW gameplay_feature_vocab AS
 COMMENT ON VIEW gameplay_feature_vocab IS
   'One row per live gameplay feature — the feature VOCABULARY, columns matching theme_vocab. Read n WITH children: n = 0 on an interior node is by design.';
 
--- _model_target — the facts surfaced for the OTHER end of a relationship edge: identity
--- (incl. the manufacturer's model number), year, genre, reward types, player count,
--- manufacturer and location — what a reviewer uses to tell two models apart. A projection
--- of `models` + `rewards` with columns named target_*, so both edge views pull the whole
--- block via `* EXCLUDE (id)`; add a facet here and both gain it.
-CREATE OR REPLACE VIEW _model_target AS
-  SELECT
-    m.id,
-    m.slug                              AS target_slug,
-    m.name                              AS target_name,
-    m.manufacturer_model_identifier     AS target_manufacturer_model_identifier,
-    m.year                              AS target_year,
-    COALESCE(rw.rewards, []::VARCHAR[]) AS target_reward_types,
-    m.player_count                      AS target_player_count,
-    m.game_format_id                    AS target_game_format_id,
-    m.game_format_slug                  AS target_game_format_slug,
-    m.corporate_entity_id               AS target_corporate_entity_id,
-    m.corporate_entity_slug             AS target_corporate_entity_slug,
-    m.manufacturer_id                   AS target_manufacturer_id,
-    m.manufacturer_slug                 AS target_manufacturer_slug,
-    m.manufacturer_name                 AS target_manufacturer_name,
-    m.location_path                     AS target_location_path,
-    m.country_slug                      AS target_country_slug
-  FROM models m
-  LEFT JOIN rewards rw ON rw.model_id = m.id;
-
 -- ═══ MODEL-TO-MODEL RELATIONSHIPS — start with model_edges ══════════════════
 -- `model_edges` is the DEFAULT — every edge out of a model, lineage + typed, in one
 -- view. Reach for it first when exploring relationships: one `WHERE model_id = ?`
@@ -907,6 +885,32 @@ CREATE OR REPLACE VIEW _model_target AS
 -- model_edges CONCATENATES the two and does NOT reconcile overlaps: a variant_of FK and a
 -- typed edge to the same target are two rows; deciding they're one is analysis-local.
 -- ─────────────────────────────────────────────────────────────────────────────
+
+-- _model_target — the facts surfaced for the OTHER end of a relationship edge: identity
+-- (incl. the manufacturer's model number), year, genre, reward types, player count,
+-- manufacturer and location — what a reviewer uses to tell two models apart. A projection
+-- of `models` + `rewards` with columns named target_*, so both edge views pull the whole
+-- block via `* EXCLUDE (id)`; add a facet here and both gain it.
+CREATE OR REPLACE VIEW _model_target AS
+  SELECT
+    m.id,
+    m.slug                              AS target_slug,
+    m.name                              AS target_name,
+    m.manufacturer_model_identifier     AS target_manufacturer_model_identifier,
+    m.year                              AS target_year,
+    COALESCE(rw.rewards, []::VARCHAR[]) AS target_reward_types,
+    m.player_count                      AS target_player_count,
+    m.game_format_id                    AS target_game_format_id,
+    m.game_format_slug                  AS target_game_format_slug,
+    m.corporate_entity_id               AS target_corporate_entity_id,
+    m.corporate_entity_slug             AS target_corporate_entity_slug,
+    m.manufacturer_id                   AS target_manufacturer_id,
+    m.manufacturer_slug                 AS target_manufacturer_slug,
+    m.manufacturer_name                 AS target_manufacturer_name,
+    m.location_path                     AS target_location_path,
+    m.country_slug                      AS target_country_slug
+  FROM models m
+  LEFT JOIN rewards rw ON rw.model_id = m.id;
 
 -- model_lineage — variant_of + remake_of + export_edition_of as row-grain edges: one row
 -- per (model, edge_kind), 0..1 per kind. The target LEFT JOIN is defensive only — the app
@@ -956,9 +960,9 @@ CREATE OR REPLACE VIEW model_relationships AS
   FROM fc.catalog_modelrelationship r
   SEMI JOIN models s ON s.id = r.machine_model_id
   LEFT JOIN _model_target tgt ON tgt.id = r.target_machine_id;  -- resolved target, if live
-
 COMMENT ON VIEW model_relationships IS
   'One row per typed ModelRelationship edge — multi-valued, closed relationship_type and license_status vocabularies, target either a resolved model or a free-text label. A component of model_edges.';
+
 -- model_export_markets — one row per export destination of a live model. NOT part of
 -- model_edges: the target is a Location, not a model (the model↔model half of the export
 -- story is the export_edition_of lineage FK). The target ladder is OPTIONAL — a country

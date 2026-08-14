@@ -94,7 +94,15 @@ Two mechanics worth knowing:
 
 Macros work the same way and carry the same obligation: a `COMMENT ON MACRO` under each `CREATE OR REPLACE MACRO`, enforced by `undocumented_macro`. `describe` lists them after the views, with their signatures.
 
-Private `_underscore` helpers take no comment; they aren't reference surface.
+Private `_underscore` helpers take no `COMMENT ON`; they aren't reference surface.
+
+They do have a placement rule, because `_` covers three different things and only the first is a layer:
+
+- **Base layer** — the `_live_*` block, one per lifecycle table read from more than one view. No dependencies, so it sits ahead of everything.
+- **Shared helper** — a collapse or a pre-aggregate several views join (`_ce_location`, `_mfr_status`, `_model_target`). Goes at the head of the section whose public views it feeds, not next to whichever one happens to read it first.
+- **Local stage** — one consumer, a few lines above it (`_dm_lines` into `_dm_marked` into `domain_vocab`). Stays adjacent; hoisting it would only separate it from the thing that explains it.
+
+A shared helper read from OUTSIDE its own section says so in its comment. `_title_live_n` is the one, and the reason to flag it is that its two consumers agreeing is a property of there being one definition — an edit that looks local moves both.
 
 `model_edges` being outbound-only is stated in both its comment block and README, deliberately — it is the one trap that returns a confident wrong answer rather than an error. Don't trim it as a duplicate.
 
