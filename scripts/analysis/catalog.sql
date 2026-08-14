@@ -900,19 +900,20 @@ CREATE OR REPLACE VIEW _model_target AS
 --   edge_kind : 'variant_of' | 'remake_of' | 'export_edition_of'
 --   target_*  : the origin model — see _model_target
 CREATE OR REPLACE VIEW model_lineage AS
+  -- One pass over `models` rather than one per FK, and a fourth lineage FK is one more
+  -- name in the ON list. UNPIVOT drops NULL values, which is the 0..1-per-kind filter.
+  -- edge_kind comes off the COLUMN NAME with the `_id` suffix stripped, so the three
+  -- values above are only as stable as the column spellings — renaming a lineage FK
+  -- renames the edge kind with it, and lineage_kind_unknown is what says so.
   WITH edges AS (
-    SELECT id AS model_id, variant_of_id AS target_id, 'variant_of' AS edge_kind
-      FROM models WHERE variant_of_id IS NOT NULL
-    UNION ALL
-    SELECT id AS model_id, remake_of_id AS target_id, 'remake_of' AS edge_kind
-      FROM models WHERE remake_of_id IS NOT NULL
-    UNION ALL
-    SELECT id AS model_id, export_edition_of_id AS target_id, 'export_edition_of' AS edge_kind
-      FROM models WHERE export_edition_of_id IS NOT NULL
+    UNPIVOT (SELECT id AS model_id, variant_of_id, remake_of_id, export_edition_of_id
+             FROM models)
+    ON variant_of_id, remake_of_id, export_edition_of_id
+    INTO NAME fk_column VALUE target_id
   )
   SELECT
     e.model_id,
-    e.edge_kind,
+    regexp_replace(e.fk_column, '_id$', '') AS edge_kind,
     e.target_id,
     tgt.* EXCLUDE (id)
   FROM edges e

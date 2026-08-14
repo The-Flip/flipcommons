@@ -774,6 +774,17 @@ CREATE OR REPLACE VIEW foundation_checks AS
          'model_id=' || model_id::VARCHAR || ' edge_kind=' || edge_kind
   FROM model_lineage WHERE target_id IS NULL
 
+  -- edge_kind is DERIVED from the FK column name, so the closed three-value vocabulary is
+  -- a fact about how those columns are spelled rather than about literals in the view.
+  -- That is what this asserts, and it is what makes the derivation safe to rely on: rename
+  -- a lineage FK and the edge kind renames with it, silently, since model_edges carries
+  -- the value straight through to relationship_type. One row per unrecognized value, not
+  -- per edge. `IS NULL OR NOT IN` per the house rule at the top of this view.
+  UNION ALL
+  SELECT 'lineage_kind_unknown', coalesce(v, 'NULL')
+  FROM (SELECT DISTINCT edge_kind AS v FROM model_lineage)
+  WHERE v IS NULL OR v NOT IN ('variant_of', 'remake_of', 'export_edition_of')
+
   -- integrity: a RESOLVED target (lineage OR typed) that isn't live — target_id set
   -- but target_slug NULL, since a live model always has a slug. The app blocks soft-
   -- deleting a model that is an ACTIVE variant_of/remake_of target or an inbound typed

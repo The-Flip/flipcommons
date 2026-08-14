@@ -73,6 +73,7 @@ edge subject not live	edge_subject_not_live	CREATE TABLE _m AS SELECT * FROM mod
 lineage target de-enriched	lineage_target_not_live	CREATE TABLE _m AS SELECT * FROM model_lineage; CREATE OR REPLACE VIEW model_lineage AS SELECT * REPLACE (NULL::VARCHAR AS target_slug) FROM _m;
 relationship target de-enriched	relationship_target_not_live	CREATE TABLE _m AS SELECT * FROM model_relationships; CREATE OR REPLACE VIEW model_relationships AS SELECT * REPLACE (CASE WHEN target_id IS NULL THEN target_slug END AS target_slug) FROM _m;
 lineage target_id lost	lineage_missing_target_id	CREATE TABLE _m AS SELECT * FROM model_lineage; CREATE OR REPLACE VIEW model_lineage AS SELECT * REPLACE (NULL::BIGINT AS target_id) FROM _m;
+lineage FK renamed under the derivation	lineage_kind_unknown	CREATE TABLE _m AS SELECT * FROM model_lineage; CREATE OR REPLACE VIEW model_lineage AS SELECT * REPLACE ('variant_of_fk' AS edge_kind) FROM _m;
 target genre mis-enriched	target_genre_mismatch	CREATE TABLE _m AS SELECT * FROM model_lineage; CREATE OR REPLACE VIEW model_lineage AS SELECT * REPLACE ('not-a-genre' AS target_game_format_slug) FROM _m;
 relationship_type off-vocabulary	relationship_type_unknown	CREATE TABLE _m AS SELECT * FROM model_relationships; CREATE OR REPLACE VIEW model_relationships AS SELECT * REPLACE ('bogus' AS relationship_type) FROM _m;
 license_status off-vocabulary	license_status_unknown	CREATE TABLE _m AS SELECT * FROM model_relationships; CREATE OR REPLACE VIEW model_relationships AS SELECT * REPLACE ('bogus' AS license_status) FROM _m;
