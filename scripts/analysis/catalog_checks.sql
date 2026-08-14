@@ -958,21 +958,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
   SELECT 'tag_subject_not_live', 'model_id=' || model_id::VARCHAR
   FROM model_tags WHERE model_id NOT IN (SELECT id FROM models)
 
-  -- grain and display list describe the same memberships, compared by VALUE. Same key-set
-  -- reasoning as theme_views_disagree: the union of both sides, so a model carried by only
-  -- one of them is on the key set rather than invisible to the comparison.
-  UNION ALL
-  SELECT 'tag_views_disagree',
-         'model_id=' || model_id::VARCHAR || ' grain=' || COALESCE(grain::VARCHAR, '<none>')
-           || ' list=' || COALESCE(list::VARCHAR, '<none>')
-  FROM (
-    SELECT k.model_id,
-           (SELECT list_sort(list(mt.tag_slug)) FROM model_tags mt WHERE mt.model_id = k.model_id) AS grain,
-           t.tags AS list
-    FROM (SELECT id AS model_id FROM models UNION SELECT model_id FROM tags) k
-    LEFT JOIN tags t ON t.model_id = k.model_id
-  ) WHERE grain IS DISTINCT FROM list
-
   -- ── credits: the polymorphic subject, in both of the ways it can go wrong ──
   -- `credits` is the one grain view whose subject is not a machine model: it is a live
   -- MachineModel XOR a live Series, decoded into subject_type/subject_id. Two checks,
@@ -1018,30 +1003,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
            || ' view=' || (SELECT count(*) FROM credits)::VARCHAR
   WHERE (SELECT n FROM _credit_physical)
         IS DISTINCT FROM (SELECT count(*) FROM credits)
-
-  -- the grain view and the display list describe the SAME memberships — compared by
-  -- VALUE, not by count. They're built by different paths (model_themes filters live
-  -- subjects with an EXISTS and carries slugs; `themes` groups names off the raw join),
-  -- so reconstructing one from the other is a real cross-view check: it catches a live
-  -- filter added to one and not the other, AND a same-size mis-join that lands the
-  -- right number of wrong themes on a model. Cardinality alone would miss the second,
-  -- which is the one that silently corrupts every name a theme cleanup reads.
-  -- The key set is the UNION of both sides, not `models`: driven from `models` this sees
-  -- only a membership the GRAIN view lost, because a model the DISPLAY LIST alone carries
-  -- is off the key set entirely.
-  UNION ALL
-  SELECT 'theme_views_disagree',
-         'model_id=' || model_id::VARCHAR || ' grain=' || COALESCE(grain::VARCHAR, '<none>')
-           || ' list=' || COALESCE(list::VARCHAR, '<none>')
-  FROM (
-    SELECT k.model_id,
-           (SELECT list_sort(list(tv.name))
-              FROM model_themes mt JOIN theme_vocab tv ON tv.id = mt.theme_id
-             WHERE mt.model_id = k.model_id) AS grain,
-           th.themes                   AS list
-    FROM (SELECT id AS model_id FROM models UNION SELECT model_id FROM themes) k
-    LEFT JOIN themes th ON th.model_id = k.model_id
-  ) WHERE grain IS DISTINCT FROM list
 
   -- model_edges_bidir mirrors exactly the resolved edges and nothing else: one 'out'
   -- row per edge, plus one 'in' row per edge that has a model at the far end

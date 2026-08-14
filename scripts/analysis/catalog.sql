@@ -344,10 +344,9 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --   title_* : the model's Title — the spine of the hierarchy (every model has one; the
 --             FK is NOT NULL), decoded inline so title-mate analyses never reach for
 --             catalog_title.
---   title_size : how many LIVE models share this model's Title — the model-keyed form of
---             the `title_size` VIEW, off one helper so they can't disagree. "Alone in its
---             Title?" is `title_size = 1`. Always >= 1, since the model counts itself —
---             a 0 here means the join broke, which title_size_zero_on_live asserts.
+--   title_size : LIVE models sharing this model's Title, itself included — so >= 1, and
+--             `title_size = 1` is "alone in its Title". The model-keyed form of
+--             `titles.n_models`.
 --   namesake_count : LIVE models sharing this model's `name_key`, including itself. 1
 --             means unique; > 1 is ambiguous and needs another signal. Trailing-
 --             parenthetical variants count together (it uses name_key). Always >= 1 for
@@ -670,26 +669,16 @@ CREATE OR REPLACE VIEW rewards AS
 COMMENT ON VIEW rewards IS
   'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
--- themes — sorted theme names per live model (only models that have any). Keyed model_id
--- like `rewards`, and the canonical home for theme data.
-CREATE OR REPLACE VIEW themes AS
-  SELECT mt.machinemodel_id AS model_id, list_sort(list(t.name)) AS themes
-  FROM fc.catalog_machinemodel_themes mt
-  JOIN _live_theme t ON t.id = mt.theme_id
-  SEMI JOIN models s ON s.id = mt.machinemodel_id
-  GROUP BY mt.machinemodel_id;
-COMMENT ON VIEW themes IS
-  'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, theme_vocab for questions about the vocabulary itself.';
-
 -- ─── Theme vocabulary ───────────────────────────────────────────────────────
--- `themes` above is a per-model DISPLAY list of NAMES — right for enrichment, useless for
+-- `themes` is a per-model DISPLAY list of NAMES — right for enrichment, useless for
 -- questions about the vocabulary ITSELF ("which themes are near-duplicates?", "what hangs
 -- under fantasy?", "does this alias collide with a live theme?"), which need the slug, the
 -- DAG and the aliases. Three views cover that shape, and the gameplay-feature vocabulary
 -- below mirrors them one-for-one:
 --   <term>_vocab     one row per live term — identity, usage count, DAG, aliases
 --   <term>_aliases   alias GRAIN, so you can join and compare on an alias
---   model_<terms>    slug-keyed model↔term grain (the twin of the display list)
+--   model_<terms>    slug-keyed model↔term grain — THE reader of the through table, and
+--                    what the display list is built from, so membership has one definition
 -- model_themes — one row per (live model, live theme). The GRAIN twin of `themes`; the
 -- display name is in theme_vocab, not here. Direct attachments ONLY, DAG not rolled up: a
 -- model tagged `black-magic` does NOT gain `occult`. Resolve ancestors analysis-locally
@@ -701,6 +690,16 @@ CREATE OR REPLACE VIEW model_themes AS
   SEMI JOIN models s ON s.id = mt.machinemodel_id;
 COMMENT ON VIEW model_themes IS
   'One row per (live model, live theme) — the grain twin of themes; predicate and join on theme_slug. Direct attachments only, DAG not rolled up.';
+
+-- themes — sorted theme names per live model (only models that have any). Keyed model_id
+-- like `rewards`, and the canonical home for theme data.
+CREATE OR REPLACE VIEW themes AS
+  SELECT mt.model_id, list_sort(list(t.name)) AS themes
+  FROM model_themes mt
+  JOIN _live_theme t ON t.id = mt.theme_id
+  GROUP BY mt.model_id;
+COMMENT ON VIEW themes IS
+  'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, theme_vocab for questions about the vocabulary itself.';
 
 -- theme_aliases — one row per alias of a live theme. GRAIN rather than the flat list in
 -- theme_vocab.aliases, because consumers JOIN and COMPARE on an alias — an alias colliding
@@ -753,14 +752,8 @@ CREATE OR REPLACE VIEW theme_vocab AS
 COMMENT ON VIEW theme_vocab IS
   'One row per live theme — the theme VOCABULARY: usage count n, DAG parents/children, aliases. Reach for it when the subject is the themes rather than the models.';
 
--- tag_vocab — one row per live TAG: the vocabulary behind `tags`. `tags` is
--- keyed by MODEL and answers "what is this tagged"; this is keyed by tag and answers "what
--- tags exist, and how much is each used". Much of the vocabulary is soft-deleted, so check
--- a hardcoded slug against this view before trusting it. Flat, no DAG.
--- model_tags — one row per (live model, live tag). The GRAIN twin of `tags`, and THE
--- reader of the through table: `tags` and `tag_vocab` are both built from it, so the
--- live-subject rule is stated once and the two cannot disagree about the population.
--- Flat, no DAG to roll up, unlike model_themes.
+-- The only reader of the tags through table — `tags` and `tag_vocab` both build on this,
+-- so the live-subject rule is stated once.
 CREATE OR REPLACE VIEW model_tags AS
   SELECT mt.machinemodel_id AS model_id, tg.id AS tag_id, tg.slug AS tag_slug
   FROM fc.catalog_machinemodel_tags mt
@@ -769,6 +762,8 @@ CREATE OR REPLACE VIEW model_tags AS
 COMMENT ON VIEW model_tags IS
   'One row per (live model, live tag) — the grain twin of tags; predicate and join on tag_slug. Flat, no DAG.';
 
+-- Much of the tag vocabulary is soft-deleted, so check a hardcoded slug against this view
+-- before trusting it.
 CREATE OR REPLACE VIEW tag_vocab AS
   SELECT
     tg.*,
@@ -1093,11 +1088,6 @@ COMMENT ON VIEW series IS
 -- it when the Title itself is the subject; read the decoded columns off a model row
 -- when you already have one.
 --
---   IT IS NOT `title_size` WITH MORE COLUMNS. `title_size` holds only Titles that HAVE
---             a live model; this holds every live Title and reports the rest at
---             `n_models = 0` rather than dropping them. The two agree row-for-row today,
---             so the difference stays invisible until a Title outlives its last model —
---             which soft-deleting the one model of a one-model Title produces at once.
 --   franchise / series : the two optional Title groupings, resolved to slug and name.
 --             Both sparse by design, and they mean different things: a franchise is the
 --             IP (Star Trek, spanning manufacturers and eras), a series is a curated
@@ -1120,7 +1110,7 @@ CREATE OR REPLACE VIEW titles AS
   LEFT JOIN franchises f     ON f.id  = t.franchise_id
   LEFT JOIN series se        ON se.id = t.series_id;
 COMMENT ON VIEW titles IS
-  'One row per LIVE Title — identity, franchise/series grouping and n_models. Unlike title_size it keeps Titles with no live models, at n_models = 0.';
+  'One row per LIVE Title — identity, franchise/series grouping and n_models. A Title with no live models stays, at n_models = 0.';
 
 -- model_number_collisions — one row per (manufacturer, model number) that more than one
 -- live model claims: `models.manufacturer_model_identifier`'s non-uniqueness made
