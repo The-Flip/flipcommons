@@ -9,22 +9,13 @@
 --
 -- What `fc` attaches is db.analytics.duckdb, an IMPORT of backend/db.sqlite3 into
 -- DuckDB's own storage — not the SQLite file itself. The runner re-imports whenever the
--- source changes (under a second, and it is what `scripts/analysis/analysis` does before
--- every command), so going through the runner is the supported entry point. A bare
--- `duckdb -init` still works but attaches whatever the last import produced; read
--- `analysis_context.snapshot_imported_at` if that matters to you.
+-- source changes, so going through it is the supported entry point; a bare `duckdb -init`
+-- attaches whatever the last import produced (`analysis_context.snapshot_imported_at`).
 --
--- Reading a SQLite file in place is what this arrangement exists to avoid, and the
--- reason is correctness, not speed: DuckDB's sqlite scanner silently hands one table's
--- aggregate to another when two branches of a query share a pushed-down projection and
--- filter, which the liveness predicate makes near-universal here. EDITING.md has the
--- measurements and the two defects it caused.
---
--- Four conventions hold throughout and are NOT restated per view:
---   * UNPREFIXED = public API. `_underscore` = private helper.
---   * Views are LIVE-ONLY. Catalog records are soft-deleted (RecordLifecycle.md) and
+-- Conventions that hold throughout and are NOT restated per view:
+--   * `_underscore` = private helper.
+--   * Views omit soft-deleted records (see RecordLifecycle.md) and
 --     live means `status IS DISTINCT FROM 'deleted'`, matching the read APIs.
---     analysis needs one.
 --   * A dim or edge target is soft-deleted independently of its subject, so a dead one
 --     DE-ENRICHES TO NULL rather than being reported as current. catalog_checks flags
 --     every occurrence; per-view notes name only the check.
@@ -32,6 +23,9 @@
 --
 -- README.md to write an analysis; EDITING.md to change this file.
 
+-- Not the SQLite file in place: DuckDB's sqlite scanner collapses two aggregates into
+-- one under our liveness predicate. EDITING.md, "Why the catalog is imported rather
+-- than attached".
 ATTACH IF NOT EXISTS 'backend/db.analytics.duckdb' AS fc (READ_ONLY);
 
 -- ═══ NAME NORMALIZATION — macros for comparing names across records ═════════
@@ -99,8 +93,6 @@ CREATE OR REPLACE VIEW locations AS
       created_at,       -- row bookkeeping: differs between any two copies of the catalog,
       updated_at        -- so it describes the local db state rather than catalog state
     ),
-    -- The ONE place location_path is split. Everything downstream reads country_slug
-    -- from here rather than splitting the path again.
     split_part(l.location_path, '/', 1)      AS country_slug,
     l.parent_id IS NULL                      AS is_country
   FROM fc.catalog_location l
@@ -147,8 +139,7 @@ CREATE OR REPLACE VIEW location_aliases AS
 COMMENT ON VIEW location_aliases IS
   'One row per alias of a live Location at any level — alias GRAIN, keyed on location_path because Location.slug is unique only within a parent. Filter is_country for countries.';
 
--- game_formats — the machine-genre vocabulary. Join models.game_format_id to it, or check
--- that a format slug you hardcode still exists.
+-- game_formats — the machine-genre vocabulary.
 CREATE OR REPLACE VIEW game_formats AS
   SELECT * EXCLUDE (
     status,           -- the view IS the live rows; the soft-delete flag adds nothing
@@ -157,9 +148,9 @@ CREATE OR REPLACE VIEW game_formats AS
   ) FROM fc.catalog_gameformat
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW game_formats IS
-  'One row per live game format — the machine-genre vocabulary; join models.game_format_id, or check that a slug you hardcode still exists.';
+  'One row per live game format — the machine-genre vocabulary';
 
--- reward_types — what a machine pays out: the VOCABULARY behind the `rewards` name-list.
+-- reward_types — what a machine pays out: the VOCABULARY behind `rewards`.
 -- `rewards` says which types a model has, this says what the closed set is, and
 -- `reward_type_aliases` resolves a source's phrasing into it.
 CREATE OR REPLACE VIEW reward_types AS
@@ -170,7 +161,7 @@ CREATE OR REPLACE VIEW reward_types AS
   ) FROM fc.catalog_rewardtype
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW reward_types IS
-  'One row per live reward type — the payout vocabulary behind the rewards name-list; join reward_type_aliases to resolve a source phrasing into it.';
+  'One row per live reward type — the payout vocabulary behind rewards; join reward_type_aliases to resolve a source phrasing into it.';
 
 -- ─── Taxonomy dims, at entity grain ─────────────────────────────────────────
 -- One view per taxonomy dim. `models` carries these as SLUG ONLY and still does — these
@@ -194,7 +185,7 @@ CREATE OR REPLACE VIEW technology_generations AS
   ) FROM fc.catalog_technologygeneration
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW technology_generations IS
-  'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State) behind models.technology_generation_slug.';
+  'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State).';
 
 CREATE OR REPLACE VIEW technology_subgenerations AS
   SELECT
@@ -218,7 +209,7 @@ CREATE OR REPLACE VIEW display_types AS
   ) FROM fc.catalog_displaytype
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW display_types IS
-  'One row per live display type — the display-technology vocabulary (Score Reels, DMD, LCD) behind models.display_type_slug.';
+  'One row per live display type — the display-technology vocabulary (Score Reels, DMD, LCD).';
 
 CREATE OR REPLACE VIEW display_subtypes AS
   SELECT
@@ -264,7 +255,7 @@ CREATE OR REPLACE VIEW cabinets AS
   ) FROM fc.catalog_cabinet
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW cabinets IS
-  'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail) behind models.cabinet_slug.';
+  'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail).';
 
 -- production_statuses is the ProductionStatus vocabulary, NOT the soft-delete `status`
 -- every other view here filters on. Same trap as the column on `models`.
@@ -277,7 +268,7 @@ CREATE OR REPLACE VIEW production_statuses AS
   ) FROM fc.catalog_productionstatus
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW production_statuses IS
-  'One row per live production status — the commercial-production vocabulary (produced, announced, one-off) behind models.production_status_slug; NOT the soft-delete status.';
+  'One row per live production status — the commercial-production vocabulary (produced, announced, one-off).';
 
 -- ═══ MODELS — the spine; start here ═════════════════════════════════════════
 -- _ce_location — the MANUFACTURER's home location per corporate entity, collapsed to ONE
@@ -746,7 +737,7 @@ CREATE OR REPLACE VIEW theme_vocab AS
 COMMENT ON VIEW theme_vocab IS
   'One row per live theme — the theme VOCABULARY: usage count n, DAG parents/children, aliases. Reach for it when the subject is the themes rather than the models.';
 
--- tag_vocab — one row per live TAG: the vocabulary behind the `tags` name-list. `tags` is
+-- tag_vocab — one row per live TAG: the vocabulary behind `tags`. `tags` is
 -- keyed by MODEL and answers "what is this tagged"; this is keyed by tag and answers "what
 -- tags exist, and how much is each used". Much of the vocabulary is soft-deleted, so check
 -- a hardcoded slug against this view before trusting it. Flat, no DAG.
@@ -766,7 +757,7 @@ CREATE OR REPLACE VIEW tag_vocab AS
   WHERE tg.status IS DISTINCT FROM 'deleted'
   GROUP BY ALL;
 COMMENT ON VIEW tag_vocab IS
-  'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of the model-keyed tags name-list. Flat, no DAG.';
+  'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of model-keyed tags. Flat, no DAG.';
 
 -- tags — sorted list of TAG SLUGS per tagged model (only models with any). Keyed model_id
 -- like rewards/themes. SLUGS, not names: unlike those display lists, tags are the
@@ -790,7 +781,7 @@ CREATE OR REPLACE VIEW _live_gameplay_feature AS
   WHERE status IS DISTINCT FROM 'deleted';
 
 -- model_gameplay_features — one row per (model, directly-attached gameplay feature) with
--- its optional count. A grain view, NOT a flattened name-list like rewards/themes, because
+-- its optional count. A grain view, NOT a flattened like rewards/themes, because
 -- most of these rows carry a count (Flippers x2; Trap Holes x25, the 5x5 bingo card) that
 -- flattening would drop. Direct attachments ONLY: the GameplayFeature DAG (2-Ball
 -- Multiball under Multiball) is NOT rolled up — resolve parents analysis-locally, as with
