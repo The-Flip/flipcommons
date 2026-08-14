@@ -658,10 +658,11 @@ COMMENT ON VIEW manufacturers IS
 -- grain view and a usage count like themes and tags, rather than a slug column on `models`
 -- the way the single-FK dims do. Flat, no DAG.
 CREATE OR REPLACE VIEW model_rewards AS
-  SELECT mr.machinemodel_id AS model_id, rt.id AS reward_type_id, rt.slug AS reward_type_slug
+  SELECT mr.machinemodel_id AS model_id, s.slug AS model_slug,
+         rt.id AS reward_type_id, rt.slug AS reward_type_slug
   FROM fc.catalog_machinemodel_reward_types mr
   JOIN _live_reward_type rt ON rt.id = mr.rewardtype_id
-  SEMI JOIN models s ON s.id = mr.machinemodel_id;
+  JOIN models s ON s.id = mr.machinemodel_id;
 COMMENT ON VIEW model_rewards IS
   'One row per (live model, live reward type) — the grain twin of model_reward_names; predicate and join on reward_type_slug. Flat, no DAG.';
 
@@ -707,10 +708,11 @@ COMMENT ON VIEW model_reward_names IS
 -- DAG not rolled up: a model tagged `black-magic` does NOT gain `occult`. Resolve
 -- ancestors analysis-locally via themes.parents.
 CREATE OR REPLACE VIEW model_themes AS
-  SELECT mt.machinemodel_id AS model_id, t.id AS theme_id, t.slug AS theme_slug
+  SELECT mt.machinemodel_id AS model_id, s.slug AS model_slug,
+         t.id AS theme_id, t.slug AS theme_slug
   FROM fc.catalog_machinemodel_themes mt
   JOIN _live_theme t ON t.id = mt.theme_id
-  SEMI JOIN models s ON s.id = mt.machinemodel_id;
+  JOIN models s ON s.id = mt.machinemodel_id;
 COMMENT ON VIEW model_themes IS
   'One row per (live model, live theme) — the grain twin of model_theme_names; predicate and join on theme_slug. Direct attachments only, DAG not rolled up.';
 
@@ -779,10 +781,11 @@ COMMENT ON VIEW model_theme_names IS
 -- The only reader of the tag through table — `model_tag_slugs` and `tags` both build on this,
 -- so the live-subject rule is stated once.
 CREATE OR REPLACE VIEW model_tags AS
-  SELECT mt.machinemodel_id AS model_id, tg.id AS tag_id, tg.slug AS tag_slug
+  SELECT mt.machinemodel_id AS model_id, s.slug AS model_slug,
+         tg.id AS tag_id, tg.slug AS tag_slug
   FROM fc.catalog_machinemodel_tags mt
   JOIN _live_tag tg ON tg.id = mt.tag_id
-  SEMI JOIN models s ON s.id = mt.machinemodel_id;
+  JOIN models s ON s.id = mt.machinemodel_id;
 COMMENT ON VIEW model_tags IS
   'One row per (live model, live tag) — the grain twin of model_tag_slugs; predicate and join on tag_slug. Flat, no DAG.';
 
@@ -825,12 +828,13 @@ COMMENT ON VIEW model_tag_slugs IS
 CREATE OR REPLACE VIEW model_gameplay_features AS
   SELECT
     mgf.machinemodel_id AS model_id,
+    s.slug              AS model_slug,
     gf.id               AS feature_id,
     gf.slug             AS feature_slug,
     mgf.count           AS count
   FROM fc.catalog_machinemodelgameplayfeature mgf
   JOIN _live_gameplay_feature gf ON gf.id = mgf.gameplayfeature_id
-  SEMI JOIN models s ON s.id = mgf.machinemodel_id;
+  JOIN models s ON s.id = mgf.machinemodel_id;
 COMMENT ON VIEW model_gameplay_features IS
   'One row per (live model, gameplay feature) with its optional count (Flippers x2, Trap Holes x25) — the counted grain. Direct attachments only, DAG not rolled up.';
 
@@ -955,13 +959,15 @@ CREATE OR REPLACE VIEW model_lineage AS
   -- values above are only as stable as the column spellings — renaming a lineage FK
   -- renames the edge kind with it, and lineage_kind_unknown is what says so.
   WITH edges AS (
-    UNPIVOT (SELECT id AS model_id, variant_of_id, remake_of_id, export_edition_of_id
+    UNPIVOT (SELECT id AS model_id, slug AS model_slug,
+                    variant_of_id, remake_of_id, export_edition_of_id
              FROM models)
     ON variant_of_id, remake_of_id, export_edition_of_id
     INTO NAME fk_column VALUE target_id
   )
   SELECT
     e.model_id,
+    e.model_slug,
     regexp_replace(e.fk_column, '_id$', '') AS edge_kind,
     e.target_id,
     tgt.* EXCLUDE (id)
@@ -982,13 +988,14 @@ COMMENT ON VIEW model_lineage IS
 CREATE OR REPLACE VIEW model_relationships AS
   SELECT
     r.machine_model_id         AS model_id,
+    s.slug                     AS model_slug,
     r.relationship_type,
     r.license_status,
     r.target_machine_id        AS target_id,
     NULLIF(r.target_label, '') AS target_label,
     tgt.* EXCLUDE (id)
   FROM fc.catalog_modelrelationship r
-  SEMI JOIN models s ON s.id = r.machine_model_id
+  JOIN models s ON s.id = r.machine_model_id
   LEFT JOIN _model_target tgt ON tgt.id = r.target_machine_id;  -- resolved target, if live
 COMMENT ON VIEW model_relationships IS
   'One row per typed ModelRelationship edge — multi-valued, closed relationship_type and license_status vocabularies, target either a resolved model or a free-text label. A component of model_edges.';
@@ -1004,12 +1011,13 @@ COMMENT ON VIEW model_relationships IS
 CREATE OR REPLACE VIEW model_export_markets AS
   SELECT
     em.machine_model_id                 AS model_id,
+    s.slug                              AS model_slug,
     em.target_market_location_id        AS target_location_id,
     c.slug                              AS target_country_slug,
     c.name                              AS target_country_name,
     NULLIF(em.target_market_label, '')  AS target_label
   FROM fc.catalog_modelexportmarket em
-  SEMI JOIN models s ON s.id = em.machine_model_id
+  JOIN models s ON s.id = em.machine_model_id
   LEFT JOIN locations c ON c.id = em.target_market_location_id AND c.is_country;
 COMMENT ON VIEW model_export_markets IS
   'One row per export destination of a live model — the target is a LOCATION, not a model, so this is NOT part of model_edges. The target ladder is optional: a country, a free-text region, or neither.';
@@ -1071,6 +1079,7 @@ CREATE OR REPLACE VIEW model_edges_bidir AS
   SELECT
     'in'                AS direction,
     e.target_id         AS model_id,
+    e.target_slug       AS model_slug,
     e.edge_source,
     e.relationship_type,
     e.license_status,

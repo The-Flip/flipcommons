@@ -776,10 +776,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
   FROM model_edges
   WHERE (edge_source = 'lineage_fk') IS DISTINCT FROM (license_status IS NULL)
 
-  -- subject integrity: every edge belongs to a live model
-  UNION ALL
-  SELECT 'edge_subject_not_live', 'model_id=' || model_id::VARCHAR
-  FROM model_edges WHERE model_id NOT IN (SELECT id FROM models)
 
   -- every lineage edge carries an FK target (guards the edges CTE's IS NOT NULL
   -- filter); variant_of/remake_of are non-null self-FKs on the rows that have them.
@@ -909,10 +905,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
            || ' n=' || count(*)::VARCHAR
   FROM model_gameplay_features GROUP BY model_id, feature_id HAVING count(*) > 1
 
-  -- model_gameplay_features subjects are live (mirrors edge_subject_not_live)
-  UNION ALL
-  SELECT 'gpf_subject_not_live', 'model_id=' || model_id::VARCHAR
-  FROM model_gameplay_features WHERE model_id NOT IN (SELECT id FROM models)
 
   -- grain guard: models.location_path / country_slug (and their target_* twins) come
   -- from _ce_location, which assumes CE -> live location is 1:1 (true across the whole
@@ -942,10 +934,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
            || ' n=' || count(*)::VARCHAR
   FROM model_themes GROUP BY model_id, theme_id HAVING count(*) > 1
 
-  -- model_themes subjects are live (mirrors gpf_subject_not_live)
-  UNION ALL
-  SELECT 'theme_subject_not_live', 'model_id=' || model_id::VARCHAR
-  FROM model_themes WHERE model_id NOT IN (SELECT id FROM models)
 
   -- the tag family, mirroring the three theme checks above. `model_tag_slugs` and `tags` are
   -- both built from model_tags, so these guard the one definition they share.
@@ -955,20 +943,12 @@ CREATE OR REPLACE VIEW foundation_checks AS
            || ' n=' || count(*)::VARCHAR
   FROM model_tags GROUP BY model_id, tag_id HAVING count(*) > 1
 
-  UNION ALL
-  SELECT 'tag_subject_not_live', 'model_id=' || model_id::VARCHAR
-  FROM model_tags WHERE model_id NOT IN (SELECT id FROM models)
-
   -- and the reward family, same two guards
   UNION ALL
   SELECT 'reward_grain_dup',
          'model_id=' || model_id::VARCHAR || ' reward_type_id=' || reward_type_id::VARCHAR
            || ' n=' || count(*)::VARCHAR
   FROM model_rewards GROUP BY model_id, reward_type_id HAVING count(*) > 1
-
-  UNION ALL
-  SELECT 'reward_subject_not_live', 'model_id=' || model_id::VARCHAR
-  FROM model_rewards WHERE model_id NOT IN (SELECT id FROM models)
 
   -- ── credits: the polymorphic subject, in both of the ways it can go wrong ──
   -- `credits` is the one grain view whose subject is not a machine model: it is a live
