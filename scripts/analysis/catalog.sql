@@ -634,28 +634,29 @@ COMMENT ON VIEW corporate_entities IS
   'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts, location and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
--- rewards — sorted reward-type names per model (only models that have any). Keyed
--- model_id; the reward types are live-filtered but the models are not, so it inherits
--- live/all from whichever model view you join to.
+-- rewards — sorted reward-type names per live model (only models that have any). Keyed
+-- model_id.
 CREATE OR REPLACE VIEW rewards AS
   SELECT rt2.machinemodel_id AS model_id, list_sort(list(rt.name)) AS rewards
   FROM fc.catalog_machinemodel_reward_types rt2
   JOIN reward_types rt ON rt.id = rt2.rewardtype_id
+  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = rt2.machinemodel_id)  -- live subjects
   GROUP BY rt2.machinemodel_id;
 COMMENT ON VIEW rewards IS
-  'One row per model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
+  'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
 CREATE OR REPLACE VIEW _live_theme AS SELECT * FROM live('fc.catalog_theme');
 
--- themes — sorted theme names per model (only models that have any). Keyed model_id like
--- `rewards`, and the canonical home for theme data.
+-- themes — sorted theme names per live model (only models that have any). Keyed model_id
+-- like `rewards`, and the canonical home for theme data.
 CREATE OR REPLACE VIEW themes AS
   SELECT mt.machinemodel_id AS model_id, list_sort(list(t.name)) AS themes
   FROM fc.catalog_machinemodel_themes mt
   JOIN _live_theme t ON t.id = mt.theme_id
+  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = mt.machinemodel_id)  -- live subjects
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW themes IS
-  'One row per model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, theme_vocab for questions about the vocabulary itself.';
+  'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, theme_vocab for questions about the vocabulary itself.';
 
 -- ─── Theme vocabulary ───────────────────────────────────────────────────────
 -- `themes` above is a per-model DISPLAY list of NAMES — right for enrichment, useless for
@@ -746,17 +747,18 @@ CREATE OR REPLACE VIEW tag_vocab AS
 COMMENT ON VIEW tag_vocab IS
   'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of model-keyed tags. Flat, no DAG.';
 
--- tags — sorted list of TAG SLUGS per tagged model (only models with any). Keyed model_id
--- like rewards/themes. SLUGS, not names: unlike those display lists, tags are the
+-- tags — sorted list of TAG SLUGS per tagged live model (only models with any). Keyed
+-- model_id like rewards/themes. SLUGS, not names: unlike those display lists, tags are the
 -- classification vocabulary you PREDICATE on (`'widebody' IN tags`). NB `conversion_kit`
 -- and re-themes are NOT tags and won't appear here — they're ModelRelationship types.
 CREATE OR REPLACE VIEW tags AS
   SELECT mt.machinemodel_id AS model_id, list_sort(list(tg.slug)) AS tags
   FROM fc.catalog_machinemodel_tags mt
   JOIN tag_vocab tg ON tg.id = mt.tag_id
+  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = mt.machinemodel_id)  -- live subjects
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW tags IS
-  'One row per tagged model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
+  'One row per tagged LIVE model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
 
 -- ═══ GAMEPLAY FEATURES ══════════════════════════════════════════════════════
 CREATE OR REPLACE VIEW _live_gameplay_feature AS SELECT * FROM live('fc.catalog_gameplayfeature');

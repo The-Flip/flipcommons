@@ -116,7 +116,7 @@ The foundation surfaces a model's relationships in three shapes, plus a fourth f
 Two mechanisms cross the foundation's edge, both documented where they are defined:
 
 - **What a slug means** — `domain_vocab` parses [DomainModel.md](../../docs/DomainModel.md) at query time, so definitions are never copied into this layer. `LEFT JOIN domain_vocab d ON d.dim = 'gameformat' AND d.slug = g.slug`.
-- **Which work a URL belongs to** — `citation_root_for_url(u)`. Not equality or `LIKE`: registered hosts nest, so the rule is a longest label-boundary suffix — and on a shared multi-tenant CDN host (`img1.wsimg.com`) the registered row is scoped to a tenant path prefix, so the URL's path participates too. `citation_root_for_host(h)` remains for a bare host with no URL, and deliberately returns NULL for a shared CDN host, where host-only attribution is unanswerable.
+- **Which work a URL belongs to** — `citation_root_for_url(u)`. Not equality or `LIKE`: registered hosts nest, so the rule is a longest label-boundary suffix — and on a shared multi-tenant CDN host (`img1.wsimg.com`) the registered row is scoped to a tenant path prefix, so the URL's path participates too. `citation_root_for_host(h)` remains for a bare host with no URL, and deliberately returns NULL for a shared host, where host-only attribution is unanswerable. `shared_hosts` is which hosts those are — generated from the backend's own declaration, so it can't fall behind the app's answer.
 
 ## Analysis files
 
@@ -210,21 +210,6 @@ CREATE OR REPLACE VIEW _orphan_class AS
 ```
 
 Then `<prefix>_checks` can catch a classification that's missing a candidate, one that names a model no longer in the set, a duplicate or a `category` outside the allowed vocabulary. Reach for this only when the manual split is worth keeping honest; a one-off count in prose is fine otherwise.
-
-## The engine: DuckDB over an import of the catalog
-
-We query the catalog with the DuckDB CLI. The CLI must already be on the machine, it's not a project dependency.
-
-`backend/db.sqlite3` is **imported** into `backend/db.analytics.duckdb` — DuckDB's own storage — and the foundation defines its views over that. Nothing is ever written to the localhost product DB.
-
-The import is not a step you take. `scripts/analysis/analysis` compares the source's mtime and size against the copy before every command and re-imports only when they differ, which in practice means after a prod refresh or `make ingest-patches`. It takes under a second for the whole database. Everything in between skips it and runs against native storage, which is roughly twice as fast as reading SQLite in place.
-
-Two things follow that the old arrangement didn't have:
-
-- **Your answers hold still inside a session.** A rule that reported 29 hits does not report 3 an hour later because someone ingested a patch underneath you. `analysis_context.snapshot_imported_at` says which copy you measured, and it's printed above every run.
-- **`db.analytics.duckdb` is an artifact.** It's gitignored and disposable — delete it and the next command rebuilds it. If you invoke `duckdb -init` directly instead of going through `analysis`, you get whatever the last import produced, with nothing to re-check it; that's the reason the runner is the supported entry point.
-
-Reading the SQLite file in place is what this avoids, and the reason is correctness rather than speed — see [EDITING.md](EDITING.md#never-union-all-two-aggregates-over-different-fc-tables).
 
 ## Editing the foundation
 

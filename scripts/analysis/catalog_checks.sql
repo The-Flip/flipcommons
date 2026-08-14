@@ -331,6 +331,7 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'citation_instances'  FROM citation_instances
     UNION ALL SELECT 'claim_citations'     FROM claim_citations
     UNION ALL SELECT 'citation_root_domains' FROM citation_root_domains
+    UNION ALL SELECT 'shared_hosts'          FROM shared_hosts
     UNION ALL SELECT 'patch_claims'          FROM patch_claims
     UNION ALL SELECT 'patch_retractions'     FROM patch_retractions
     UNION ALL SELECT 'patch_cites'           FROM patch_cites
@@ -974,17 +975,21 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- filter added to one and not the other, AND a same-size mis-join that lands the
   -- right number of wrong themes on a model. Cardinality alone would miss the second,
   -- which is the one that silently corrupts every name a theme cleanup reads.
+  -- The key set is the UNION of both sides, not `models`: driven from `models` this sees
+  -- only a membership the GRAIN view lost, because a model the DISPLAY LIST alone carries
+  -- is off the key set entirely.
   UNION ALL
   SELECT 'theme_views_disagree',
          'model_id=' || model_id::VARCHAR || ' grain=' || COALESCE(grain::VARCHAR, '<none>')
            || ' list=' || COALESCE(list::VARCHAR, '<none>')
   FROM (
-    SELECT m.id AS model_id,
+    SELECT k.model_id,
            (SELECT list_sort(list(tv.name))
               FROM model_themes mt JOIN theme_vocab tv ON tv.id = mt.theme_id
-             WHERE mt.model_id = m.id) AS grain,
+             WHERE mt.model_id = k.model_id) AS grain,
            th.themes                   AS list
-    FROM models m LEFT JOIN themes th ON th.model_id = m.id
+    FROM (SELECT id AS model_id FROM models UNION SELECT model_id FROM themes) k
+    LEFT JOIN themes th ON th.model_id = k.model_id
   ) WHERE grain IS DISTINCT FROM list
 
   -- model_edges_bidir mirrors exactly the resolved edges and nothing else: one 'out'

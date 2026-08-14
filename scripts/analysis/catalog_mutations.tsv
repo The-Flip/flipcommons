@@ -20,6 +20,7 @@
 
 theme names corrupted	theme_views_disagree	CREATE TABLE _m AS SELECT * FROM themes; CREATE OR REPLACE VIEW themes AS SELECT model_id, list_transform(themes, lambda x: 'wrong') AS themes FROM _m;
 themes shifted to wrong model	theme_views_disagree	CREATE TABLE _m AS SELECT * FROM themes; CREATE OR REPLACE VIEW themes AS SELECT model_id, (SELECT themes FROM _m o WHERE o.model_id > t.model_id ORDER BY o.model_id LIMIT 1) AS themes FROM _m t WHERE EXISTS (SELECT 1 FROM _m o WHERE o.model_id > t.model_id);
+theme list subject not live	theme_views_disagree	CREATE OR REPLACE VIEW themes AS SELECT mt.machinemodel_id AS model_id, list_sort(list(t.name)) AS themes FROM fc.catalog_machinemodel_themes mt JOIN _live_theme t ON t.id = mt.theme_id GROUP BY mt.machinemodel_id;
 theme dropped from vocab	theme_not_in_vocab	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * FROM _m WHERE id <> (SELECT min(theme_id) FROM model_themes);
 feature dropped from vocab	feature_not_in_vocab	CREATE TABLE _m AS SELECT * FROM gameplay_feature_vocab; CREATE OR REPLACE VIEW gameplay_feature_vocab AS SELECT * FROM _m WHERE id <> (SELECT min(feature_id) FROM model_gameplay_features);
 vocab DAG one-sided	vocab_dag_asymmetric	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * REPLACE ([]::VARCHAR[] AS children) FROM _m;
