@@ -34,7 +34,7 @@
 -- physical layer as something check-mutations can break on purpose.
 --
 -- The test for whether something belongs here rather than in catalog.sql: does any
--- PUBLIC view consume it? _ce_location and _title_live_n feed all_models, so they stay
+-- PUBLIC view consume it? _ce_location and _title_live_n feed models, so they stay
 -- there. These do not.
 
 -- _ce_location_n — live locations per CE. catalog.sql's `_ce_location` collapses a CE
@@ -254,7 +254,6 @@ CREATE OR REPLACE VIEW foundation_summary AS
   SELECT view_name, count(*) AS n_rows
   FROM (
     SELECT 'models' AS view_name FROM models
-    UNION ALL SELECT 'all_models'          FROM all_models
     UNION ALL SELECT 'model_lineage'       FROM model_lineage
     UNION ALL SELECT 'model_relationships' FROM model_relationships
     UNION ALL SELECT 'model_edges'         FROM model_edges
@@ -374,8 +373,7 @@ CREATE OR REPLACE MACRO _dark_cols(vn) AS TABLE
     ON COLUMNS(*) INTO NAME col VALUE live;
 
 CREATE OR REPLACE VIEW _anchor_scan AS
-            SELECT 'all_models'              AS view_name, col, live FROM _dark_cols('all_models')
-  UNION ALL SELECT 'models',                 col, live FROM _dark_cols('models')
+            SELECT 'models'                  AS view_name, col, live FROM _dark_cols('models')
   UNION ALL SELECT 'corporate_entity_locations', col, live FROM _dark_cols('corporate_entity_locations')
   UNION ALL SELECT 'locations',              col, live FROM _dark_cols('locations')
   UNION ALL SELECT 'tag_vocab',              col, live FROM _dark_cols('tag_vocab')
@@ -461,7 +459,7 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     ('display_subtype_slug',              'sparse'),
     -- The FK id behind display_subtype_slug, riding along from `m.*`. Same facet, same
     -- reason: no model carries a subtype yet. Bare, so one entry covers models and
-    -- all_models, as with the slug.
+    -- models, as with the slug.
     ('display_subtype_id',                'sparse'),
     -- Pinside is modelled on MachineModel but nothing populates it — no ingest source
     -- reads Pinside and no patch has set one. `pending`, not `sparse`: the day a pinside
@@ -526,13 +524,13 @@ CREATE OR REPLACE VIEW _anchor_skip AS
 --   implicit — the row exists ONLY when the list is non-empty (rewards/themes/tags),
 --              so the view's scalar `id` column already anchors emptiness for free.
 -- Every explicit entry gets its OWN anchor — a superset's is not a substitute. That
--- shortcut used to be taken here on the argument that models ⊂ all_models and that
+-- shortcut used to be taken here on the argument that one view subsumed another and that
 -- union_integrity proves model_edges lossless over its two components. Losslessness is
 -- not populatedness: zeroing model_relationships.target_reward_types left model_edges
 -- non-empty from the lineage side and fired nothing at all.
 CREATE OR REPLACE VIEW _anchor_array AS
   SELECT unnest([
-    'all_models.opdb_features',            'models.opdb_features',
+    'models.opdb_features',
     'model_edges.target_reward_types',     'model_lineage.target_reward_types',
     'model_relationships.target_reward_types',
     'rewards.rewards', 'themes.themes', 'tags.tags',
@@ -590,7 +588,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- SHADOW the same-named views (hence `main.` on the right-hand side), so the checks
   -- read them by their ordinary names with no edit at the call site.
   models              AS MATERIALIZED (SELECT * FROM main.models),
-  all_models          AS MATERIALIZED (SELECT * FROM main.all_models),
   title_size          AS MATERIALIZED (SELECT * FROM main.title_size),
   manufacturers       AS MATERIALIZED (SELECT * FROM main.manufacturers),
   model_edges         AS MATERIALIZED (SELECT * FROM main.model_edges),
@@ -887,15 +884,14 @@ CREATE OR REPLACE VIEW foundation_checks AS
            || ' n=' || count(*)::VARCHAR
   FROM model_lineage GROUP BY model_id, edge_kind HAVING count(*) > 1
 
-  -- live filter: models carries no soft-deleted row
+  -- live filter: models carries no soft-deleted row. Asserted against the PHYSICAL table
+  -- rather than against a status column on the view, because the view no longer carries
+  -- one — and comparing the view to its source is the stronger claim anyway.
   UNION ALL
-  SELECT 'models_has_deleted', 'model_id=' || id::VARCHAR
-  FROM models WHERE status = 'deleted'
-
-  -- live filter: models is a subset of all_models
-  UNION ALL
-  SELECT 'models_not_subset_of_all', 'model_id=' || id::VARCHAR
-  FROM models WHERE id NOT IN (SELECT id FROM all_models)
+  SELECT 'models_has_deleted', 'model_id=' || m.id::VARCHAR
+  FROM models m
+  WHERE EXISTS (SELECT 1 FROM fc.catalog_machinemodel p
+                WHERE p.id = m.id AND p.status = 'deleted')
 
   -- design contract: license_status IS NULL  <=>  edge_source = 'lineage_fk'
   UNION ALL
@@ -940,7 +936,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- PROTECT and the soft-delete walker blocks deleting a row an active entity still
   -- references, with Title additionally cascading to its models — so this is
   -- unreachable unless a protection was bypassed. Same class as lineage_target_not_live,
-  -- and the reason all_models live-filters each dim join rather than reporting a retired
+  -- and the reason models live-filters each dim join rather than reporting a retired
   -- value as current: without both halves, the analysis layer silently shows a deleted
   -- Title's name on a live model, which no row-level invariant would notice.
   UNION ALL
@@ -1172,7 +1168,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE t.title_id IS NULL OR m.title_size IS DISTINCT FROM t.n
 
   -- a live model always has a live Title-mate: itself. title_size = 0 is only
-  -- reachable on all_models, for a deleted model whose Title has no live rows left.
+  -- structurally impossible unless the _title_live_n join breaks, which is the point.
   UNION ALL
   SELECT 'title_size_zero_on_live', 'model_id=' || id::VARCHAR
   FROM models WHERE title_size IS NULL OR title_size < 1
@@ -1194,7 +1190,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE r.k IS NULL OR m.namesake_count IS DISTINCT FROM r.n
 
   -- a live model is always its own namesake: it shares its name_key with itself.
-  -- namesake_count = 0 is only reachable on all_models, for a deleted model whose
+  -- namesake_count = 0 is structurally impossible unless the join breaks, since a
   -- name no live model carries. Reads the model column independently of the
   -- disagreement check above, which compares it against a recomputation.
   UNION ALL
@@ -1282,8 +1278,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- List facets can't go dark via the sweep: an empty list is a value, so it reads as
   -- live. The ones whose row exists regardless of the list therefore need an explicit
   -- non-empty anchor. `unanchored_array` below fails if a new one appears unlisted.
-  UNION ALL SELECT 'anchor_dark', 'all_models.opdb_features (all empty)'
-    WHERE (SELECT count(*) FROM all_models WHERE len(opdb_features) > 0) = 0
   UNION ALL SELECT 'anchor_dark', 'models.opdb_features (all empty)'
     WHERE (SELECT count(*) FROM models WHERE len(opdb_features) > 0) = 0
   UNION ALL SELECT 'anchor_dark', 'model_edges.target_reward_types (all empty)'
@@ -1355,7 +1349,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- and shouldn't be paying for row counts to make it.
   --
   -- BOTH the quoted label and the FROM clause, because neither is exact alone. The
-  -- label is quote-delimited so `'models'` cannot match inside `'all_models'`; the FROM
+  -- label is quote-delimited so a short view name cannot match inside a longer one; the FROM
   -- test is a bare prefix so `FROM model_edges` does match inside `FROM
   -- model_edges_bidir`. ANDing them takes the label's exactness and adds the assertion
   -- that the view is actually COUNTED rather than merely named.
@@ -1496,7 +1490,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- `analysis describe` reads it out of the session, so an undocumented view is a view
   -- nobody can find. It replaced a hand-maintained prose table in README.md, which had
   -- no check on it and was incomplete from the day it was written: models.description
-  -- is selected by all_models and named in neither the comment block nor that table.
+  -- is selected by models and named in neither the comment block nor that table.
   -- Same both-directions logic as the anchor lists: the docs are only trustworthy
   -- while every view is obliged to carry one.
   -- Reads duckdb_views() rather than information_schema.tables, which has no `comment`.

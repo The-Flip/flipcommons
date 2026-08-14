@@ -24,7 +24,6 @@
 --   * UNPREFIXED = public API. `_underscore` = private helper.
 --   * Views are LIVE-ONLY. Catalog records are soft-deleted (RecordLifecycle.md) and
 --     live means `status IS DISTINCT FROM 'deleted'`, matching the read APIs.
---     `all_models` is the escape hatch; another view gets an `all_*` twin the day an
 --     analysis needs one.
 --   * A dim or edge target is soft-deleted independently of its subject, so a dead one
 --     DE-ENRICHES TO NULL rather than being reported as current. catalog_checks flags
@@ -248,8 +247,8 @@ CREATE OR REPLACE VIEW systems AS
     mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     tsg.slug AS technology_subgeneration_slug
   FROM fc.catalog_system s
-  -- Physical, not `manufacturers`: that view aggregates over `models`, and `all_models`
-  -- joins `systems`, so composing it here would close a cycle.
+  -- Physical, not `manufacturers`: that view aggregates over `models`, which joins
+  -- `systems`, so composing it here would close a cycle.
   LEFT JOIN fc.catalog_manufacturer mf ON mf.id = s.manufacturer_id
                                       AND mf.status IS DISTINCT FROM 'deleted'
   LEFT JOIN technology_subgenerations tsg ON tsg.id = s.technology_subgeneration_id
@@ -298,7 +297,7 @@ CREATE OR REPLACE VIEW _ce_location AS
   FROM corporate_entity_locations
   GROUP BY corporate_entity_id;
 
--- _title_live_n — live models per Title. Reads the physical table because `all_models`
+-- _title_live_n — live models per Title. Reads the physical table because `models`
 -- consumes it; reading `models` would be circular.
 CREATE OR REPLACE VIEW _title_live_n AS
   SELECT title_id, count(*) AS n
@@ -313,20 +312,19 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
   WHERE status IS DISTINCT FROM 'deleted'
   GROUP BY name_key(name);
 
--- all_models — every MachineModel, live or deleted. `analysis describe all_models` prints
+-- models — one row per LIVE MachineModel. `analysis describe models` prints
 -- the full column list; these notes cover only what ISN'T obvious.
 --   title_* : the model's Title — the spine of the hierarchy (every model has one; the
 --             FK is NOT NULL), decoded inline so title-mate analyses never reach for
 --             catalog_title.
 --   title_size : how many LIVE models share this model's Title — the model-keyed form of
 --             the `title_size` VIEW, off one helper so they can't disagree. "Alone in its
---             Title?" is `title_size = 1`. Always >= 1 on `models`; 0 on `all_models` for
---             a deleted model whose Title has no live models left.
+--             Title?" is `title_size = 1`. Always >= 1, since the model counts itself —
+--             a 0 here means the join broke, which title_size_zero_on_live asserts.
 --   namesake_count : LIVE models sharing this model's `name_key`, including itself. 1
 --             means unique; > 1 is ambiguous and needs another signal. Trailing-
---             parenthetical variants count together (it uses name_key). Always >= 1 on
---             `models`; 0 on `all_models`. See README.md#matching-source-records-to-models.
---   status  : 'active' | 'deleted' | NULL — live is anything but 'deleted'.
+--             parenthetical variants count together (it uses name_key). Always >= 1 for
+--             the same reason as title_size. See README.md#matching-source-records-to-models.
 --   manufacturer_model_identifier : the MANUFACTURER's own model number (Gottlieb '654',
 --             Stern 'PINBALL I-00M1 * JURAS. PARK PRO'). NOT unique, and NOT unique
 --             paired with manufacturer_id either: manufacturers number independently from
@@ -375,7 +373,7 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             line here; see EDITING.md.
 --   label   : "Name (Manufacturer Year)", CE name then '?' as fallbacks; year omitted if
 --             unknown.
-CREATE OR REPLACE VIEW all_models AS
+CREATE OR REPLACE VIEW models AS
   SELECT
     -- Every MachineModel column, minus the ones named below. `m.*` rather than a list on
     -- purpose: with a list, a field deliberately left out and a field nobody noticed look
@@ -387,7 +385,8 @@ CREATE OR REPLACE VIEW all_models AS
       pinside_rating,
       flipper_count,    -- near-empty scalar; model_gameplay_features.count is the signal
       created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
+      updated_at,       -- so it describes the local db state rather than catalog state
+      status            -- the view IS the live rows; the soft-delete flag adds nothing
     ),
     t.slug AS title_slug, t.name AS title_name,
     COALESCE(tn.n, 0) AS title_size,
@@ -441,15 +440,10 @@ CREATE OR REPLACE VIEW all_models AS
   LEFT JOIN display_subtypes           dst ON dst.id = m.display_subtype_id
   LEFT JOIN systems                    sys ON sys.id = m.system_id
   LEFT JOIN cabinets                   cab ON cab.id = m.cabinet_id
-  LEFT JOIN production_statuses        ps  ON ps.id  = m.production_status_id;
-COMMENT ON VIEW all_models IS
-  'One row per MachineModel, live AND deleted — the escape hatch; filter on status yourself. Use models unless you specifically want the deleted rows.';
-
--- models — live models only. The default view; build analyses on this.
-CREATE OR REPLACE VIEW models AS
-  SELECT * FROM all_models WHERE status IS DISTINCT FROM 'deleted';
+  LEFT JOIN production_statuses        ps  ON ps.id  = m.production_status_id
+  WHERE m.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW models IS
-  'One row per LIVE MachineModel — the default view; build analyses on this.';
+  'One row per LIVE MachineModel — THE spine; build analyses on this. Soft-deleted models are not here and are not anywhere: read `claims` for the history of one.';
 
 -- ═══ MANUFACTURERS AND CORPORATE ENTITIES ═══════════════════════════════════
 -- presumed_producing — the still-producing verdict the SITE publishes, which is not
