@@ -6,7 +6,9 @@ For changing [`catalog.sql`](catalog.sql) or its self-test [`catalog_checks.sql`
 
 **A semantic layer, not a staging layer.** A staging layer mirrors its source one view per table, exists to give downstream a stable name and adds no meaning. This is the other kind: a view earns its place by applying the liveness rule, decoding (FK to slug, JSON to column, polymorphic id to typed subject), declaring a grain, deriving a measure, or documenting the trap that would otherwise return a confident wrong answer.
 
-**That is not a licence for every view to read `fc` directly, and this file used to say it was.** The claim was that "a passthrough view would buy nothing". It is false, and it shaped the layer: the liveness rule ended up restated 61 times in `catalog.sql`, with four checks (`model_dim_not_live`, `uncovered_model_dim`, `dim_not_liveness_checked`, `dim_status_unreferenced`) built to police the copies. Composing `all_models` onto the dim views instead removed nine of those restatements and produced byte-identical output — a passthrough view bought exactly what it was said to be incapable of buying. **Join the live-filtered view, never re-filter the physical table.** If `X` has a view, join the view: it already excludes deleted rows, so `AND x.status IS DISTINCT FROM 'deleted'` on the join is a second copy of the liveness rule. The rule belongs in exactly one place per entity — the view's own `WHERE`. Where a join must stay physical, it is because composing would be circular, and the join carries a one-line comment saying so; if you find one without that comment, it is a miss, not a decision. **Build on the view above you whenever one exists and the dependency isn't circular**; stating a rule once is itself one of the jobs above. Circularity is the real constraint, and it is narrow: `titles`, `manufacturers` and `corporate_entities` all aggregate over `models`, so `all_models` joins their physical tables and says why inline.
+**Join the live-filtered view, never re-filter the physical table.** If `X` has a view, join it: `AND x.status IS DISTINCT FROM 'deleted'` on a join is a second copy of the liveness rule, which belongs in the view's own `WHERE` and nowhere else. Where a join stays physical it is because composing would be circular, and it carries a comment naming the cycle — a physical join without that comment is a miss, not a decision. Circularity is narrow: `titles`, `manufacturers` and `corporate_entities` aggregate over `models`, so `models` joins their tables directly.
+
+This file used to claim the opposite — that "a passthrough view would buy nothing" — and that claim shaped the layer: the liveness rule reached 61 restatements in `catalog.sql`, with four checks (`model_dim_not_live`, `uncovered_model_dim`, `dim_not_liveness_checked`, `dim_status_unreferenced`) built to police the copies. Composing brought it to 44 with byte-identical output. Don't reinstate it.
 
 Two things follow. Adding a view is not free bookkeeping to be minimized, and neither is it automatic per table — the [entity/derived split](#what-belongs-in-the-foundation) below is what governs which get one. And **a column absent from a view says nothing about the Django model**; it means nobody promoted it. That is the assumption to correct on arrival, because the default guess runs the other way and has produced wrong answers twice.
 
@@ -14,13 +16,13 @@ Two things follow. Adding a view is not free bookkeeping to be minimized, and ne
 
 **The foundation carries counts and mechanics; consumers carry thresholds and semantics.**
 
-("Semantics" there means judgment — cutoffs, conventions, what a number is taken to prove. Not the sense in which this whole layer is a semantic one; that is the section above. The two are compatible: the layer supplies meaning about the DATA, the consumer supplies meaning about the QUESTION.)
-
 The recurring temptation when an analysis finds a gap is to fold its judgment into the foundation alongside the fact — a manufacturer "era" that quietly requires 3 dated models, an `alone_in_title` boolean, a stem macro encoding one manufacturer's numbering convention. Each is right for the consumer that needs it and lossy for the next one, which inherits a cutoff it never chose and can't see.
 
 So: if a proposed column encodes a cutoff, a per-manufacturer convention or a yes/no a query could express in one predicate, surface the underlying number instead and let the caller write the predicate. `title_size.n` is the pattern — the foundation gives `n`, the analysis writes `n = 1`. `manufacturers` gives `year_of_first_model`/`year_of_last_model` **and** `n_dated`, so a consumer can demand whatever evidence it wants. Judgment belongs in an analysis's Reference lookup table, where the checks can see it, not in a macro that answers confidently for inputs it was never calibrated on.
 
-The same rule sets the bar for **macros**. `catalog.sql` is mostly views plus a small name-normalization block — `name_norm()`, `name_strip_paren()`, `name_key()` — because every cross-record name comparison needs one and hand-rolled copies drift. They're split at the clause that's a judgment rather than a mechanic: stripping a trailing parenthetical is what lets `On Beam (Italy)` find `On Beam`, and also what collapses `KISS (Limited Edition)` onto `KISS`, so an analysis picks `name_key` or bare `name_norm` deliberately and records which matches needed the strip. Matching _strategy_ — plural collapsing, token subsets, edit distance — stays analysis-local. Macros are invisible to the generated column sweep, so each one carries a data-independent smoke check in `catalog_checks.sql` instead — including the ones defined in `provenance.sql` and `data_patches.sql`, gathered there rather than with their own layer's checks so that a missing one is visible as a gap in a single block. This is the one coverage rule in the layer with no meta-check behind it: `check-mutations` enforces check↔mutation in both directions, but nothing enforces macro↔smoke-check, and the first macro to ship without one shipped unnoticed. Pin the behaviour the macro is _relied on_ for, not the shape it happens to have — `patch_number_of` was written against a four-digit width and silently truncated a five-digit id until its smoke check said what the parse was for.
+The same rule sets the bar for **macros**, of which there are few: the name-normalization block (`name_norm`, `name_strip_paren`, `name_key`) exists because every cross-record comparison needs one and hand-rolled copies drift. Matching _strategy_ — plural collapsing, token subsets, edit distance — stays analysis-local.
+
+Macros are invisible to the generated column sweep, so each carries a data-independent smoke check in `catalog_checks.sql`, including those defined in `provenance.sql` and `data_patches.sql` so a missing one shows as a gap in one block. **This is the only coverage rule with no meta-check behind it** — `check-mutations` enforces check↔mutation both ways, but nothing enforces macro↔smoke-check, and the first macro to ship without one shipped unnoticed. Pin the behaviour the macro is _relied on_ for, not the shape it happens to have: `patch_number_of` was written against a four-digit width and silently truncated a five-digit id until its smoke check said what the parse was for.
 
 **Source free-text earns a column; a field the catalog already models does not.** `ipdb_notes`, `ipdb_notable_features`, `ipdb_toys`, `ipdb_marketing_slogans` and `opdb_features` are plain columns on `models` because they're genuine unmodeled signal — fields IPDB/OPDB carry that flipcommons doesn't surface, and mining them is common analysis work, so a hand-rolled `json_extract` in every consumer is the thing to prevent. The test for any other raw `extra_data` field is whether it _shadows something the catalog already models_: if so, use the modeled form and leave the source buried — the IPDB trade name defers to `manufacturer_name`, `opdb.keywords` defers to the canonical `themes` view. The long tail (`opdb.common_name`, `opdb.description`, …) stays unsurfaced until an analysis needs it; promoting one is a single line here.
 
@@ -32,10 +34,10 @@ When adding a new relationship view, match it to one of the [model relationship 
 
 So the split is by KIND of view, not by demand:
 
-- **Entity grain — exhaustive, with no exemptions.** One view per first-class entity. `unexposed_entity` derives the entity set structurally (a `catalog_*` table carrying both `slug` and `status`, which selects exactly the concrete `LinkableModel`s) and fails for one that is not exposed, with `stale_entity_view` and `missing_entity_view` closing the other two directions. The seven taxonomy dims used to be exempted on the record, on the argument that `all_models` documents why they are slug-only. That argument was about the model row and did not survive contact with the record: a dim carries an authored `description`, and with no view over it the foundation could not say which vocabulary terms were still undocumented. They are ordinary entity views now, and `_entity_view` no longer has a way to opt out.
+- **Entity grain — exhaustive, with no exemptions.** One view per first-class entity. `unexposed_entity` derives the entity set structurally (a `catalog_*` table carrying both `slug` and `status`, which selects exactly the concrete `LinkableModel`s) and fails for one that is not exposed, with `stale_entity_view` and `missing_entity_view` closing the other two directions. There are no exemptions: `_entity_view` has no way to opt out.
 - **Derived, relationship and measure views — demand-driven.** `model_edges_bidir`, `model_number_collisions`, the vocabulary DAG columns. There is no bound on the questions these answer, so inventing them speculatively is how a foundation grows surface nobody reads. This applies to whole views that compute something new, not to a table's own columns — those are covered by `* EXCLUDE` above.
 
-Watch the entity-vs-projection line when adding one. `countries` is not the Location entity — it is the parentless slice of it, and it is defined over `locations` rather than beside it so the two cannot disagree about what a live location is. A projection that reads the physical table independently is a second definition waiting to drift.
+A projection that reads the physical table independently is a second definition waiting to drift, so build it over the entity view instead — `_ce_location` reads `locations`, not `catalog_location`. A one-predicate slice usually shouldn't be a view at all: `countries` and `country_aliases` were deleted once `locations.is_country` existed, because narrowing columns and renaming keys made them traps rather than conveniences.
 
 **`entity_subjects` must list every entity, so adding a model means adding a branch.** It resolves a polymorphic `(subject_type, subject_id)` reference for `claims` and everything downstream, and it is a hand-written `UNION ALL` because SQL cannot iterate table names — the same limit `_dim_vocab` works around. `unresolved_claim_subject` is what stands behind the hand-list, and it is enough: a forgotten branch, one keyed to the wrong constant and a vanished subject row all surface there on the first claim about the entity, which is also the first moment any of them can mislead anyone. A structural check over the branch set was tried and removed — it only moved the same failure earlier, into a window where nothing references the entity yet. Demand is not a reason to skip a branch: an unlisted type resolves to NULL, which reads as "this subject has no name".
 
@@ -80,13 +82,13 @@ That comment **is** the view reference. `scripts/analysis/analysis describe` rea
 Two mechanics worth knowing:
 
 - **The `COMMENT ON` must immediately follow its own `CREATE OR REPLACE`, not precede it and not sit in a block with its neighbours'.** Replacing a view or macro drops its comment, silently. Keeping each pair adjacent is what makes that a non-issue.
-- **Write the grain first, then the guidance.** `describe` prints these as a list, and the grain is what tells `model_edges` from `model_edges_bidir` at a glance. Reasoning that doesn't fit a sentence belongs in the comment block above the `CREATE`, where it sits next to the SELECT it explains — the one-liner is an index entry, not a substitute for that block.
+- **Write the grain first, then the guidance** — `describe` prints these as a list, and the grain is what tells `model_edges` from `model_edges_bidir` at a glance. Reasoning that needs more than a sentence goes in the comment block above the `CREATE`, not here.
 
 Macros work the same way and carry the same obligation: a `COMMENT ON MACRO` under each `CREATE OR REPLACE MACRO`, enforced by `undocumented_macro`. `describe` lists them after the views, with their signatures.
 
 Private `_underscore` helpers take no comment; they aren't reference surface.
 
-README carries per-view detail in exactly one place, deliberately: `model_edges` being outbound-only. It is the one trap in the foundation that returns a confident wrong answer instead of an error, so it is stated both in the view's comment block and in README. Don't trim it as a duplicate.
+`model_edges` being outbound-only is stated in both its comment block and README, deliberately — it is the one trap that returns a confident wrong answer rather than an error. Don't trim it as a duplicate.
 
 ## Public and runtime surfaces are contracts
 
@@ -134,40 +136,11 @@ UNION ALL SELECT 'game_formats', count(*) FROM fc.catalog_gameformat WHERE statu
 
 When two branches of one query aggregate over different attached-SQLite tables and their pushed-down projection and filter are textually identical, the optimizer treats the scans as equivalent and evaluates one of them. `SET sqlite_debug_show_queries=true` shows a single `SELECT "status" FROM "a" WHERE ROWID BETWEEN ? AND ?` issued for both branches. Every simple dim view is that shape, because every one of them selects the same columns under the same liveness predicate.
 
-What is and isn't affected, measured on DuckDB v1.5.5 / `sqlite_scanner` f79b1db:
+Measured on DuckDB v1.5.5 / `sqlite_scanner` f79b1db: it hits any aggregate, not just `count`; every branch, not only the second; and scalar subqueries, `OFFSET 0`, `threads=1` and `disabled_optimizers` all fail to avoid it. Two things are safe, and between them they explain why it stayed hidden: **row-level unions** (`SELECT slug FROM a … UNION ALL SELECT slug FROM b …` is correct, which is why `entity_subjects` and `_dim_status` were never affected), and **branches whose filter literals differ** — it needs the branches to agree, and the liveness predicate is the one thing every view spells identically.
 
-- **Any aggregate, not just `count`.** `max()` and `sum()` collapse identically.
-- **Every branch, not just the second.** With three branches all three take the first's value.
-- **Scalar subqueries do not help** — `SELECT 'a', (SELECT count(*) FROM x WHERE …)` collapses the same way. Neither does `OFFSET 0`, `threads=1`, `sqlite_disable_multithreaded_scans`, nor disabling `filter_pushdown`.
-- **Differing filter literals are safe.** `WHERE status IS DISTINCT FROM 'deleted'` against `WHERE status IS DISTINCT FROM 'zzz'` gives the right answers for both, which is why this stayed hidden: it needs the branches to agree, and the liveness predicate is the one thing every view here spells the same way.
-- **Row-level unions are safe.** `SELECT slug FROM a WHERE … UNION ALL SELECT slug FROM b WHERE …` returns both tables' rows correctly, which is why `entity_subjects`, `_dim_vocab` and `_dim_status` are unaffected.
+**Importing removes the class entirely.** The hazard remains only for a SQLite file you attach yourself — an evidence bridge, a scratch comparison. Two shapes are safe there: aggregate over a union of labelled rows (what `foundation_summary` does — don't "simplify" it back, though note a zero-row relation then drops out rather than reporting 0), or wrap each branch in `WITH x AS MATERIALIZED (…)`, which is close to free.
 
-**Importing removes the whole class**, which is the fix this layer took: every variant below is correct against native storage, verified with the workarounds stripped out. `_dark_cols` carried one for a while and no longer needs it.
-
-The hazard is still live for any SQLite file you attach yourself — an evidence bridge, a scratch comparison against a second catalog, a sister repo's cache. In that case, four workarounds, all verified against the repro. Pick by what the query is shaped like:
-
-1. **Aggregate over a union of labelled rows.** The default, and what `foundation_summary` does. Nothing is aggregated per-branch, so there is nothing for the optimizer to consider equivalent.
-
-   ```sql
-   SELECT v, count(*) FROM (
-     SELECT 'cabinets' AS v FROM cabinets UNION ALL SELECT 'game_formats' FROM game_formats
-   ) GROUP BY v;
-   ```
-
-   One consequence: a relation with zero rows contributes nothing and drops out rather than reporting 0.
-
-2. **Materialize each branch's source.** `WITH x AS MATERIALIZED (SELECT * FROM …)` per branch. Reach for this when the per-branch aggregate is doing real work and can't be turned into rows. It is close to free — one line immunized the whole `_anchor_scan` sweep and the checks run timed the same to within 0.3s.
-3. **Put each aggregate in its own statement.** The bug needs both branches in one query; two statements always agree with the truth. Fine for ad-hoc measurement, useless inside a view.
-4. **Vary the filter literal.** Only if the branches genuinely differ — do not perturb a predicate to dodge the bug, because the next person will "clean it up" and silently reintroduce the defect.
-
-What does NOT work, so don't reach for them: scalar subqueries, `OFFSET 0`, `threads=1`, `sqlite_disable_multithreaded_scans`, and `SET disabled_optimizers='filter_pushdown'`.
-
-Two places this was actually found, both of which had been publishing wrong numbers with every check green:
-
-- `foundation_summary` reported `game_formats` as 6 — `reward_types`' count — for a vocabulary holding 11 live rows.
-- `_anchor_scan` reported `cabinets`, `display_types` and `technology_generations` as 11 live rows each, all inheriting `game_formats`. That is the dark-column detector unable to see a dark column, on views whose whole safety net it is.
-
-Neither failed anything. The rows were all present; only the aggregates were wrong. Assume any analysis in this repo or a sister one that tabulates per-table counts this way has the same defect.
+It was found in two places, both publishing wrong numbers with every check green: `foundation_summary` reported one vocabulary's count for another's, and `_anchor_scan` reported one view's liveness for three others — the dark-column detector unable to see a dark column. Assume any analysis in a sister repo that tabulates per-table counts this way has the same defect.
 
 ## Editing the foundation? Run its self-test
 

@@ -6,7 +6,7 @@ This is how to use our DuckDB analytics layer to explore the Flipcommons localho
 
 **A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks. Consequences:
 
-- **A view is not its table.** `models` is live-filtered and denormalized across four joins; `countries` is the parentless slice of `locations`; `tags` is keyed by model while `tag_vocab` is keyed by tag. Matching names do not mean matching columns or matching grain.
+- **A view is not its table.** `models` is live-filtered and denormalized across a dozen joins; `tags` is keyed by model while `tag_vocab` is keyed by tag. Matching names do not mean matching columns or matching grain.
 - **A view may not carry all fields.** Absence may mean nobody has promoted it yet. Inspect the Django model and promote fields when required.
 
 ## Quick start
@@ -53,16 +53,15 @@ If manufacturer or year is unavailable, use `namesake_count`: `1` means the `nam
 
 Before maintaining a manual mapping, check the alias views. They map source wording to stable catalog keys:
 
-| view                                         | resolves                                                                  |
-| -------------------------------------------- | ------------------------------------------------------------------------- |
-| `country_aliases`                            | West Germany, Holland, England, R.O.C. → the modelled country             |
-| `location_aliases`                           | the same at any level — regions and cities too (Firenze, Milano)          |
-| `manufacturer_aliases`                       | native-script, accented and trade-name manufacturer names                 |
-| `corporate_entity_aliases`                   | the legal entity below the manufacturer                                   |
-| `person_aliases`                             | aka / maiden forms on a credit                                            |
-| `reward_type_aliases`                        | a payout phrasing → the reward type                                       |
-| `theme_aliases`, `gameplay_feature_aliases`  | a source's wording → the controlled term                                  |
-| `model_abbreviations`, `title_abbreviations` | community shorthand (LTBR, ACDC Prem VE) — shorthand, not alternate names |
+| view                                         | resolves                                                                     |
+| -------------------------------------------- | ---------------------------------------------------------------------------- |
+| `location_aliases`                           | West Germany, Firenze, Milano — any level; filter `is_country` for countries |
+| `manufacturer_aliases`                       | native-script, accented and trade-name manufacturer names                    |
+| `corporate_entity_aliases`                   | the legal entity below the manufacturer                                      |
+| `person_aliases`                             | aka / maiden forms on a credit                                               |
+| `reward_type_aliases`                        | a payout phrasing → the reward type                                          |
+| `theme_aliases`, `gameplay_feature_aliases`  | a source's wording → the controlled term                                     |
+| `model_abbreviations`, `title_abbreviations` | community shorthand (LTBR, ACDC Prem VE) — shorthand, not alternate names    |
 
 Match canonical names and aliases as one pool — most records have no alias row, so searching aliases alone resolves almost nothing. Alias views contain one row per alias of a live parent, keyed by parent ID and its stable key. `location_aliases` uses `location_path` because a location slug is unique only within its parent; abbreviation views name their value column `abbreviation` because shorthand is not an alternate name. Values are stored as entered, so choose normalization locally and count distinct target records before accepting a match.
 
@@ -76,7 +75,7 @@ Claims and patch entries name their subject polymorphically — `subject_type` p
 
 ### Liveness is the default
 
-Catalog records are soft-deleted (see [RecordLifecycle.md](../../docs/RecordLifecycle.md)). `models` excludes them, matching the read APIs; `all_models` is the escape hatch. Liveness applies to what a model _points at_ too: every dim is soft-deleted independently, so a dead dim **de-enriches to NULL** rather than being reported as current. The one deliberate exception is `claims`, which is not live-filtered — provenance of a deleted record is legitimate history. Use `model_claims` for the live-model lens.
+Catalog records are soft-deleted (see [RecordLifecycle.md](../../docs/RecordLifecycle.md)) and no view shows them — there is no escape hatch, because the history of a deleted record is a provenance question. Liveness applies to what a model _points at_ too: every dim is soft-deleted independently, so a dead dim **de-enriches to NULL** rather than being reported as current. The one exception is `claims`, deliberately not live-filtered. Use `model_claims` for the live-model lens.
 
 The `patch_*` views inherit that exception and are not live-filtered either, for the same reason: what a patch asserted is history. They carry `model_status` instead, so predicate on it rather than assuming the subject is current.
 
@@ -97,7 +96,7 @@ The foundation surfaces a model's relationships in three shapes, plus a fourth f
 - **Flat name-list** — `rewards`, `themes`, `tags`. One row per model, a sorted list of the related names (or, for `tags`, slugs). Pure enrichment: join to a model view and display, or test membership. Use when the relationship has no per-edge payload and you only need _which ones_. A name-list **cannot** answer anything about the vocabulary itself — it carries no id, no slug, no DAG. When that's the question, use the vocabulary shape below rather than reaching past the foundation into `fc.catalog_*`.
 - **Resolved-edge grain** — `model_edges` and its `model_lineage` / `model_relationships` components. One row per edge, the far end resolved into the shared `target_*` block. Use when each edge points at another model you need to identify.
 - **Counted-payload grain** — `model_gameplay_features`. One row per edge that carries a payload (here, the feature `count`: Flippers ×2, Trap Holes ×25). Use when flattening to a name-list would drop a per-edge value.
-- **Vocabulary** — `theme_vocab` / `theme_aliases` / `model_themes`, and `gameplay_feature_vocab` / `gameplay_feature_aliases` / `model_gameplay_features`. Not a model relationship at all: one row per _term_, with its usage count (`n`), its place in the DAG and its aliases. Reach for it when the subject is the controlled vocabulary rather than the models — auditing near-duplicates, finding unparented or unused terms, checking whether an alias collides with a live term. The alias views are their own grain so you can join and compare on an alias. `countries` is the same shape minus the DAG, with its aliases in `country_aliases`; `game_formats` has neither.
+- **Vocabulary** — `theme_vocab` / `theme_aliases` / `model_themes`, and `gameplay_feature_vocab` / `gameplay_feature_aliases` / `model_gameplay_features`. Not a model relationship at all: one row per _term_, with its usage count (`n`), its place in the DAG and its aliases. Reach for it when the subject is the controlled vocabulary rather than the models — auditing near-duplicates, finding unparented or unused terms, checking whether an alias collides with a live term. The alias views are their own grain so you can join and compare on an alias. The flat vocabularies (`tag_vocab`, `game_formats`, the taxonomy dims) are the same shape without the DAG.
 
 ### `model_edges` is outbound only
 
