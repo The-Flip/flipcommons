@@ -100,14 +100,17 @@ The report shape should differ per severity, for the same reason. Violations pri
 
 Mechanisms there are more evolved than pinexplore's:
 
-`_anchor_skip` answers your whitelist question, and corrects its premise. It distinguishes two kinds of exemption:
-
-- `sparse` — allowed to be empty indefinitely (a genuinely optional dimension)
-- `pending` — expected empty only until data lands, so it must expire
-
-with `expired_anchor_skip` retiring a `pending` entry the moment its facet goes live, and `stale_anchor_skip` catching an entry that names nothing at all. The comment at `catalog_checks.sql:408` is worth reading in full — both pending entries the list has ever carried outlived their reason silently, which is why there's a check instead of a comment asking someone to remember.
-
 `stale_exception` matters more here than it does there, because your exceptions will be keyed by slug and patches rename slugs — 0232 renamed yukon-yeti and its corporate entity mid-campaign. A misspelled or orphaned exception exempts nothing while looking like it exempts something.
+
+#### `_anchor_skip` was the model for whitelisting here, and it has been retired — don't port it
+
+An earlier draft held up `_anchor_skip`'s two-kind exemption split (`sparse` = empty indefinitely, `pending` = empty until data lands, so it must expire) as the answer to the [Whitelisting](#whitelisting) question. The whole anchor apparatus was retired in `43074efe1` — `_dark_cols`, `_anchor_scan`, `_anchor_skip`, `_anchor_array`, seven checks and 51 exemption entries. `anchor_dark` fired only at `live = 0`, so a join breaking for half its rows passed silently, while a total break on a well-populated column would be caught by ordinary use. Its coverage was inversely correlated with its value, and six of its seven checks existed only to police the exemption list of the one doing the work.
+
+**The reason it needed an exemption list at all is the part that matters here, and it is not a lesson about exemptions.** A `sparse` entry meant "this facet is legitimately empty" — which in this doc's taxonomy is not an exemption, it is a **`gap` finding**. The list existed because the foundation has exactly one severity: a thing either gates or does not exist. Give the same finding a severity that never gates and the entry evaporates.
+
+The `pending` half dissolves the same way, and more sharply. `pending` meant "empty only until data lands", which required `expired_anchor_skip` to retire the entry once the facet went live. Under a non-gating severity none of that is needed: when the data lands the rule stops matching and the gap disappears on its own. `expired_anchor_skip` was machinery for un-suppressing something that a `gap` severity would never have suppressed.
+
+So the idea was not wrong, it was a workaround for gating a concern that should not gate — and the three-severity split is the better version of it. Exemptions genuinely remain for `violation` rules with real known-good exceptions, the "Alexandre Dumas is not a credit" case, where `stale_exception` above still applies. Expect those lists to be short, and treat one getting long as a signal about the rule rather than about the data.
 
 **The mutation gate is the single highest-value thing in either repo**, and I'd argue it's more necessary for this layer than for the foundation self-test. The reasoning from catalog_mutations.tsv: a check that is broken and a check that is passing both return zero rows, and every defect ever found in that suite was a check that had silently become a no-op, usually via a comparison going NULL. Nearly every rule on your list is a NOT EXISTS / LEFT JOIN … IS NULL shape — precisely the shape that goes quietly no-op. And unlike the foundation, this layer runs against a catalog that patches are actively reshaping underneath it.
 
@@ -129,7 +132,7 @@ A person name in cited quotes not credited on that model.
 
 A bounded vocabulary record without a description. That's cabinet, display type, display subtype, game format, production status, reward type, tag, technology generation, technology subgeneration.
 
-**Measured, and the two halves are backwards from how this doc presents them.** The bounded vocabularies contribute **5** findings — game formats `one-ball` and `rolldown`, systems `fast-pinball` and `stern-spike-3`, and the tag `limited-edition`. The open vocabularies contribute **693** (themes 540, gameplay features 142, credit roles 10, tags 1). The bounded rule is very nearly a no-op; see [Description coverage on the open vocabularies](#description-coverage-on-the-open-vocabularies) for the rule that actually carries the backlog.
+**Measured, and the two halves are backwards from how this doc presents them.** The bounded vocabularies contribute **5** findings — game formats `one-ball` and `rolldown`, systems `fast-pinball` and `stern-spike-3`, and the tag `limited-edition`. The open vocabularies contribute **692** (themes 540, gameplay features 142, credit roles 10) for a catalog-wide total of 697. The bounded rule is very nearly a no-op; see [Description coverage on the open vocabularies](#description-coverage-on-the-open-vocabularies) for the rule that actually carries the backlog.
 
 The list above is missing one: **`system` is a tenth bounded vocabulary**, 75 live rows, and it holds two of the five findings. It reads as a dim rather than a vocabulary because a model points at it the same way it points at cabinet, but a System is an authored record with a manufacturer and a description like any other.
 
@@ -206,10 +209,9 @@ The unscoped version is the `review` backlog; the patch-scoped version belongs i
 themes             540 of 540 missing a description
 gameplay features  142 of 319
 credit roles        10 of 10
-tags                 1 of   4
 ```
 
-The rule already sketched at the top of this doc covers the **bounded** vocabularies (cabinet, display type, display subtype, game format, production status, reward type, tag, technology generation, technology subgeneration). The open, DAG-shaped vocabularies are the larger backlog by an order of magnitude, and themes are effectively undocumented as a vocabulary. For the "decide what data patches to author" use case this is the single richest source in the catalog.
+The rule already sketched at the top of this doc covers the **bounded** vocabularies (cabinet, display type, display subtype, game format, production status, reward type, tag, technology generation, technology subgeneration, system). Tags belong to that rule and are counted there, not here — an earlier version of this block listed them in both and summed to 693. The open, DAG-shaped vocabularies are the larger backlog by an order of magnitude, and themes are effectively undocumented as a vocabulary. For the "decide what data patches to author" use case this is the single richest source in the catalog.
 
 Worth splitting the metric by usage count (`theme_vocab.n`, `gameplay_feature_vocab.n`) so the worklist leads with the terms attached to the most models rather than the alphabetically first.
 
@@ -275,7 +277,7 @@ A field present on the variant and absent on its base is usually one of: a claim
 
 **Severity: review. 3 live hits.**
 
-`production_status: announced` on a model whose `year` is now in the past. These claims were correct when written and rot silently — nothing in the current design expires except `pending` entries in `_anchor_skip`.
+`production_status: announced` on a model whose `year` is now in the past. These claims were correct when written and rot silently, and nothing in the current design expires. (An earlier draft said "except `pending` entries in `_anchor_skip`" — that mechanism is [retired](#_anchor_skip-was-the-model-for-whitelisting-here-and-it-has-been-retired--dont-port-it), so there is now no expiry anywhere in the stack.)
 
 ```sql
 SELECT slug, name, year, production_status_slug FROM models
@@ -392,7 +394,7 @@ Scoped to patches ≥ 0215 — the vetting use case — the same four rules retu
 
 One shape carried all four rules across claim grain, vocabulary grain and title grain: `(rule, severity, subject_type, subject_public_id, subject_name, patch_id, detail)`. Severity filtering, patch scoping and same-grain area scoping are all plain predicates over it. `subject_public_id` is the polymorphic key — `claims` and `entity_subjects` carry `subject_type` + `subject_public_id` and there is no `subject_slug`.
 
-**It breaks on findings whose subject isn't what they're about.** A `title_sibling_gap` row reading `production_quantity set on 1, absent on 3 (jurassic-park-pro, jurassic-park-premium, jurassic-park-30th-anniversary)` is filed under the Title, `jurassic-park-stern`. Asking the spine for everything about `jurassic-park-pro` returns nothing at all. The finding is about four models and subject to one title, so a finding needs an affected-entities relation rather than a single subject — see the [open questions](#open-questions).
+**It breaks on findings whose subject isn't what they're about.** A `title_sibling_gap` row reading `production_quantity set on 1, absent on 3 (jurassic-park-pro, jurassic-park-premium, jurassic-park-30th-anniversary)` is filed under the Title, `jurassic-park-stern`. Asking the spine for everything about `jurassic-park-pro` returns nothing at all. The finding is about four models and subject to one title, so a finding needs an affected-entities relation rather than a single subject — see [Findings are keyed by a relation](#findings-are-keyed-by-a-relation-not-a-column).
 
 **Detail strings can't be rendered generically.** Claim values are raw FK ids, so a generic detail reads `display_type = 1`, `system = 47`. Decoding is per-field, so each rule should render its own detail and the union carry it opaque — which also preserves the row-level detail that pinexplore's count-only `_warnings` loses.
 
@@ -414,15 +416,20 @@ Run over every scalar field rather than the four this doc enumerates, `scalar_ty
 
 Mutation-proving a rule, the file-per-rule layout, exception lists, `*_checks` discovery against a nonzero violation baseline, and any rule needing alias resolution or quote text.
 
-## Open questions from prototpye
+## Open questions from the prototype
 
-Decisions a designer needs to make; the rest of this doc is evidence for them.
+Decisions a designer still needs to make.
 
-- **A finding's subject is not the entity it is about.** A title-grain finding naming three models is filed under the Title, so "audit this model" misses it. Does a finding carry a list of affected entities, or is there a companion fan-out view at one-row-per-affected-entity? [Measured below](#the-output-spine-mostly-works); this is the one thing the prototype broke on.
-- **Which severity gets the `_checks` suffix, and how does the file stay opt-in?** See [Where this lives](#where-this-lives).
 - **Gaps are described as "tracked as a trend" and this layer has nowhere to keep a trend.** Nothing is persisted, `*.duckdb` is gitignored, and `analysis_context` exists precisely because what's reproducible is queries and not results. Either drop the trend and treat gaps as a worklist you query, or introduce a committed summary artifact — a new artifact class for this layer.
-- **`check-mutations` is hardcoded** to `catalog_checks.sql` and `catalog_mutations.tsv`. Nothing here can have a mutation until that takes a plan and a spec as arguments. Prerequisite, not follow-up. Also settle whether a rule's proof is a mutation (the existing mechanism, which works) or the "known-failing fixture" the [flippatch feedback](#flippatch-feedback) asks for — don't build both.
 - **What does the spine call an entity type?** `subject_type` holds Django's `catalog.person`, and a session guessing `'person'` got zero rows and read it as a clean pass. Expose the project's own entity key, or carry both.
+- **Is the exemption count a diagnosis or a design-time test?** See [the two caveats](#two-caveats-on-the-exemption-count).
+
+### Answered
+
+- **A finding's subject is not the entity it is about** — answered, and the answer is a relation rather than a column: [Findings are keyed by a relation](#findings-are-keyed-by-a-relation-not-a-column).
+- **Fixture or mutation as a rule's proof** — neither; [they are a pair](#proof-fixtures-and-mutations-are-a-pair).
+- **Which severity gets the `_checks` suffix, and how the file stays opt-in** — confirmed against the current runner, which is untouched: `run` still sweeps every public `*_checks` and `*_context` view. See below.
+- **`check-mutations` is still hardcoded** (`plan=`/`spec=` at lines 20-21) and is not on the foundation's list, so **this layer owns that change**. One constraint travels with it: the harness collects declared check names from the first checks view to end-of-file, so where a file `.read`s its sub-modules is load-bearing.
 
 **The three severities need no new mechanism, only naming discipline: exactly one of them may be named `*_checks`.** Violations get the suffix and gate; review and gaps are ordinary public views the summary reports and the runner never fails on. Two consequences follow, and both are easy to get wrong:
 
@@ -433,7 +440,60 @@ Decisions a designer needs to make; the rest of this doc is evidence for them.
 
 Cost is not an argument against per-rule files: the prototype's four rules ran in 0.28–0.74s each and ~1.0s unioned, with process startup dominating. `foundation_checks` needs its materialized preamble because of the all-column anchor sweep, not because check SQL is inherently expensive.
 
-### Deviation from observed convention, as the default rule shape
+## Severity belongs to the predicate, not to how bad the finding sounds
+
+From the analytics-foundation session (2026-08-14), and the single most useful piece of guidance received. The rule:
+
+**A rule can gate when its predicate is derived from something the system already asserts structurally. It cannot gate when the predicate is a heuristic over a population containing legitimate variety.** In the second case the discrimination the predicate failed to make gets hand-encoded, and an exemption list is where it goes.
+
+Measured both directions against the current `catalog_checks.sql`:
+
+| check                           | predicate keyed on                     | exemptions |
+| ------------------------------- | -------------------------------------- | ---------- |
+| `entity_view_leaks_bookkeeping` | the derived lifecycle entity set       | 0          |
+| `models_has_deleted`            | a view compared against its own source | 0          |
+| the `live()` fixtures           | input the fixture supplies itself      | 0          |
+| `anchor_dark` (retired)         | "is this column entirely empty"        | 51         |
+
+`anchor_dark` could not tell a broken join from a facet nobody populates, and 51 entries is what that costs. A second probe: pinning "no public view column may hold `''`" needs ~60 entries, and a differently-formulated attempt at the same underlying concern — a text match for a bare `fc.` reference — needs 38, because 38 of 68 views legitimately carry one.
+
+Running this doc's candidates through it, that session's read:
+
+- **`Missing parents` is the one clean `violation`** — a real structural invariant the DB does not enforce, no legitimate exception expected. Born at zero rows, so it needs its proof regardless.
+- **`scalar_type_disagreement` reads like a violation but isn't.** Its self-tuning form is minority-flagging over a population, so `review`.
+- **Everything else is `review` or `gap`** — vocabulary descriptions, cross-actor disagreement, uncited claims, title-sibling gaps, variant carry, orphan leaves, decaying facts. The prototype's own measurement supports the title-sibling one: "no edge to explain the asymmetry" turned out not to be the noise filter this doc assumed.
+
+### Two caveats on the exemption count
+
+The principle holds. The count is a good symptom of it and a poor test, for two reasons worth knowing before leaning on it:
+
+- **It conflates two failure modes with opposite prescriptions.** A long exemption list can mean the predicate is a bad proxy for the rule (reformulate it) or that the population genuinely contains legitimate variety (downgrade the severity). The `''`-versus-`fc.` probe above is offered as one concern in two formulations hitting one wall, but 38 of 68 views legitimately referencing `fc.` in a semantic layer over an attached database reads more like a mis-aimed predicate than like irreducible variety. Same count, different fix.
+- **It cannot classify a rule that has no exemptions yet.** The count is observable only after someone writes the exemptions, so a rule born at zero rows scores zero and the test says nothing. That is exactly `Missing parents`, nominated above as the one clean violation — on judgment ("no legitimate exception expected"), not on the metric. A related gap: narrowing a rule's population makes exemptions vanish without improving the predicate at all, which is what `anchor_dark` restricted to non-sparse columns would have looked like.
+
+Use it to diagnose a rule that is already misbehaving. Don't use it to decide a new rule's severity — for that, ask the structural-versus-heuristic question directly.
+
+## Proof: fixtures and mutations are a pair
+
+This doc previously treated the "known-failing fixture" the flippatch session asked for and the existing mutation harness as alternatives. They are not:
+
+- **A fixture proves the mechanism and cannot prove it was applied.**
+- **An outcome check proves application and cannot prove the mechanism.**
+
+The foundation hit this directly. `live()` now carries both, after a sequence where its smoke check was deleted as redundant with `anchor_dark` and `anchor_dark` was deleted in the same breath — two individually defensible changes, one uncovered contract.
+
+For a rule born at zero rows, a fixture supplying the defect is worth more than a mutation, because a mutation against a clean catalog can only break the query and watch it fire.
+
+## Findings are keyed by a relation, not a column
+
+The answer to the prototype's one real break, and the precedent is already in the foundation.
+
+`subject_public_id` is a column, and what the prototype found is that a finding has a _set_ of affected entities. A column cannot hold a set without becoming a list nothing can join on.
+
+`model_edges` is outbound-only, and `model_edges_bidir` exists because "is this model connected to that one" needs both directions — hundreds of live models carry only an inbound edge, so the outbound view answers confidently and wrongly. The spine is outbound-only from its subject in exactly the same way: `jurassic-park-stern` reaches its finding, `jurassic-park-pro` does not, and the query returns nothing rather than erroring.
+
+So keep the spine at one-row-per-finding with its single subject, and add a companion `audit_findings_affected` at one-row-per-(finding, affected entity) — with the subject-grain view contributing to it too, so a finding about its own subject isn't a special case. "Audit this model" joins the fan-out; "what did this rule find" reads the spine. It also gives each rule a place to declare its blast radius, which the detail string can't do and shouldn't try to, since claim values render as raw FK ids.
+
+## Deviation from observed convention, as the default rule shape
 
 The strongest idea to come out of either the [flippatch feedback](#query-the-catalog-for-precedent-instead-of-encoding-judgment) or the [prototype](#prototype-four-rules-measured), and they arrived at it independently at two different grains: rather than encode an expectation, ask what the catalog already does and flag the deviation.
 
