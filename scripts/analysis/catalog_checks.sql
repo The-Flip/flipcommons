@@ -286,6 +286,7 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'gameplay_feature_aliases' FROM gameplay_feature_aliases
     UNION ALL SELECT 'model_themes'        FROM model_themes
     UNION ALL SELECT 'model_tags'          FROM model_tags
+    UNION ALL SELECT 'model_rewards'       FROM model_rewards
     UNION ALL SELECT 'theme_vocab'         FROM theme_vocab
     UNION ALL SELECT 'theme_aliases'       FROM theme_aliases
     UNION ALL SELECT 'model_export_markets' FROM model_export_markets
@@ -957,6 +958,17 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'tag_subject_not_live', 'model_id=' || model_id::VARCHAR
   FROM model_tags WHERE model_id NOT IN (SELECT id FROM models)
+
+  -- and the reward family, same two guards
+  UNION ALL
+  SELECT 'reward_grain_dup',
+         'model_id=' || model_id::VARCHAR || ' reward_type_id=' || reward_type_id::VARCHAR
+           || ' n=' || count(*)::VARCHAR
+  FROM model_rewards GROUP BY model_id, reward_type_id HAVING count(*) > 1
+
+  UNION ALL
+  SELECT 'reward_subject_not_live', 'model_id=' || model_id::VARCHAR
+  FROM model_rewards WHERE model_id NOT IN (SELECT id FROM models)
 
   -- ── credits: the polymorphic subject, in both of the ways it can go wrong ──
   -- `credits` is the one grain view whose subject is not a machine model: it is a live

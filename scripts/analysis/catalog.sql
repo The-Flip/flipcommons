@@ -151,6 +151,7 @@ CREATE OR REPLACE VIEW _live_machine_model     AS SELECT * FROM live('fc.catalog
 CREATE OR REPLACE VIEW _live_title             AS SELECT * FROM live('fc.catalog_title');
 CREATE OR REPLACE VIEW _live_corporate_entity  AS SELECT * FROM live('fc.catalog_corporateentity');
 CREATE OR REPLACE VIEW _live_manufacturer      AS SELECT * FROM live('fc.catalog_manufacturer');
+CREATE OR REPLACE VIEW _live_reward_type       AS SELECT * FROM live('fc.catalog_rewardtype');
 CREATE OR REPLACE VIEW _live_series            AS SELECT * FROM live('fc.catalog_series');
 CREATE OR REPLACE VIEW _live_person            AS SELECT * FROM live('fc.catalog_person');
 CREATE OR REPLACE VIEW _live_credit_role       AS SELECT * FROM live('fc.catalog_creditrole');
@@ -231,13 +232,6 @@ COMMENT ON VIEW location_aliases IS
 CREATE OR REPLACE VIEW game_formats AS SELECT * FROM live('fc.catalog_gameformat');
 COMMENT ON VIEW game_formats IS
   'One row per live game format — the machine-genre vocabulary';
-
--- reward_types — what a machine pays out: the VOCABULARY behind `rewards`.
--- `rewards` says which types a model has, this says what the closed set is, and
--- `reward_type_aliases` resolves a source's phrasing into it.
-CREATE OR REPLACE VIEW reward_types AS SELECT * FROM live('fc.catalog_rewardtype');
-COMMENT ON VIEW reward_types IS
-  'One row per live reward type — the payout vocabulary behind rewards; join reward_type_aliases to resolve a source phrasing into it.';
 
 -- ─── Taxonomy dims, at entity grain ─────────────────────────────────────────
 -- One view per taxonomy dim. `models` carries these as SLUG ONLY and still does — these
@@ -658,14 +652,39 @@ COMMENT ON VIEW manufacturers IS
   'One row per live manufacturer — identity, home location/country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Read location and country each with its n_ count (0 = unknown, >1 = plural), and the span with n_dated.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
+-- model_rewards — one row per (live model, live reward type). The GRAIN, and THE reader
+-- of the through table: `rewards` and `reward_types` are both built from it. Reward types
+-- are MULTI-VALUED — a machine can pay out several — which is why they get a grain view
+-- and a usage count like themes and tags, rather than a slug column on `models` the way
+-- the single-FK dims do. Flat, no DAG.
+CREATE OR REPLACE VIEW model_rewards AS
+  SELECT mr.machinemodel_id AS model_id, rt.id AS reward_type_id, rt.slug AS reward_type_slug
+  FROM fc.catalog_machinemodel_reward_types mr
+  JOIN _live_reward_type rt ON rt.id = mr.rewardtype_id
+  SEMI JOIN models s ON s.id = mr.machinemodel_id;
+COMMENT ON VIEW model_rewards IS
+  'One row per (live model, live reward type) — the grain twin of rewards; predicate and join on reward_type_slug. Flat, no DAG.';
+
+-- reward_types — what a machine pays out: the VOCABULARY behind `rewards`. `rewards` says
+-- which types a model has, this says what the closed set is, and `reward_type_aliases`
+-- resolves a source's phrasing into it. `n` is the live-model usage count, as on the other
+-- multi-valued vocabularies.
+CREATE OR REPLACE VIEW reward_types AS
+  SELECT rt.*, count(mr.model_id) AS n
+  FROM _live_reward_type rt
+  LEFT JOIN model_rewards mr ON mr.reward_type_id = rt.id
+  GROUP BY ALL;
+COMMENT ON VIEW reward_types IS
+  'One row per live reward type — the payout VOCABULARY with usage count n; join reward_type_aliases to resolve a source phrasing into it.';
+
 -- rewards — sorted reward-type names per live model (only models that have any). Keyed
--- model_id.
+-- model_id. Built from the grain, so membership has one definition; the join is for the
+-- NAME, which the grain does not carry.
 CREATE OR REPLACE VIEW rewards AS
-  SELECT rt2.machinemodel_id AS model_id, list_sort(list(rt.name)) AS rewards
-  FROM fc.catalog_machinemodel_reward_types rt2
-  JOIN reward_types rt ON rt.id = rt2.rewardtype_id
-  SEMI JOIN models s ON s.id = rt2.machinemodel_id
-  GROUP BY rt2.machinemodel_id;
+  SELECT mr.model_id, list_sort(list(rt.name)) AS rewards
+  FROM model_rewards mr
+  JOIN _live_reward_type rt ON rt.id = mr.reward_type_id
+  GROUP BY mr.model_id;
 COMMENT ON VIEW rewards IS
   'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
@@ -691,8 +710,9 @@ CREATE OR REPLACE VIEW model_themes AS
 COMMENT ON VIEW model_themes IS
   'One row per (live model, live theme) — the grain twin of themes; predicate and join on theme_slug. Direct attachments only, DAG not rolled up.';
 
--- themes — sorted theme names per live model (only models that have any). Keyed model_id
--- like `rewards`, and the canonical home for theme data.
+-- themes — sorted theme names per live model (only models that have any). Keyed MODEL,
+-- despite the name: the theme-keyed view is `theme_vocab`, and the (model, theme) grain
+-- this is built from is `model_themes`. Enrichment only — no id, no slug, no DAG.
 CREATE OR REPLACE VIEW themes AS
   SELECT mt.model_id, list_sort(list(t.name)) AS themes
   FROM model_themes mt
@@ -1258,7 +1278,7 @@ COMMENT ON VIEW people IS
 CREATE OR REPLACE VIEW reward_type_aliases AS
   SELECT ra.reward_type_id, rt.slug AS reward_type_slug, ra.value AS alias
   FROM fc.catalog_rewardtypealias ra
-  JOIN reward_types rt ON rt.id = ra.reward_type_id;
+  JOIN _live_reward_type rt ON rt.id = ra.reward_type_id;
 COMMENT ON VIEW reward_type_aliases IS
   'One row per alias of a live reward type — alias GRAIN, for resolving a payout phrasing to the modelled type.';
 
