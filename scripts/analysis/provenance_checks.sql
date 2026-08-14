@@ -346,34 +346,46 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   -- status_unknown load-bearing for catalog.sql's liveness spelling. Notably
   -- actor_resolution_status: a third member would join neither the "ranks" nor the
   -- "suppressed" branch, and `rank` would keep looking right.
+  --
+  -- EACH ONE TESTS FOR ABSENCE SEPARATELY, because the two ways an enum goes wrong are
+  -- different defects and only one of them is loud. `v NOT IN (…)` is NULL on a NULL v
+  -- and a NULL predicate selects nothing, so an enum arriving blank passes the very
+  -- check written to police it. Three of these views read through blanks_null, which
+  -- turns a '' in the table into exactly that NULL — and none of these columns has a
+  -- CHECK constraint behind it, since `choices` is enforced by full_clean() alone.
+  -- A closed enum has no absent state: the five below are NOT NULL with a default, so a
+  -- NULL here is a blank that reached the view, never a value nobody set.
   UNION ALL
-  SELECT 'unknown_actor_kind', v
+  SELECT 'unknown_actor_kind', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT actor_kind AS v FROM claims)
-  WHERE v NOT IN ('source', 'user')
+  WHERE v IS NULL OR v NOT IN ('source', 'user')
 
   UNION ALL
-  SELECT 'unknown_actor_resolution_status', v
+  SELECT 'unknown_actor_resolution_status', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT actor_resolution_status AS v FROM claims)
-  WHERE v NOT IN ('active', 'suppressed')
+  WHERE v IS NULL OR v NOT IN ('active', 'suppressed')
 
-  -- ChangeSetAction, plus '' — the empty action is REQUIRED for an ingest changeset
-  -- (the provenance_changeset_action_iff_interactive constraint), not a missing value.
+  -- ChangeSetAction, and the one branch where NULL is CORRECT rather than a defect:
+  -- `action` is nullable, and provenance_changeset_action_iff_interactive makes it null
+  -- exactly when there is no ingest run, so every ingest changeset carries one. `''` is
+  -- NOT that state — it satisfies the constraint's interactive half while naming no
+  -- action at all — so absence is admitted by an explicit NULL test and nothing wider.
   UNION ALL
-  SELECT 'unknown_changeset_action', v
+  SELECT 'unknown_changeset_action', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT changeset_action AS v FROM claims)
-  WHERE v NOT IN ('', 'create', 'edit', 'delete', 'revert')
+  WHERE v IS NOT NULL AND v NOT IN ('create', 'edit', 'delete', 'revert')
 
   UNION ALL
-  SELECT 'unknown_ingest_run_status', v
+  SELECT 'unknown_ingest_run_status', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT status AS v FROM ingest_runs)
-  WHERE v NOT IN ('running', 'success', 'failed')
+  WHERE v IS NULL OR v NOT IN ('running', 'success', 'failed')
 
   UNION ALL
-  SELECT 'unknown_ingest_source_type', v
+  SELECT 'unknown_ingest_source_type', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT ingest_source_type AS v FROM ingest_sources)
-  WHERE v NOT IN ('database', 'wiki', 'book', 'editorial', 'other')
+  WHERE v IS NULL OR v NOT IN ('database', 'wiki', 'book', 'editorial', 'other')
 
   UNION ALL
-  SELECT 'unknown_citation_source_type', v
+  SELECT 'unknown_citation_source_type', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT citation_source_type AS v FROM citation_sources)
-  WHERE v NOT IN ('book', 'periodical', 'web', 'video', 'document');
+  WHERE v IS NULL OR v NOT IN ('book', 'periodical', 'web', 'video', 'document');

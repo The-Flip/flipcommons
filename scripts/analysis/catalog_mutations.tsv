@@ -106,6 +106,20 @@ changeset action outside its domain	unknown_changeset_action	CREATE TABLE _m AS 
 ingest run status outside its domain	unknown_ingest_run_status	CREATE TABLE _m AS SELECT * FROM ingest_runs; CREATE OR REPLACE VIEW ingest_runs AS SELECT * REPLACE ('paused' AS status) FROM _m;
 ingest source type outside its domain	unknown_ingest_source_type	CREATE TABLE _m AS SELECT * FROM ingest_sources; CREATE OR REPLACE VIEW ingest_sources AS SELECT * REPLACE ('zine' AS ingest_source_type) FROM _m;
 citation source type outside its domain	unknown_citation_source_type	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE ('scroll' AS citation_source_type) FROM _m;
+# Each vocabulary check gets a second mutation, for the ABSENT value rather than the
+# off-vocabulary one. The pair is the point: substituting garbage exercises `NOT IN` and
+# says nothing about the NULL path, where a closed enum arrives blank. `ingest_runs`,
+# `ingest_sources` and `citation_sources` read through blanks_null, so a '' in the table
+# IS a NULL in the view — those three are the reachable half.
+ingest run status blank	unknown_ingest_run_status	CREATE TABLE _m AS SELECT * FROM ingest_runs; CREATE OR REPLACE VIEW ingest_runs AS SELECT * REPLACE (NULL::VARCHAR AS status) FROM _m;
+ingest source type blank	unknown_ingest_source_type	CREATE TABLE _m AS SELECT * FROM ingest_sources; CREATE OR REPLACE VIEW ingest_sources AS SELECT * REPLACE (NULL::VARCHAR AS ingest_source_type) FROM _m;
+citation source type blank	unknown_citation_source_type	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE (NULL::VARCHAR AS citation_source_type) FROM _m;
+actor kind absent	unknown_actor_kind	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE (NULL::VARCHAR AS actor_kind) FROM _m;
+actor resolution status absent	unknown_actor_resolution_status	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE (NULL::VARCHAR AS actor_resolution_status) FROM _m;
+# The one that inverts: `action` is nullable and NULL is the INGEST state, so NULL must
+# stay silent. '' satisfies the interactive half of provenance_changeset_action_iff_
+# interactive while naming no action at all, which is the state worth catching.
+changeset action blank	unknown_changeset_action	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('' AS changeset_action) FROM _m;
 host_norm stops stripping www	macro_host_norm	CREATE OR REPLACE MACRO host_norm(h) AS lower(trim(h));
 url_host keeps the port	macro_url_host	CREATE OR REPLACE MACRO url_host(u) AS host_norm(regexp_extract(coalesce(u, ''), '^(?:[a-z][a-z0-9+.-]*:)?//(?:[^/@]*@)?([^/?#]*)', 1));
 host match loses the label boundary	macro_citation_root_for_host	CREATE OR REPLACE MACRO citation_root_for_host(h) AS (SELECT d.root_citation_source_id FROM citation_root_domains d WHERE ends_with(host_norm(h), d.host) ORDER BY length(d.host) DESC LIMIT 1);
