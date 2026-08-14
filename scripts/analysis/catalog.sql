@@ -986,7 +986,9 @@ CREATE OR REPLACE VIEW model_edges AS
     NULL::VARCHAR AS target_label,
     * EXCLUDE (model_id, edge_kind, target_id)
   FROM model_lineage
-  UNION ALL
+  -- BY NAME: both branches end in the same _model_target block, and matching them by name
+  -- rather than by position is what keeps that true if either projection is reordered.
+  UNION ALL BY NAME
   SELECT
     model_id,
     'relationship' AS edge_source,
@@ -1117,8 +1119,8 @@ COMMENT ON VIEW title_size IS
 CREATE OR REPLACE VIEW model_number_collisions AS
   SELECT
     manufacturer_id,
-    max(manufacturer_slug)          AS manufacturer_slug,
-    max(manufacturer_name)          AS manufacturer_name,
+    manufacturer_slug,
+    manufacturer_name,
     manufacturer_model_identifier   AS model_number,
     count(*)                        AS n,
     count(DISTINCT title_id)        AS n_titles,
@@ -1126,7 +1128,7 @@ CREATE OR REPLACE VIEW model_number_collisions AS
     list_sort(list(label))          AS labels
   FROM models
   WHERE manufacturer_id IS NOT NULL AND manufacturer_model_identifier IS NOT NULL
-  GROUP BY manufacturer_id, manufacturer_model_identifier
+  GROUP BY ALL
   HAVING count(*) > 1;
 COMMENT ON VIEW model_number_collisions IS
   'One row per (manufacturer, model number) claimed by more than one live model — exact numbers only. n_titles = 1 is usually a legitimate catalog split, not bad data.';
@@ -1334,23 +1336,22 @@ CREATE OR REPLACE VIEW _dm_marked AS
   FROM _dm_lines;
 
 -- domain_vocab — one row per documented vocabulary term.
--- The group window must run over EVERY line, with the bullet filter applied OUTSIDE it:
--- filtering first strips the heading rows the window reads, every group comes back NULL
--- and the view silently returns nothing.
+-- The bullet filter is a QUALIFY and must stay one: the group window has to run over EVERY
+-- line, and a WHERE runs FIRST, stripping the heading rows the window reads — every group
+-- then comes back NULL and the view silently returns nothing.
 -- Restricted to groups naming a real fc.catalog_<dim> table, which keeps non-vocabulary
 -- bullet lists out ("Fields Common to All Catalog Entities" uses this exact shape). The
 -- test is mechanical, so a newly documented vocabulary needs no edit here — it needs a
 -- _dim_vocab entry, and unmapped_vocab_dim says so.
 CREATE OR REPLACE VIEW domain_vocab AS
-  SELECT dim, slug, definition, doc_line FROM (
-    SELECT lower(replace(last_value(group_raw IGNORE NULLS) OVER (ORDER BY i), ' ', '')) AS dim,
-           regexp_extract(t, '^- `([a-z0-9-]+)`: ', 1)    AS slug,
-           regexp_extract(t, '^- `[a-z0-9-]+`: (.*)$', 1) AS definition,
-           t, i AS doc_line
-    FROM _dm_marked)
-  WHERE regexp_matches(t, '^- `[a-z0-9-]+`: ')
-    AND dim IN (SELECT replace(table_name, 'catalog_', '')
-                FROM duckdb_tables() WHERE database_name = 'fc');
+  SELECT lower(replace(last_value(group_raw IGNORE NULLS) OVER (ORDER BY i), ' ', '')) AS dim,
+         regexp_extract(t, '^- `([a-z0-9-]+)`: ', 1)    AS slug,
+         regexp_extract(t, '^- `[a-z0-9-]+`: (.*)$', 1) AS definition,
+         i AS doc_line
+  FROM _dm_marked
+  QUALIFY regexp_matches(t, '^- `[a-z0-9-]+`: ')
+      AND dim IN (SELECT replace(table_name, 'catalog_', '')
+                  FROM duckdb_tables() WHERE database_name = 'fc');
 COMMENT ON VIEW domain_vocab IS
   'One row per controlled-vocabulary term defined in docs/DomainModel.md — dim, slug and the prose definition, parsed from the doc at query time. Join it to a vocabulary view to read what a slug MEANS; the doc stays the only place domain semantics are written.';
 
