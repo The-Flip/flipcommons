@@ -714,6 +714,12 @@ CREATE OR REPLACE VIEW foundation_checks AS
   FROM _entity_view e
   JOIN duckdb_views() v ON v.view_name = e.view_name AND v.database_name = 'memory'
   WHERE e.entity_table IN (SELECT table_name FROM _entity_table)
+    -- A TEXT match, with the limit that implies: it catches a view that forgot to filter,
+    -- not one that mentions live() or a _live_* leaf without reading through it. Naming the
+    -- leaves instead of wildcarding does not change that — a bypass smuggling the token
+    -- through a no-op subquery passes either way. An exact check is not available:
+    -- query_table() takes literals only, so "compare each view against live() of its
+    -- source" cannot be written once over the entity set.
     AND v.sql NOT LIKE '%live(%'
     AND v.sql NOT LIKE '%_live_%'
 

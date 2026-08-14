@@ -189,16 +189,17 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   HAVING count(*) > 1
 
   -- The DB constraint provenance_changeset_action_iff_interactive, restated where an
-  -- analysis can see it. `action` is spelled '' for ingest here, so the test is on
-  -- emptiness rather than NULL — and it matters because `is_interactive` is what
-  -- consumers filter on while `action` is what they display.
+  -- analysis can see it. It matters because `is_interactive` is what consumers filter
+  -- on while `action` is what they display. Absent is NULL, as everywhere in this layer,
+  -- so `coalesce` in the detail: concatenating a NULL action yields a NULL detail, and
+  -- 34,000 findings that all read NULL name nothing at all.
   UNION ALL
   SELECT 'changeset_action_iff_interactive',
          'changeset_id=' || changeset_id::VARCHAR
            || ' is_interactive=' || is_interactive::VARCHAR
-           || ' action=[' || action || ']'
+           || ' action=[' || coalesce(action, '<NULL>') || ']'
   FROM changesets
-  WHERE is_interactive IS DISTINCT FROM (action <> '')
+  WHERE is_interactive IS DISTINCT FROM (action IS NOT NULL)
 
   -- A changeset that neither wrote nor retracted a claim did nothing at all. Zero of
   -- 32,126 today. One would mean a write path recording the grouping record and then

@@ -75,12 +75,31 @@ COMMENT ON MACRO name_key IS
 -- view that drops more says so itself, which is what keeps an EXCLUDE list meaningful.
 -- Fails loudly (Binder Error on `status`) against a table with no lifecycle, which is
 -- correct: alias tables are not live-filtered and must not pretend to be.
+-- blanks_null is the other half of the same idea, split out because tables with no
+-- lifecycle need it too. Django spells an unset CharField(blank=True) as '' and an unset
+-- nullable field as NULL, and both used to reach the views untouched — so `description
+-- IS NULL` was ALWAYS FALSE on 6,828 models while `year IS NULL` was correct, with
+-- nothing in either column to say which spelling applied. One spelling now reaches a
+-- consumer: absent is NULL.
+-- The `::VARCHAR` cast is inside the comparison and not around the value, which is what
+-- makes this safe to apply to every column at once — `NULLIF(COLUMNS(*), '')` fails with
+-- a conversion error on the first integer, while CASE returns the column untouched and
+-- preserves its type.
+-- Apply it BY NAME, never by testing whether a table has the columns for it: '' is a real
+-- value in citation_citationsourcerootdomain.path_prefix, where it means "whole host"
+-- rather than "no host", and folding it to NULL there would be a semantic error.
+CREATE OR REPLACE MACRO blanks_null(tbl) AS TABLE
+  SELECT CASE WHEN COLUMNS(*)::VARCHAR = '' THEN NULL ELSE COLUMNS(*) END
+  FROM query_table(tbl);
+COMMENT ON MACRO TABLE blanks_null IS
+  'blanks_null(''fc.x'') — every column of a table with '''' folded to NULL, types preserved. The base read for a table with no lifecycle; live() already includes it.';
+
 CREATE OR REPLACE MACRO live(tbl) AS TABLE
   SELECT * EXCLUDE (status, created_at, updated_at)
-  FROM query_table(tbl)
+  FROM blanks_null(tbl)
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON MACRO TABLE live IS
-  'live(''fc.catalog_x'') — the live rows of a lifecycle table minus status/created_at/updated_at. The base read for every entity view; joins use the joined entity''s view instead.';
+  'live(''fc.catalog_x'') — the live rows of a lifecycle table minus status/created_at/updated_at, with '''' folded to NULL. The base read for every entity view; joins use the joined entity''s view instead.';
 
 -- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
 -- locations — one row per live Location, at EVERY level. THE entity: a country is simply
@@ -492,8 +511,8 @@ CREATE OR REPLACE VIEW _mfr_location AS
 --                 reports the address its CEs carry.
 --   website / wikidata_id : the two outbound handles for enriching from outside the
 --                 catalog. Both sparse.
---                 An empty website is '' and an absent QID is NULL; the model spells them
---                 differently and this view doesn't paper over it.
+--                 Both absent as NULL: the Django model spells an unset website '' and
+--                 an unset QID NULL, and `live` folds the difference away.
 CREATE OR REPLACE VIEW manufacturers AS
   WITH agg AS (
     SELECT
