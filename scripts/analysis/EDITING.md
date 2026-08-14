@@ -20,7 +20,7 @@ Ordering follows from the same graph, and it is not optional: views bind at `CRE
 
 The recurring temptation when an analysis finds a gap is to fold its judgment into the foundation alongside the fact — a manufacturer "era" that quietly requires 3 dated models, an `alone_in_title` boolean, a stem macro encoding one manufacturer's numbering convention. Each is right for the consumer that needs it and lossy for the next one, which inherits a cutoff it never chose and can't see.
 
-So: if a proposed column encodes a cutoff, a per-manufacturer convention or a yes/no a query could express in one predicate, surface the underlying number instead and let the caller write the predicate. `title_size.n` is the pattern — the foundation gives `n`, the analysis writes `n = 1`. `manufacturers` gives `year_of_first_model`/`year_of_last_model` **and** `n_dated`, so a consumer can demand whatever evidence it wants. Judgment belongs in an analysis's Reference lookup table, where the checks can see it, not in a macro that answers confidently for inputs it was never calibrated on.
+So: if a proposed column encodes a cutoff, a per-manufacturer convention or a yes/no a query could express in one predicate, surface the underlying number instead and let the caller write the predicate. `titles.n_models` is the pattern — the foundation gives the count, the analysis writes `n_models = 1`; `models.title_size` is the same number at model grain, and `title_size = 1` is the "alone in its Title" test. `manufacturers` gives `year_of_first_model`/`year_of_last_model` **and** `n_dated`, so a consumer can demand whatever evidence it wants. Judgment belongs in an analysis's Reference lookup table, where the checks can see it, not in a macro that answers confidently for inputs it was never calibrated on.
 
 The same rule sets the bar for **macros**, of which there are few: the name-normalization block (`name_norm`, `name_strip_paren`, `name_key`) exists because every cross-record comparison needs one and hand-rolled copies drift. Matching _strategy_ — plural collapsing, token subsets, edit distance — stays analysis-local.
 
@@ -80,9 +80,9 @@ Alias lookups are the exception to demand-driven promotion: expose every concret
 A public view ships with a `COMMENT ON VIEW` immediately after its `CREATE`:
 
 ```sql
-CREATE OR REPLACE VIEW title_size AS …;
-COMMENT ON VIEW title_size IS
-  'One row per Title with a live model — Title identity plus n, the live model count. …';
+CREATE OR REPLACE VIEW titles AS …;
+COMMENT ON VIEW titles IS
+  'One row per LIVE Title — identity, franchise/series grouping and n_models. …';
 ```
 
 That comment **is** the view reference. `scripts/analysis/analysis describe` reads it from the session, so README.md does not duplicate the view list — and a term naming nothing exactly searches these one-liners, so the words you choose are how the view gets found at all. `undocumented_view` fails the self-test for any public view without a comment; review remains responsible for keeping the comment accurate, while `DESCRIBE` supplies the live column list.

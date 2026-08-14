@@ -315,7 +315,6 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'corporate_entities'  FROM corporate_entities
     UNION ALL SELECT 'titles'              FROM titles
     UNION ALL SELECT 'people'              FROM people
-    UNION ALL SELECT 'title_size'          FROM title_size
     UNION ALL SELECT 'domain_vocab'        FROM domain_vocab
     UNION ALL SELECT 'entity_registry'     FROM entity_registry
     UNION ALL SELECT 'entity_subjects'     FROM entity_subjects
@@ -381,7 +380,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- SHADOW the same-named views (hence `main.` on the right-hand side), so the checks
   -- read them by their ordinary names with no edit at the call site.
   models              AS MATERIALIZED (SELECT * FROM main.models),
-  title_size          AS MATERIALIZED (SELECT * FROM main.title_size),
   manufacturers       AS MATERIALIZED (SELECT * FROM main.manufacturers),
   model_edges         AS MATERIALIZED (SELECT * FROM main.model_edges),
   model_lineage       AS MATERIALIZED (SELECT * FROM main.model_lineage),
@@ -1052,19 +1050,19 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE target_id IS NOT NULL
     AND target_slug IS DISTINCT FROM (SELECT slug FROM models m WHERE m.id = b.target_id)
 
-  -- models.title_size and the title_size view are the same number (both off
-  -- _title_live_n; this catches one being rewired to a different definition).
-  -- LEFT joined on purpose: an INNER join only compares Titles present in BOTH, so a
-  -- title_size row that went MISSING would drop its models out of the comparison
-  -- entirely and pass — and title_size_zero_on_live wouldn't see it either, since that
-  -- reads the independently-populated model column. Absence and disagreement are the
-  -- same defect here, so both are flagged.
+  -- models.title_size and titles.n_models are the same number (both off _title_live_n;
+  -- this catches one being rewired to a different definition).
+  -- LEFT joined on purpose, and it asserts TWO things because `titles` holds live Titles
+  -- only. Disagreement is one path drifting from the other. ABSENCE is a live model whose
+  -- Title is not live — which an INNER join would drop from the comparison rather than
+  -- report, and which title_size_zero_on_live cannot see either, since that reads the
+  -- independently-populated model column.
   UNION ALL
   SELECT 'title_size_disagree',
          'title_id=' || m.title_id::VARCHAR || ' model=' || m.title_size::VARCHAR
-           || ' view=' || COALESCE(t.n::VARCHAR, '<no row>')
-  FROM models m LEFT JOIN title_size t ON t.title_id = m.title_id
-  WHERE t.title_id IS NULL OR m.title_size IS DISTINCT FROM t.n
+           || ' titles=' || COALESCE(t.n_models::VARCHAR, '<no live Title>')
+  FROM models m LEFT JOIN titles t ON t.id = m.title_id
+  WHERE t.id IS NULL OR m.title_size IS DISTINCT FROM t.n_models
 
   -- a live model always has a live Title-mate: itself. title_size = 0 is only
   -- structurally impossible unless the _title_live_n join breaks, which is the point.

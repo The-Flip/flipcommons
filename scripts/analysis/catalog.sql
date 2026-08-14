@@ -1109,17 +1109,6 @@ CREATE OR REPLACE VIEW titles AS
 COMMENT ON VIEW titles IS
   'One row per LIVE Title — identity, franchise/series grouping and n_models. Unlike title_size it keeps Titles with no live models, at n_models = 0.';
 
--- title_size — one row per Title with a live model: identity plus n, the count of LIVE
--- models in it (the "alone in its Title?" signal — n = 1; a soft-deleted sibling doesn't
--- keep a model company). The TITLE-keyed form of `models.title_size`. Use it when the
--- Title is the grain you iterate; read the model column when you already have a model row.
-CREATE OR REPLACE VIEW title_size AS
-  SELECT tn.title_id, t.slug AS title_slug, t.name AS title_name, tn.n
-  FROM _title_live_n tn
-  LEFT JOIN fc.catalog_title t ON t.id = tn.title_id;
-COMMENT ON VIEW title_size IS
-  'One row per Title with a live model — Title identity plus n, the live model count. The "alone in its Title?" signal is n = 1.';
-
 -- model_number_collisions — one row per (manufacturer, model number) that more than one
 -- live model claims: `models.manufacturer_model_identifier`'s non-uniqueness made
 -- queryable, so an analysis matching a source's model number can see up front whether its

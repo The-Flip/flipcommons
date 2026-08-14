@@ -42,7 +42,7 @@ CREATE OR REPLACE TABLE _mf_feature_closure AS
   SELECT * FROM d;
 
 -- Live Models per Title, Variants INCLUDED — the denominator of the "every
--- Model matches" test. Deliberately not title_size, which is the same count but
+-- Model matches" test. Deliberately not titles.n_models, which is the same count but
 -- reads as a Title property; here it is the roll-up threshold.
 CREATE OR REPLACE TABLE _mf_title_size AS
   SELECT title_id, count(*) AS n_models FROM models GROUP BY title_id;
