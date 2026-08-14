@@ -157,3 +157,5 @@ series half of the credit grain dropped	credit_rows_dropped	CREATE TABLE _m AS S
 credit subject id resolves to nothing	credit_subject_not_live	CREATE TABLE _m AS SELECT * FROM credits; CREATE OR REPLACE VIEW credits AS SELECT * REPLACE (CASE WHEN credit_id = (SELECT min(credit_id) FROM _m) THEN 999999999 ELSE subject_id END AS subject_id) FROM _m;
 patch ordinal truncated to four digits	macro_patch_number_of	CREATE OR REPLACE MACRO patch_number_of(pid) AS TRY_CAST(regexp_extract(pid, '^([0-9]{4})', 1) AS INTEGER);
 public view added without a summary line	unsummarized_view	CREATE OR REPLACE VIEW zz_unsummarized AS SELECT 1 AS x; CREATE TABLE _m AS SELECT * FROM _anchor_scan; CREATE OR REPLACE VIEW _anchor_scan AS SELECT * FROM _m UNION ALL SELECT 'zz_unsummarized', col, live FROM _dark_cols('zz_unsummarized');
+live stops filtering deleted rows	macro_live	CREATE OR REPLACE MACRO live(tbl) AS TABLE SELECT * EXCLUDE (status, created_at, updated_at) FROM query_table(tbl);
+live stops dropping bookkeeping columns	macro_live	CREATE OR REPLACE MACRO live(tbl) AS TABLE SELECT * FROM query_table(tbl) WHERE status IS DISTINCT FROM 'deleted';

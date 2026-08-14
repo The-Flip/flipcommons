@@ -64,6 +64,24 @@ CREATE OR REPLACE MACRO name_key(s) AS name_norm(name_strip_paren(s));
 COMMENT ON MACRO name_key IS
   'name_norm(name_strip_paren(s)) — the name comparison key for the common case. Use name_norm alone when a trailing parenthetical distinguishes the records.';
 
+-- ═══ LIVE — the one place the liveness rule is written ══════════════════════
+-- live('fc.catalog_x') is the live rows of a lifecycle table, minus the three columns
+-- every entity view drops for the same reason. It exists so neither the rule nor that
+-- reason is retyped per view: `status` is redundant on a view that IS the live rows, and
+-- created_at/updated_at are row bookkeeping that differs between any two copies of the
+-- catalog, so they describe the local db state rather than catalog state.
+-- Use it for the BASE read only — joins go through the joined entity's own view, so its
+-- liveness stays stated once too. It has no opinion about columns beyond those three: a
+-- view that drops more says so itself, which is what keeps an EXCLUDE list meaningful.
+-- Fails loudly (Binder Error on `status`) against a table with no lifecycle, which is
+-- correct: alias tables are not live-filtered and must not pretend to be.
+CREATE OR REPLACE MACRO live(tbl) AS TABLE
+  SELECT * EXCLUDE (status, created_at, updated_at)
+  FROM query_table(tbl)
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON MACRO TABLE live IS
+  'live(''fc.catalog_x'') — the live rows of a lifecycle table minus status/created_at/updated_at. The base read for every entity view; joins use the joined entity''s view instead.';
+
 -- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
 -- locations — one row per live Location, at EVERY level. THE entity: a country is simply
 -- a Location with no parent (`is_country`), and there is no separate country table or
@@ -88,15 +106,10 @@ COMMENT ON MACRO name_key IS
 --             not inherit its cities' counts. Roll up with a location_path prefix.
 CREATE OR REPLACE VIEW locations AS
   SELECT
-    l.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
-    ),
+    l.*,
     split_part(l.location_path, '/', 1)      AS country_slug,
     l.parent_id IS NULL                      AS is_country
-  FROM fc.catalog_location l
-  WHERE l.status IS DISTINCT FROM 'deleted';
+  FROM live('fc.catalog_location') l;
 -- corporate_entity_locations — one row per (live corporate entity, live location) it is
 -- based in. THE bridge: CorporateEntityLocation is a through model owned by
 -- CorporateEntity ("existence is controlled by `location` relationship claims on
@@ -140,26 +153,14 @@ COMMENT ON VIEW location_aliases IS
   'One row per alias of a live Location at any level — alias GRAIN, keyed on location_path because Location.slug is unique only within a parent. Filter is_country for countries.';
 
 -- game_formats — the machine-genre vocabulary.
-CREATE OR REPLACE VIEW game_formats AS
-  SELECT * EXCLUDE (
-    status,           -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ) FROM fc.catalog_gameformat
-  WHERE status IS DISTINCT FROM 'deleted';
+CREATE OR REPLACE VIEW game_formats AS SELECT * FROM live('fc.catalog_gameformat');
 COMMENT ON VIEW game_formats IS
   'One row per live game format — the machine-genre vocabulary';
 
 -- reward_types — what a machine pays out: the VOCABULARY behind `rewards`.
 -- `rewards` says which types a model has, this says what the closed set is, and
 -- `reward_type_aliases` resolves a source's phrasing into it.
-CREATE OR REPLACE VIEW reward_types AS
-  SELECT * EXCLUDE (
-    status,           -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ) FROM fc.catalog_rewardtype
-  WHERE status IS DISTINCT FROM 'deleted';
+CREATE OR REPLACE VIEW reward_types AS SELECT * FROM live('fc.catalog_rewardtype');
 COMMENT ON VIEW reward_types IS
   'One row per live reward type — the payout vocabulary behind rewards; join reward_type_aliases to resolve a source phrasing into it.';
 
@@ -177,51 +178,29 @@ COMMENT ON VIEW reward_types IS
 --
 -- Uniform shape: id, slug, name, description, plus the decoded parent where the dim has
 -- one. Live rows only, and every parent join live-filtered, as everywhere else here.
-CREATE OR REPLACE VIEW technology_generations AS
-  SELECT * EXCLUDE (
-    status,           -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ) FROM fc.catalog_technologygeneration
-  WHERE status IS DISTINCT FROM 'deleted';
+CREATE OR REPLACE VIEW technology_generations AS SELECT * FROM live('fc.catalog_technologygeneration');
 COMMENT ON VIEW technology_generations IS
   'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State).';
 
 CREATE OR REPLACE VIEW technology_subgenerations AS
   SELECT
-    tsg.* EXCLUDE (
-    status,           -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ),
+    tsg.*,
     tg.slug AS technology_generation_slug
-  FROM fc.catalog_technologysubgeneration tsg
-  LEFT JOIN technology_generations tg ON tg.id = tsg.technology_generation_id
-  WHERE tsg.status IS DISTINCT FROM 'deleted';
+  FROM live('fc.catalog_technologysubgeneration') tsg
+  LEFT JOIN technology_generations tg ON tg.id = tsg.technology_generation_id;
 COMMENT ON VIEW technology_subgenerations IS
   'One row per live technology subgeneration — the subdivision vocabulary, carrying its parent generation decoded to a slug.';
 
-CREATE OR REPLACE VIEW display_types AS
-  SELECT * EXCLUDE (
-    status,           -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ) FROM fc.catalog_displaytype
-  WHERE status IS DISTINCT FROM 'deleted';
+CREATE OR REPLACE VIEW display_types AS SELECT * FROM live('fc.catalog_displaytype');
 COMMENT ON VIEW display_types IS
   'One row per live display type — the display-technology vocabulary (Score Reels, DMD, LCD).';
 
 CREATE OR REPLACE VIEW display_subtypes AS
   SELECT
-    dst.* EXCLUDE (
-    status,           -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ),
+    dst.*,
     dt.slug AS display_type_slug
-  FROM fc.catalog_displaysubtype dst
-  LEFT JOIN display_types dt ON dt.id = dst.display_type_id
-  WHERE dst.status IS DISTINCT FROM 'deleted';
+  FROM live('fc.catalog_displaysubtype') dst
+  LEFT JOIN display_types dt ON dt.id = dst.display_type_id;
 COMMENT ON VIEW display_subtypes IS
   'One row per live display subtype — the subdivision vocabulary, carrying its parent display type decoded to a slug.';
 
@@ -230,43 +209,28 @@ COMMENT ON VIEW display_subtypes IS
 -- a system belongs to whoever built it.
 CREATE OR REPLACE VIEW systems AS
   SELECT
-    s.* EXCLUDE (
-    status,           -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ),
+    s.*,
     mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     tsg.slug AS technology_subgeneration_slug
-  FROM fc.catalog_system s
+  FROM live('fc.catalog_system') s
   -- Physical, not `manufacturers`: that view aggregates over `models`, which joins
   -- `systems`, so composing it here would close a cycle.
   LEFT JOIN fc.catalog_manufacturer mf ON mf.id = s.manufacturer_id
                                       AND mf.status IS DISTINCT FROM 'deleted'
   LEFT JOIN technology_subgenerations tsg ON tsg.id = s.technology_subgeneration_id
-  WHERE s.status IS DISTINCT FROM 'deleted';
+;
 COMMENT ON VIEW systems IS
   'One row per live system — the hardware-generation vocabulary (WPC-95, SAM, SPIKE) with its manufacturer and technology subgeneration decoded.';
 
-CREATE OR REPLACE VIEW cabinets AS
-  SELECT * EXCLUDE (
-    status,           -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ) FROM fc.catalog_cabinet
-  WHERE status IS DISTINCT FROM 'deleted';
+CREATE OR REPLACE VIEW cabinets AS SELECT * FROM live('fc.catalog_cabinet');
 COMMENT ON VIEW cabinets IS
   'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail).';
 
 -- production_statuses is the ProductionStatus vocabulary, NOT the soft-delete `status`
 -- every other view here filters on. Same trap as the column on `models`.
-CREATE OR REPLACE VIEW production_statuses AS
-  SELECT * EXCLUDE (
-    status,           -- the SOFT-DELETE flag, not the production status this view is about;
-                      -- the view IS the live rows, and carrying it would be doubly confusing
-    created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at        -- so it describes the local db state rather than catalog state
-  ) FROM fc.catalog_productionstatus
-  WHERE status IS DISTINCT FROM 'deleted';
+-- NB the `status` live() drops here is the SOFT-DELETE flag, not the production status
+-- this view is about — carrying it would have been doubly confusing.
+CREATE OR REPLACE VIEW production_statuses AS SELECT * FROM live('fc.catalog_productionstatus');
 COMMENT ON VIEW production_statuses IS
   'One row per live production status — the commercial-production vocabulary (produced, announced, one-off).';
 
@@ -374,10 +338,7 @@ CREATE OR REPLACE VIEW models AS
     m.* EXCLUDE (
       ipdb_rating,      -- third-party ratings: not ours to republish, and not wanted
       pinside_rating,
-      flipper_count,    -- near-empty scalar; model_gameplay_features.count is the signal
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at,       -- so it describes the local db state rather than catalog state
-      status            -- the view IS the live rows; the soft-delete flag adds nothing
+      flipper_count     -- near-empty scalar; model_gameplay_features.count is the signal
     ),
     t.slug AS title_slug, t.name AS title_name,
     COALESCE(tn.n, 0) AS title_size,
@@ -407,7 +368,7 @@ CREATE OR REPLACE VIEW models AS
   -- Every dim join is live-filtered, so a deleted dim de-enriches to NULL. It should
   -- never bite (the FKs are PROTECT and the soft-delete walker blocks it) and
   -- model_dim_not_live fires if it does.
-  FROM fc.catalog_machinemodel m
+  FROM live('fc.catalog_machinemodel') m
   -- Title, corporate entity and manufacturer stay PHYSICAL joins on purpose: `titles`,
   -- `corporate_entities` and `manufacturers` all aggregate over `models`, so composing
   -- them here would be circular. Only the leaf dims below can be composed.
@@ -431,8 +392,7 @@ CREATE OR REPLACE VIEW models AS
   LEFT JOIN display_subtypes           dst ON dst.id = m.display_subtype_id
   LEFT JOIN systems                    sys ON sys.id = m.system_id
   LEFT JOIN cabinets                   cab ON cab.id = m.cabinet_id
-  LEFT JOIN production_statuses        ps  ON ps.id  = m.production_status_id
-  WHERE m.status IS DISTINCT FROM 'deleted';
+  LEFT JOIN production_statuses        ps  ON ps.id  = m.production_status_id;
 COMMENT ON VIEW models IS
   'One row per LIVE MachineModel — THE spine; build analyses on this. Soft-deleted models are not here and are not anywhere: read `claims` for the history of one.';
 
@@ -478,9 +438,9 @@ CREATE OR REPLACE VIEW _mfr_location AS
          count(DISTINCT cel.country_slug)   AS n_countries,
          CASE WHEN count(DISTINCT cel.country_slug) = 1
               THEN min(cel.country_slug) END  AS country_slug
-  FROM fc.catalog_corporateentity ce
+  FROM live('fc.catalog_corporateentity') ce
   LEFT JOIN _ce_location cel ON cel.corporate_entity_id = ce.id
-  WHERE ce.status IS DISTINCT FROM 'deleted' AND ce.manufacturer_id IS NOT NULL
+  WHERE ce.manufacturer_id IS NOT NULL
   GROUP BY ce.manufacturer_id;
 
 -- manufacturers — one row per live manufacturer: identity, where it was based, how much
@@ -547,11 +507,7 @@ CREATE OR REPLACE VIEW manufacturers AS
     GROUP BY manufacturer_id
   )
   SELECT
-    mf.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
-    ),
+    mf.*,
     COALESCE(a.n_models, 0)            AS n_models,
     COALESCE(a.n_nonvariant_models, 0) AS n_nonvariant_models,
     COALESCE(a.n_dated, 0)             AS n_dated,
@@ -563,11 +519,10 @@ CREATE OR REPLACE VIEW manufacturers AS
     l.location_path,
     COALESCE(l.n_countries, 0) AS n_countries,
     l.country_slug
-  FROM fc.catalog_manufacturer mf
+  FROM live('fc.catalog_manufacturer') mf
   LEFT JOIN agg a           ON a.manufacturer_id = mf.id
   LEFT JOIN _mfr_status s   ON s.manufacturer_id = mf.id
-  LEFT JOIN _mfr_location l ON l.manufacturer_id = mf.id
-  WHERE mf.status IS DISTINCT FROM 'deleted';
+  LEFT JOIN _mfr_location l ON l.manufacturer_id = mf.id;
 COMMENT ON VIEW manufacturers IS
   'One row per live manufacturer — identity, home location/country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Read location and country each with its n_ count (0 = unknown, >1 = plural), and the span with n_dated.';
 
@@ -607,9 +562,6 @@ CREATE OR REPLACE VIEW corporate_entities AS
   )
   SELECT
     ce.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at,       -- so it describes the local db state rather than catalog state
       -- RETIRED on the Django model, whose help_text reads "DEAD FIELD — do not read or
       -- write": a company can incorporate years before its first machine and linger years
       -- after its last, so these answer the wrong question. The rows survive only to keep
@@ -626,12 +578,11 @@ CREATE OR REPLACE VIEW corporate_entities AS
     COALESCE(a.n_nonvariant_models, 0) AS n_nonvariant_models,
     COALESCE(a.n_dated, 0)             AS n_dated,
     a.year_of_first_model, a.year_of_last_model
-  FROM fc.catalog_corporateentity ce
+  FROM live('fc.catalog_corporateentity') ce
   LEFT JOIN fc.catalog_manufacturer mf ON mf.id = ce.manufacturer_id
                                       AND mf.status IS DISTINCT FROM 'deleted'
   LEFT JOIN _ce_location cel           ON cel.corporate_entity_id = ce.id
-  LEFT JOIN agg a                      ON a.corporate_entity_id = ce.id
-  WHERE ce.status IS DISTINCT FROM 'deleted';
+  LEFT JOIN agg a                      ON a.corporate_entity_id = ce.id;
 COMMENT ON VIEW corporate_entities IS
   'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts, location and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
@@ -647,13 +598,7 @@ CREATE OR REPLACE VIEW rewards AS
 COMMENT ON VIEW rewards IS
   'One row per model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
-CREATE OR REPLACE VIEW _live_theme AS
-  SELECT * EXCLUDE (
-    status,             -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,         -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at          -- so it describes the local db state rather than catalog state
-  ) FROM fc.catalog_theme
-  WHERE status IS DISTINCT FROM 'deleted';
+CREATE OR REPLACE VIEW _live_theme AS SELECT * FROM live('fc.catalog_theme');
 
 -- themes — sorted theme names per model (only models that have any). Keyed model_id like
 -- `rewards`, and the canonical home for theme data.
@@ -743,18 +688,13 @@ COMMENT ON VIEW theme_vocab IS
 -- a hardcoded slug against this view before trusting it. Flat, no DAG.
 CREATE OR REPLACE VIEW tag_vocab AS
   SELECT
-    tg.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
-    ),
+    tg.*,
     -- count(m.id), not the link: the through-row survives its model's soft-delete.
     count(m.id) AS n
-  FROM fc.catalog_tag tg
+  FROM live('fc.catalog_tag') tg
   LEFT JOIN fc.catalog_machinemodel_tags mt ON mt.tag_id = tg.id
   LEFT JOIN fc.catalog_machinemodel m
     ON m.id = mt.machinemodel_id AND m.status IS DISTINCT FROM 'deleted'
-  WHERE tg.status IS DISTINCT FROM 'deleted'
   GROUP BY ALL;
 COMMENT ON VIEW tag_vocab IS
   'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of model-keyed tags. Flat, no DAG.';
@@ -772,13 +712,7 @@ COMMENT ON VIEW tags IS
   'One row per tagged model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
 
 -- ═══ GAMEPLAY FEATURES ══════════════════════════════════════════════════════
-CREATE OR REPLACE VIEW _live_gameplay_feature AS
-  SELECT * EXCLUDE (
-    status,             -- the view IS the live rows; the soft-delete flag adds nothing
-    created_at,         -- row bookkeeping: differs between any two copies of the catalog,
-    updated_at          -- so it describes the local db state rather than catalog state
-  ) FROM fc.catalog_gameplayfeature
-  WHERE status IS DISTINCT FROM 'deleted';
+CREATE OR REPLACE VIEW _live_gameplay_feature AS SELECT * FROM live('fc.catalog_gameplayfeature');
 
 -- model_gameplay_features — one row per (model, directly-attached gameplay feature) with
 -- its optional count. A grain view, NOT a flattened like rewards/themes, because
@@ -1071,21 +1005,16 @@ COMMENT ON VIEW model_edges_bidir IS
 --             description.
 CREATE OR REPLACE VIEW titles AS
   SELECT
-    t.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
-    ),
+    t.*,
     f.slug  AS franchise_slug, f.name  AS franchise_name,
     se.slug AS series_slug,    se.name AS series_name,
     COALESCE(tn.n, 0) AS n_models
-  FROM fc.catalog_title t
+  FROM live('fc.catalog_title') t
   LEFT JOIN _title_live_n tn         ON tn.title_id = t.id
   LEFT JOIN fc.catalog_franchise f   ON f.id  = t.franchise_id
                                     AND f.status  IS DISTINCT FROM 'deleted'
   LEFT JOIN fc.catalog_series se     ON se.id = t.series_id
-                                    AND se.status IS DISTINCT FROM 'deleted'
-  WHERE t.status IS DISTINCT FROM 'deleted';
+                                    AND se.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW titles IS
   'One row per LIVE Title — identity, franchise/series grouping and n_models. Unlike title_size it keeps Titles with no live models, at n_models = 0.';
 
@@ -1095,31 +1024,21 @@ COMMENT ON VIEW titles IS
 -- curator-maintained — which makes `n_titles = 0` the interesting row rather than a
 -- defect: a grouping someone created and never attached, invisible from `titles` alone.
 CREATE OR REPLACE VIEW franchises AS
-  SELECT f.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
-    ),
+  SELECT f.*,
          count(t.id) AS n_titles
-  FROM fc.catalog_franchise f
+  FROM live('fc.catalog_franchise') f
   LEFT JOIN fc.catalog_title t
     ON t.franchise_id = f.id AND t.status IS DISTINCT FROM 'deleted'
-  WHERE f.status IS DISTINCT FROM 'deleted'
   GROUP BY ALL;
 COMMENT ON VIEW franchises IS
   'One row per live Franchise — the IP grouping (Star Trek), spanning manufacturers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
 
 CREATE OR REPLACE VIEW series AS
-  SELECT s.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
-    ),
+  SELECT s.*,
          count(t.id) AS n_titles
-  FROM fc.catalog_series s
+  FROM live('fc.catalog_series') s
   LEFT JOIN fc.catalog_title t
     ON t.series_id = s.id AND t.status IS DISTINCT FROM 'deleted'
-  WHERE s.status IS DISTINCT FROM 'deleted'
   GROUP BY ALL;
 COMMENT ON VIEW series IS
   'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
@@ -1231,15 +1150,10 @@ COMMENT ON VIEW model_credits IS
 -- count(c.credit_id), never count(*): the LEFT JOIN would count an unused role as 1.
 CREATE OR REPLACE VIEW credit_roles AS
   SELECT
-    r.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
-    ),
+    r.*,
     count(c.credit_id) AS n_credits
-  FROM fc.catalog_creditrole r
+  FROM live('fc.catalog_creditrole') r
   LEFT JOIN credits c ON c.role_id = r.id
-  WHERE r.status IS DISTINCT FROM 'deleted'
   GROUP BY ALL;
 COMMENT ON VIEW credit_roles IS
   'One row per live CreditRole — the credit vocabulary (designer, artist) with n_credits over live subjects. The role-keyed counterpart to people.n_roles; credits is the grain.';
@@ -1271,17 +1185,12 @@ CREATE OR REPLACE VIEW people AS
     GROUP BY person_id
   )
   SELECT
-    p.* EXCLUDE (
-      status,           -- the view IS the live rows; the soft-delete flag adds nothing
-      created_at,       -- row bookkeeping: differs between any two copies of the catalog,
-      updated_at        -- so it describes the local db state rather than catalog state
-    ),
+    p.*,
     COALESCE(a.n_credits, 0)         AS n_credits,
     COALESCE(a.n_credited_models, 0) AS n_credited_models,
     COALESCE(a.n_roles, 0)           AS n_roles
-  FROM fc.catalog_person p
-  LEFT JOIN agg a ON a.person_id = p.id
-  WHERE p.status IS DISTINCT FROM 'deleted';
+  FROM live('fc.catalog_person') p
+  LEFT JOIN agg a ON a.person_id = p.id;
 COMMENT ON VIEW people IS
   'One row per live Person — identity, birth/death year and credit counts over live subjects. Counts only: `credits` is the grain that says WHICH models.';
 

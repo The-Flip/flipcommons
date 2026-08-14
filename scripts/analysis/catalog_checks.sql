@@ -643,6 +643,24 @@ CREATE OR REPLACE VIEW foundation_checks AS
      OR name_strip_paren('KISS (Limited Edition) (Italy)') IS DISTINCT FROM 'KISS (Limited Edition)'
      OR name_strip_paren('(Not) A Suffix') IS DISTINCT FROM '(Not) A Suffix'
   UNION ALL
+  -- `live` carries the liveness rule and the bookkeeping EXCLUDE for every entity view,
+  -- so a silent change here would quietly reshape the whole layer. Data-independent
+  -- except for the one thing it exists to do: pin BOTH halves — that deleted rows are
+  -- excluded, and that the three bookkeeping columns are.
+  -- catalog_machinemodel, not a vocabulary: the liveness half is only PROVABLE against a
+  -- table that actually holds soft-deleted rows, and a vocabulary with none makes both
+  -- sides agree whether or not live() filters at all.
+  SELECT 'macro_live',
+         (SELECT count(*) FROM live('fc.catalog_machinemodel'))::VARCHAR || ' of ' ||
+         (SELECT count(*) FROM fc.catalog_machinemodel)::VARCHAR
+  WHERE (SELECT count(*) FROM live('fc.catalog_machinemodel'))
+        IS DISTINCT FROM (SELECT count(*) FROM fc.catalog_machinemodel
+                          WHERE status IS DISTINCT FROM 'deleted')
+     OR (SELECT count(*) FROM duckdb_columns()
+         WHERE table_name = 'cabinets'
+           AND column_name IN ('status', 'created_at', 'updated_at')) > 0
+  UNION ALL
+
   SELECT 'macro_name_key', name_key('On Beam (Italy)')
   WHERE name_key('On Beam (Italy)') IS DISTINCT FROM 'on beam'
      OR name_key('KISS (Limited Edition)') IS DISTINCT FROM 'kiss'   -- the documented collapse
