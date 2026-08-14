@@ -626,10 +626,9 @@ CREATE OR REPLACE VIEW corporate_entities AS
     COALESCE(a.n_dated, 0)             AS n_dated,
     a.year_of_first_model, a.year_of_last_model
   FROM live('fc.catalog_corporateentity') ce
-  LEFT JOIN fc.catalog_manufacturer mf ON mf.id = ce.manufacturer_id
-                                      AND mf.status IS DISTINCT FROM 'deleted'
-  LEFT JOIN _ce_location cel           ON cel.corporate_entity_id = ce.id
-  LEFT JOIN agg a                      ON a.corporate_entity_id = ce.id;
+  LEFT JOIN manufacturers mf ON mf.id = ce.manufacturer_id
+  LEFT JOIN _ce_location cel ON cel.corporate_entity_id = ce.id
+  LEFT JOIN agg a            ON a.corporate_entity_id = ce.id;
 COMMENT ON VIEW corporate_entities IS
   'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts, location and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
@@ -741,8 +740,7 @@ CREATE OR REPLACE VIEW tag_vocab AS
     count(m.id) AS n
   FROM live('fc.catalog_tag') tg
   LEFT JOIN fc.catalog_machinemodel_tags mt ON mt.tag_id = tg.id
-  LEFT JOIN fc.catalog_machinemodel m
-    ON m.id = mt.machinemodel_id AND m.status IS DISTINCT FROM 'deleted'
+  LEFT JOIN models m ON m.id = mt.machinemodel_id
   GROUP BY ALL;
 COMMENT ON VIEW tag_vocab IS
   'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of model-keyed tags. Flat, no DAG.';
@@ -1035,6 +1033,32 @@ COMMENT ON VIEW model_edges_bidir IS
   'Two rows per resolved edge, one per end — the CONNECTEDNESS view, with a direction column. relationship_type is always the edge AS STATED, so read it with direction. Never aggregate here: every edge is counted twice.';
 
 -- ═══ TITLES AND MODEL NUMBERS ═══════════════════════════════════════════════
+-- franchises / series — the two Title-grouping vocabularies at entity grain. `titles`
+-- decodes each onto the Title row; these answer what needs a second view: which groupings
+-- EXIST, and which are used by nothing. Both flat, nothing like a themes DAG, and both
+-- curator-maintained — which makes `n_titles = 0` the interesting row rather than a
+-- defect: a grouping someone created and never attached, invisible from `titles` alone.
+-- The Title side of both stays a live() read rather than `titles`: that view decodes the
+-- franchise and series onto each Title, so composing it here would close a cycle. Which is
+-- also why they are defined AHEAD of `titles` — views bind at CREATE.
+CREATE OR REPLACE VIEW franchises AS
+  SELECT f.*,
+         count(t.id) AS n_titles
+  FROM live('fc.catalog_franchise') f
+  LEFT JOIN live('fc.catalog_title') t ON t.franchise_id = f.id
+  GROUP BY ALL;
+COMMENT ON VIEW franchises IS
+  'One row per live Franchise — the IP grouping (Star Trek), spanning manufacturers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
+
+CREATE OR REPLACE VIEW series AS
+  SELECT s.*,
+         count(t.id) AS n_titles
+  FROM live('fc.catalog_series') s
+  LEFT JOIN live('fc.catalog_title') t ON t.series_id = s.id
+  GROUP BY ALL;
+COMMENT ON VIEW series IS
+  'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
+
 -- titles — one row per live Title: the entity grain behind `models.title_*`. Reach for
 -- it when the Title itself is the subject; read the decoded columns off a model row
 -- when you already have one.
@@ -1062,38 +1086,11 @@ CREATE OR REPLACE VIEW titles AS
     se.slug AS series_slug,    se.name AS series_name,
     COALESCE(tn.n, 0) AS n_models
   FROM live('fc.catalog_title') t
-  LEFT JOIN _title_live_n tn         ON tn.title_id = t.id
-  LEFT JOIN fc.catalog_franchise f   ON f.id  = t.franchise_id
-                                    AND f.status  IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_series se     ON se.id = t.series_id
-                                    AND se.status IS DISTINCT FROM 'deleted';
+  LEFT JOIN _title_live_n tn ON tn.title_id = t.id
+  LEFT JOIN franchises f     ON f.id  = t.franchise_id
+  LEFT JOIN series se        ON se.id = t.series_id;
 COMMENT ON VIEW titles IS
   'One row per LIVE Title — identity, franchise/series grouping and n_models. Unlike title_size it keeps Titles with no live models, at n_models = 0.';
-
--- franchises / series — the two Title-grouping vocabularies at entity grain. `titles`
--- decodes each onto the Title row; these answer what needs a second view: which groupings
--- EXIST, and which are used by nothing. Both flat, nothing like a themes DAG, and both
--- curator-maintained — which makes `n_titles = 0` the interesting row rather than a
--- defect: a grouping someone created and never attached, invisible from `titles` alone.
-CREATE OR REPLACE VIEW franchises AS
-  SELECT f.*,
-         count(t.id) AS n_titles
-  FROM live('fc.catalog_franchise') f
-  LEFT JOIN fc.catalog_title t
-    ON t.franchise_id = f.id AND t.status IS DISTINCT FROM 'deleted'
-  GROUP BY ALL;
-COMMENT ON VIEW franchises IS
-  'One row per live Franchise — the IP grouping (Star Trek), spanning manufacturers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
-
-CREATE OR REPLACE VIEW series AS
-  SELECT s.*,
-         count(t.id) AS n_titles
-  FROM live('fc.catalog_series') s
-  LEFT JOIN fc.catalog_title t
-    ON t.series_id = s.id AND t.status IS DISTINCT FROM 'deleted'
-  GROUP BY ALL;
-COMMENT ON VIEW series IS
-  'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
 
 -- title_size — one row per Title with a live model: identity plus n, the count of LIVE
 -- models in it (the "alone in its Title?" signal — n = 1; a soft-deleted sibling doesn't
@@ -1167,21 +1164,16 @@ CREATE OR REPLACE VIEW credits AS
     COALESCE(m.name, s.name)                    AS subject_name,
     c.person_id, p.slug AS person_slug, p.name AS person_name,
     c.role_id,   r.slug AS role_slug,   r.name AS role_name
-  -- Reads the PHYSICAL tables, not `models` / `series` — the one place this file allows a
-  -- second spelling of live, because `credit_subject_not_live` resolves every subject
-  -- against those views and fires the moment the two disagree.
   FROM fc.catalog_credit c
-  JOIN fc.catalog_person p     ON p.id = c.person_id
-                              AND p.status IS DISTINCT FROM 'deleted'
-  JOIN fc.catalog_creditrole r ON r.id = c.role_id
-                              AND r.status IS DISTINCT FROM 'deleted'
+  -- Person and role go through live() rather than `people` / `credit_roles`: both of those
+  -- count rows OF THIS VIEW, so composing them here would close a cycle.
+  JOIN live('fc.catalog_person') p     ON p.id = c.person_id
+  JOIN live('fc.catalog_creditrole') r ON r.id = c.role_id
   -- Two LEFT JOINs plus "at least one resolved", not two UNIONed branches: exactly one
   -- side of the XOR can resolve, so the WHERE keeps the row on either and drops it when
   -- the side it names is dead.
-  LEFT JOIN fc.catalog_machinemodel m ON m.id = c.model_id
-                                     AND m.status IS DISTINCT FROM 'deleted'
-  LEFT JOIN fc.catalog_series s       ON s.id = c.series_id
-                                     AND s.status IS DISTINCT FROM 'deleted'
+  LEFT JOIN models m ON m.id = c.model_id
+  LEFT JOIN series s ON s.id = c.series_id
   WHERE m.id IS NOT NULL OR s.id IS NOT NULL;
 COMMENT ON VIEW credits IS
   'One row per credit (person, role, live subject) — the credit GRAIN, and the definition people/credit_roles count. Subject is a model XOR a series, decoded into subject_type/id/slug/name; model_credits is the model half.';
@@ -1274,16 +1266,14 @@ COMMENT ON VIEW manufacturer_aliases IS
 CREATE OR REPLACE VIEW corporate_entity_aliases AS
   SELECT ca.corporate_entity_id, ce.slug AS corporate_entity_slug, ca.value AS alias
   FROM fc.catalog_corporateentityalias ca
-  JOIN fc.catalog_corporateentity ce
-    ON ce.id = ca.corporate_entity_id AND ce.status IS DISTINCT FROM 'deleted';
+  JOIN corporate_entities ce ON ce.id = ca.corporate_entity_id;
 COMMENT ON VIEW corporate_entity_aliases IS
   'One row per alias of a live corporate entity — alias GRAIN. The LEGAL entity, one level finer than manufacturer_aliases.';
 
 CREATE OR REPLACE VIEW person_aliases AS
   SELECT pa.person_id, p.slug AS person_slug, pa.value AS alias
   FROM fc.catalog_personalias pa
-  JOIN fc.catalog_person p
-    ON p.id = pa.person_id AND p.status IS DISTINCT FROM 'deleted';
+  JOIN people p ON p.id = pa.person_id;
 COMMENT ON VIEW person_aliases IS
   'One row per alias of a live person — alias GRAIN, carrying aka/maiden forms; resolve a credit name here before treating it as a new Person.';
 
@@ -1301,8 +1291,7 @@ COMMENT ON VIEW model_abbreviations IS
 CREATE OR REPLACE VIEW title_abbreviations AS
   SELECT ab.title_id, t.slug AS title_slug, ab.value AS abbreviation
   FROM fc.catalog_titleabbreviation ab
-  JOIN fc.catalog_title t
-    ON t.id = ab.title_id AND t.status IS DISTINCT FROM 'deleted';
+  JOIN titles t ON t.id = ab.title_id;
 COMMENT ON VIEW title_abbreviations IS
   'One row per community abbreviation of a live Title — the Title-grain twin of model_abbreviations.';
 
