@@ -20,6 +20,10 @@ By default, don't talk about the prior state of the system, such as "This does N
 - DB migrations: these are static, frozen, refer to past state
 - It's something a naive reader might legitimately think to change the code back to
 
+## Don't name consumers
+
+Don't list the code's consumers, such as "used by Z". Instant doc rot.
+
 ## Do not justify over-verbosity with "ratios"
 
 The project is over-documented. Don't defend excessive comments with "it's got the same doc-to-code ratio as the rest of the project". Don't use that as an excuse to avoid the hard work of writing tight just-enough-and-no-more comments.
