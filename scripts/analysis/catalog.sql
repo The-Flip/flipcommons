@@ -653,11 +653,10 @@ COMMENT ON VIEW manufacturers IS
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
 -- model_rewards — one row per (live model, live reward type). The GRAIN, and THE reader
--- of the through table: `model_reward_names` and `reward_types` are both built from it. Reward
--- types
--- are MULTI-VALUED — a machine can pay out several — which is why they get a grain view
--- and a usage count like themes and tags, rather than a slug column on `models` the way
--- the single-FK dims do. Flat, no DAG.
+-- of the through table: `model_reward_names` and `reward_types` are both built from it.
+-- Reward types are MULTI-VALUED — a machine can pay out several — which is why they get a
+-- grain view and a usage count like themes and tags, rather than a slug column on `models`
+-- the way the single-FK dims do. Flat, no DAG.
 CREATE OR REPLACE VIEW model_rewards AS
   SELECT mr.machinemodel_id AS model_id, rt.id AS reward_type_id, rt.slug AS reward_type_slug
   FROM fc.catalog_machinemodel_reward_types mr
@@ -666,9 +665,9 @@ CREATE OR REPLACE VIEW model_rewards AS
 COMMENT ON VIEW model_rewards IS
   'One row per (live model, live reward type) — the grain twin of model_reward_names; predicate and join on reward_type_slug. Flat, no DAG.';
 
--- reward_types — what a machine pays out: the VOCABULARY behind `model_reward_names`, which says
--- which types a model has, this says what the closed set is, and `reward_type_aliases`
--- resolves a source's phrasing into it. `n` is the live-model usage count, as on the other
+-- reward_types — what a machine pays out: the VOCABULARY. `model_reward_names` says which
+-- types a model has, this says what the closed set is, and `reward_type_aliases` resolves
+-- a source's phrasing into it. `n` is the live-model usage count, as on the other
 -- multi-valued vocabularies.
 CREATE OR REPLACE VIEW reward_types AS
   SELECT rt.*, count(mr.model_id) AS n
@@ -678,9 +677,9 @@ CREATE OR REPLACE VIEW reward_types AS
 COMMENT ON VIEW reward_types IS
   'One row per live reward type — the payout VOCABULARY with usage count n; join reward_type_aliases to resolve a source phrasing into it.';
 
--- model_reward_names — sorted reward-type names per live model (only models that have any). Keyed
--- model_id. Built from the grain, so membership has one definition; the join is for the
--- NAME, which the grain does not carry.
+-- model_reward_names — sorted reward-type names per live model (only models that have
+-- any). Keyed model_id. Built from the grain, so membership has one definition; the join
+-- is for the NAME, which the grain does not carry.
 CREATE OR REPLACE VIEW model_reward_names AS
   SELECT mr.model_id, list_sort(list(rt.name)) AS reward_names
   FROM model_rewards mr
@@ -690,19 +689,23 @@ COMMENT ON VIEW model_reward_names IS
   'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
 -- ─── Theme vocabulary ───────────────────────────────────────────────────────
--- `model_theme_names` is a per-model DISPLAY list of NAMES — right for enrichment, useless for
--- questions about the vocabulary ITSELF ("which themes are near-duplicates?", "what hangs
--- under fantasy?", "does this alias collide with a live theme?"), which need the slug, the
--- DAG and the aliases. Three views cover that shape, and the gameplay-feature vocabulary
--- below mirrors them one-for-one:
---   <term>_vocab     one row per live term — identity, usage count, DAG, aliases
---   <term>_aliases   alias GRAIN, so you can join and compare on an alias
---   model_<terms>    slug-keyed model↔term grain — THE reader of the through table, and
---                    what the display list is built from, so membership has one definition
--- model_themes — one row per (live model, live theme). The GRAIN twin of `model_theme_names`; the
--- display name is in themes, not here. Direct attachments ONLY, DAG not rolled up: a
--- model tagged `black-magic` does NOT gain `occult`. Resolve ancestors analysis-locally
--- via themes.parents.
+-- `model_theme_names` is a per-model DISPLAY list of NAMES — right for enrichment,
+-- useless for questions about the vocabulary ITSELF ("which themes are near-duplicates?",
+-- "what hangs under fantasy?", "does this alias collide with a live theme?"), which need
+-- the slug, the DAG and the aliases. Four views cover that shape, and the gameplay-feature
+-- vocabulary below mirrors them:
+--   model_<terms>       slug-keyed model↔term grain — THE reader of the through table,
+--                       and what the display list is built from, so membership has one
+--                       definition
+--   <term>_aliases      alias GRAIN, so you can join and compare on an alias
+--   <terms>             one row per live term — identity, usage count, DAG, aliases
+--   model_<term>_names  the flattened display list, built from the grain
+-- Defined in that order, which is forced: the vocabulary counts the grain and flattens the
+-- aliases, so both precede it.
+-- model_themes — one row per (live model, live theme). The GRAIN twin of
+-- `model_theme_names`; the display name is in themes, not here. Direct attachments ONLY,
+-- DAG not rolled up: a model tagged `black-magic` does NOT gain `occult`. Resolve
+-- ancestors analysis-locally via themes.parents.
 CREATE OR REPLACE VIEW model_themes AS
   SELECT mt.machinemodel_id AS model_id, t.id AS theme_id, t.slug AS theme_slug
   FROM fc.catalog_machinemodel_themes mt
@@ -710,17 +713,6 @@ CREATE OR REPLACE VIEW model_themes AS
   SEMI JOIN models s ON s.id = mt.machinemodel_id;
 COMMENT ON VIEW model_themes IS
   'One row per (live model, live theme) — the grain twin of model_theme_names; predicate and join on theme_slug. Direct attachments only, DAG not rolled up.';
-
--- model_theme_names — sorted theme names per live model (only models that have any).
--- Enrichment only — no id, no slug, no DAG; `model_themes` is the grain it is built from
--- and `themes` is the vocabulary.
-CREATE OR REPLACE VIEW model_theme_names AS
-  SELECT mt.model_id, list_sort(list(t.name)) AS theme_names
-  FROM model_themes mt
-  JOIN _live_theme t ON t.id = mt.theme_id
-  GROUP BY mt.model_id;
-COMMENT ON VIEW model_theme_names IS
-  'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, themes for questions about the vocabulary itself.';
 
 -- theme_aliases — one row per alias of a live theme. GRAIN rather than the flat list in
 -- themes.aliases, because consumers JOIN and COMPARE on an alias — an alias colliding
@@ -771,7 +763,18 @@ CREATE OR REPLACE VIEW themes AS
   LEFT JOIN children c ON c.theme_id = t.id
   LEFT JOIN aliases  a ON a.theme_id = t.id;
 COMMENT ON VIEW themes IS
-  'One row per live theme — the theme VOCABULARY: usage count n, DAG parents/children, aliases. Reach for it when the subject is the model_theme_names rather than the models.';
+  'One row per live theme — the theme VOCABULARY: usage count n, DAG parents/children, aliases. Reach for it when the subject is the themes rather than the models.';
+
+-- model_theme_names — sorted theme names per live model (only models that have any).
+-- Enrichment only — no id, no slug, no DAG; `model_themes` is the grain it is built from
+-- and `themes` is the vocabulary.
+CREATE OR REPLACE VIEW model_theme_names AS
+  SELECT mt.model_id, list_sort(list(t.name)) AS theme_names
+  FROM model_themes mt
+  JOIN _live_theme t ON t.id = mt.theme_id
+  GROUP BY mt.model_id;
+COMMENT ON VIEW model_theme_names IS
+  'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, themes for questions about the vocabulary itself.';
 
 -- The only reader of the tag through table — `model_tag_slugs` and `tags` both build on this,
 -- so the live-subject rule is stated once.
@@ -793,27 +796,29 @@ CREATE OR REPLACE VIEW tags AS
   LEFT JOIN model_tags mt ON mt.tag_id = tg.id
   GROUP BY ALL;
 COMMENT ON VIEW tags IS
-  'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of model-keyed model_tag_slugs. Flat, no DAG.';
+  'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of the model-keyed tag list. Flat, no DAG.';
 
--- model_tag_slugs — sorted list of TAG SLUGS per tagged live model (only models with any). Keyed
--- model_id like the other display lists. SLUGS, not names: unlike them, tags are the
--- classification vocabulary you PREDICATE on (`'widebody' IN tag_slugs`). NB `conversion_kit`
--- and re-themes are NOT tags and won't appear here — they're ModelRelationship types.
+-- model_tag_slugs — sorted list of TAG SLUGS per tagged live model (only models with
+-- any). Keyed model_id like the other display lists. SLUGS, not names: unlike them, tags
+-- are the classification vocabulary you PREDICATE on (`'widebody' IN tag_slugs`). NB
+-- `conversion_kit` and re-themes are NOT tags and won't appear here — they're
+-- ModelRelationship types.
 CREATE OR REPLACE VIEW model_tag_slugs AS
   SELECT model_id, list_sort(list(tag_slug)) AS tag_slugs
   FROM model_tags
   GROUP BY model_id;
 COMMENT ON VIEW model_tag_slugs IS
-  'One row per tagged LIVE model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not model_tag_slugs.';
+  'One row per tagged LIVE model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
 
 -- ═══ GAMEPLAY FEATURES ══════════════════════════════════════════════════════
 -- model_gameplay_features — one row per (model, directly-attached gameplay feature) with
--- its optional count. A grain view, NOT a flattened like model_reward_names/model_theme_names, because
--- most of these rows carry a count (Flippers x2; Trap Holes x25, the 5x5 bingo card) that
--- flattening would drop. Direct attachments ONLY: the GameplayFeature DAG (2-Ball
--- Multiball under Multiball) is NOT rolled up — resolve parents analysis-locally, as with
--- themes. Predicate and display on feature_slug ('trap-holes', 'flippers'); feature_name
--- is not surfaced.
+-- its optional count. A grain view with NO display-list twin, unlike the other three
+-- attribute families: 84% of these rows carry a count and two thirds carry one above 1
+-- (Flippers x2; Trap Holes x25, the 5x5 bingo card), so a flat name list would drop the
+-- payload — and read as a confident wrong answer where it did.
+-- Direct attachments ONLY: the GameplayFeature DAG (2-Ball Multiball under Multiball) is
+-- NOT rolled up — resolve parents analysis-locally, as with themes. Predicate and display
+-- on feature_slug ('trap-holes', 'flippers'); feature_name is not surfaced.
 --   count : the M2M's optional count; NULL for a bare membership. This is the real "how
 --           many flippers" signal — the raw scalar flipper_count is near-empty and
 --           deliberately not surfaced.
@@ -914,8 +919,8 @@ COMMENT ON VIEW gameplay_features IS
 -- _model_target — the facts surfaced for the OTHER end of a relationship edge: identity
 -- (incl. the manufacturer's model number), year, genre, reward types, player count,
 -- manufacturer and location — what a reviewer uses to tell two models apart. A projection
--- of `models` + `model_reward_names` with columns named target_*, so both edge views pull the whole
--- block via `* EXCLUDE (id)`; add a facet here and both gain it.
+-- of `models` + `model_reward_names` with columns named target_*, so both edge views pull
+-- the whole block via `* EXCLUDE (id)`; add a facet here and both gain it.
 CREATE OR REPLACE VIEW _model_target AS
   SELECT
     m.id,
