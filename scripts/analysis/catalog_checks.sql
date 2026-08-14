@@ -177,19 +177,18 @@ CREATE OR REPLACE VIEW _entity_table AS
   GROUP BY table_name
   HAVING bool_or(column_name = 'slug') AND bool_or(column_name = 'status');
 
--- _entity_view — hand-input: which view exposes each entity, and the exemptions. Only
--- the MAPPING is hand-maintained; the entity set above is derived, so the hand-list can
--- fall behind in exactly one direction and `unexposed_entity` catches that.
---   view  the named view is the entity grain for this table.
---   dim   deliberately NOT exposed as an entity view. The seven taxonomy dims are
---         slug-only on `models` by an explicit decision documented on `all_models`:
---         the slug is both the readable label and, being unique per dim table, the
---         raw-join key back to `fc.catalog_<dim>`, so neither the FK id nor the display
---         name earns a column. That is a documented reach-past, not an accident, and
---         writing it here is what keeps it one.
--- Anything whose kind is not exactly 'dim' is required to name a real view, so a
--- typo'd kind fails CLOSED — it demands a view that will not be found — rather than
--- silently exempting the entity the way an unrecognized _anchor_skip kind would.
+-- _entity_view — hand-input: which view exposes each entity. Only the MAPPING is
+-- hand-maintained; the entity set above is derived, so the hand-list can fall behind in
+-- exactly one direction and `unexposed_entity` catches that.
+--
+-- There are no exemptions, and the absence of an exemption column is the point. The
+-- seven taxonomy dims used to be listed here as deliberately-unexposed, on the argument
+-- that their slug on `models` is both the readable label and the raw-join key back to
+-- fc.catalog_<dim>. That argument holds for the model row and does not extend to the
+-- record: a dim carries an authored `description` that no `models` column can hold, and
+-- with no view over it the foundation could not answer which vocabulary terms were still
+-- undocumented. `catalog.sql` exposes all seven now, so every first-class entity names a
+-- real view and nothing here is allowed to opt out.
 --
 -- Provenance entities are listed too even though they are outside the derived set
 -- (their tables carry no `status`, so no structural signal picks them out). They get
@@ -197,100 +196,133 @@ CREATE OR REPLACE VIEW _entity_table AS
 -- catalog-only. If the provenance side grows a third entity, nothing here will notice.
 CREATE OR REPLACE VIEW _entity_view AS
   SELECT * FROM (VALUES
-    ('catalog_machinemodel',            'models',                 'view'),
-    ('catalog_title',                   'titles',                 'view'),
-    ('catalog_manufacturer',            'manufacturers',          'view'),
-    ('catalog_corporateentity',         'corporate_entities',     'view'),
-    ('catalog_person',                  'people',                 'view'),
-    ('catalog_location',                'locations',              'view'),
-    ('catalog_franchise',               'franchises',             'view'),
-    ('catalog_series',                  'series',                 'view'),
-    ('catalog_creditrole',              'credit_roles',           'view'),
-    ('catalog_tag',                     'tag_vocab',              'view'),
-    ('catalog_theme',                   'theme_vocab',            'view'),
-    ('catalog_gameplayfeature',         'gameplay_feature_vocab', 'view'),
-    ('catalog_rewardtype',              'reward_types',           'view'),
-    ('catalog_gameformat',              'game_formats',           'view'),
-    -- Taxonomy dims — slug-only on `models`, by the decision recorded on all_models.
-    ('catalog_cabinet',                  NULL,                    'dim'),
-    ('catalog_displaytype',              NULL,                    'dim'),
-    ('catalog_displaysubtype',           NULL,                    'dim'),
-    ('catalog_system',                   NULL,                    'dim'),
-    ('catalog_productionstatus',         NULL,                    'dim'),
-    ('catalog_technologygeneration',     NULL,                    'dim'),
-    ('catalog_technologysubgeneration',  NULL,                    'dim'),
+    ('catalog_machinemodel',            'models'),
+    ('catalog_title',                   'titles'),
+    ('catalog_manufacturer',            'manufacturers'),
+    ('catalog_corporateentity',         'corporate_entities'),
+    ('catalog_person',                  'people'),
+    ('catalog_location',                'locations'),
+    ('catalog_franchise',               'franchises'),
+    ('catalog_series',                  'series'),
+    ('catalog_creditrole',              'credit_roles'),
+    ('catalog_tag',                     'tag_vocab'),
+    ('catalog_theme',                   'theme_vocab'),
+    ('catalog_gameplayfeature',         'gameplay_feature_vocab'),
+    ('catalog_rewardtype',              'reward_types'),
+    ('catalog_gameformat',              'game_formats'),
+    -- Taxonomy dims — slug-only on `models`, entity-grain here.
+    ('catalog_cabinet',                 'cabinets'),
+    ('catalog_displaytype',             'display_types'),
+    ('catalog_displaysubtype',          'display_subtypes'),
+    ('catalog_system',                  'systems'),
+    ('catalog_productionstatus',        'production_statuses'),
+    ('catalog_technologygeneration',    'technology_generations'),
+    ('catalog_technologysubgeneration', 'technology_subgenerations'),
     -- Provenance entities: outside the derived set, listed so they get the same
     -- missing-view guarantee.
-    ('actors_actor',                    'actors',                 'view'),
-    ('provenance_changeset',            'changesets',             'view'),
-    ('provenance_source',               'ingest_sources',         'view'),
-    ('provenance_ingestrun',            'ingest_runs',            'view'),
-    ('citation_citationsource',         'citation_sources',       'view')
-  ) AS t(entity_table, view_name, kind);
+    ('actors_actor',                    'actors'),
+    ('provenance_changeset',            'changesets'),
+    ('provenance_source',               'ingest_sources'),
+    ('provenance_ingestrun',            'ingest_runs'),
+    ('citation_citationsource',         'citation_sources')
+  ) AS t(entity_table, view_name);
 
 
 
 -- foundation_summary — row count per public view; doubles as a health dashboard.
+--
+-- The counting is done by UNIONing one LABELLED ROW per view row and grouping, rather
+-- than the obvious `SELECT 'v', count(*) FROM v UNION ALL …`. The obvious form returns
+-- WRONG NUMBERS here, silently, and this view is where it was caught: it reported
+-- game_formats as 6 for a table holding 11 live rows, having taken reward_types' count
+-- for it.
+--
+-- The cause is upstream, in DuckDB's sqlite scanner (v1.5.5, extension f79b1db). When
+-- two branches of one query aggregate over DIFFERENT attached-SQLite tables and their
+-- pushed-down projection and filter are textually identical — which
+-- `SELECT id, slug, name, description FROM fc.catalog_<x> WHERE status IS DISTINCT FROM
+-- 'deleted'` is for every simple dim view — the second table is never scanned at all and
+-- inherits the first's aggregate. `sqlite_debug_show_queries` shows only one scan issued
+-- for two branches. It is not specific to count: max() and sum() collapse the same way,
+-- and a third branch takes the first branch's value too. Branches whose filter literals
+-- differ are unaffected, which is why only one row was wrong rather than all of them.
+--
+-- Grouping over labelled rows sidesteps it because nothing is aggregated per-branch for
+-- the optimizer to consider equivalent. One consequence to know: a view with ZERO rows
+-- contributes nothing to the union and DROPS OUT of the summary instead of reporting 0.
+-- That is not a silent hole — an emptied view fires `anchor_dark` on every one of its
+-- columns — but it does mean absence from this readout reads as "empty", not "gone".
 CREATE OR REPLACE VIEW foundation_summary AS
-  SELECT 'models'              AS view_name, count(*) AS n_rows FROM models
-  UNION ALL SELECT 'all_models',          count(*) FROM all_models
-  UNION ALL SELECT 'model_lineage',       count(*) FROM model_lineage
-  UNION ALL SELECT 'model_relationships', count(*) FROM model_relationships
-  UNION ALL SELECT 'model_edges',         count(*) FROM model_edges
-  UNION ALL SELECT 'model_edges_bidir',   count(*) FROM model_edges_bidir
-  UNION ALL SELECT 'manufacturers',       count(*) FROM manufacturers
-  UNION ALL SELECT 'model_number_collisions', count(*) FROM model_number_collisions
-  UNION ALL SELECT 'rewards',             count(*) FROM rewards
-  UNION ALL SELECT 'themes',              count(*) FROM themes
-  UNION ALL SELECT 'tags',                count(*) FROM tags
-  UNION ALL SELECT 'model_gameplay_features', count(*) FROM model_gameplay_features
-  UNION ALL SELECT 'gameplay_feature_vocab',   count(*) FROM gameplay_feature_vocab
-  UNION ALL SELECT 'gameplay_feature_aliases', count(*) FROM gameplay_feature_aliases
-  UNION ALL SELECT 'model_themes',        count(*) FROM model_themes
-  UNION ALL SELECT 'theme_vocab',         count(*) FROM theme_vocab
-  UNION ALL SELECT 'theme_aliases',       count(*) FROM theme_aliases
-  UNION ALL SELECT 'model_export_markets', count(*) FROM model_export_markets
-  UNION ALL SELECT 'countries',           count(*) FROM countries
-  UNION ALL SELECT 'locations',           count(*) FROM locations
-  UNION ALL SELECT 'tag_vocab',           count(*) FROM tag_vocab
-  UNION ALL SELECT 'franchises',          count(*) FROM franchises
-  UNION ALL SELECT 'series',              count(*) FROM series
-  UNION ALL SELECT 'credit_roles',        count(*) FROM credit_roles
-  UNION ALL SELECT 'credits',             count(*) FROM credits
-  UNION ALL SELECT 'model_credits',       count(*) FROM model_credits
-  UNION ALL SELECT 'country_aliases',     count(*) FROM country_aliases
-  UNION ALL SELECT 'location_aliases',    count(*) FROM location_aliases
-  UNION ALL SELECT 'reward_types',          count(*) FROM reward_types
-  UNION ALL SELECT 'reward_type_aliases',   count(*) FROM reward_type_aliases
-  UNION ALL SELECT 'manufacturer_aliases',  count(*) FROM manufacturer_aliases
-  UNION ALL SELECT 'corporate_entity_aliases',  count(*) FROM corporate_entity_aliases
-  UNION ALL SELECT 'person_aliases',        count(*) FROM person_aliases
-  UNION ALL SELECT 'model_abbreviations',   count(*) FROM model_abbreviations
-  UNION ALL SELECT 'title_abbreviations',   count(*) FROM title_abbreviations
-  UNION ALL SELECT 'game_formats',        count(*) FROM game_formats
-  UNION ALL SELECT 'corporate_entities',  count(*) FROM corporate_entities
-  UNION ALL SELECT 'titles',              count(*) FROM titles
-  UNION ALL SELECT 'people',              count(*) FROM people
-  UNION ALL SELECT 'title_size',          count(*) FROM title_size
-  UNION ALL SELECT 'domain_vocab',        count(*) FROM domain_vocab
-  UNION ALL SELECT 'entity_subjects',     count(*) FROM entity_subjects
-  UNION ALL SELECT 'claims',              count(*) FROM claims
-  UNION ALL SELECT 'model_claims',        count(*) FROM model_claims
-  UNION ALL SELECT 'claim_identity_parts', count(*) FROM claim_identity_parts
-  UNION ALL SELECT 'actors',              count(*) FROM actors
-  UNION ALL SELECT 'ingest_sources',      count(*) FROM ingest_sources
-  UNION ALL SELECT 'ingest_runs',         count(*) FROM ingest_runs
-  UNION ALL SELECT 'changesets',          count(*) FROM changesets
-  UNION ALL SELECT 'citation_sources',    count(*) FROM citation_sources
-  UNION ALL SELECT 'citation_roots',      count(*) FROM citation_roots
-  UNION ALL SELECT 'citation_instances',  count(*) FROM citation_instances
-  UNION ALL SELECT 'claim_citations',     count(*) FROM claim_citations
-  UNION ALL SELECT 'citation_root_domains', count(*) FROM citation_root_domains
-  UNION ALL SELECT 'patch_claims',          count(*) FROM patch_claims
-  UNION ALL SELECT 'patch_retractions',     count(*) FROM patch_retractions
-  UNION ALL SELECT 'patch_cites',           count(*) FROM patch_cites
-  UNION ALL SELECT 'patch_entries',         count(*) FROM patch_entries
-  UNION ALL SELECT 'patch_entry_cites',     count(*) FROM patch_entry_cites
+  SELECT view_name, count(*) AS n_rows
+  FROM (
+    SELECT 'models' AS view_name FROM models
+    UNION ALL SELECT 'all_models'          FROM all_models
+    UNION ALL SELECT 'model_lineage'       FROM model_lineage
+    UNION ALL SELECT 'model_relationships' FROM model_relationships
+    UNION ALL SELECT 'model_edges'         FROM model_edges
+    UNION ALL SELECT 'model_edges_bidir'   FROM model_edges_bidir
+    UNION ALL SELECT 'manufacturers'       FROM manufacturers
+    UNION ALL SELECT 'model_number_collisions' FROM model_number_collisions
+    UNION ALL SELECT 'rewards'             FROM rewards
+    UNION ALL SELECT 'themes'              FROM themes
+    UNION ALL SELECT 'tags'                FROM tags
+    UNION ALL SELECT 'model_gameplay_features' FROM model_gameplay_features
+    UNION ALL SELECT 'gameplay_feature_vocab'   FROM gameplay_feature_vocab
+    UNION ALL SELECT 'gameplay_feature_aliases' FROM gameplay_feature_aliases
+    UNION ALL SELECT 'model_themes'        FROM model_themes
+    UNION ALL SELECT 'theme_vocab'         FROM theme_vocab
+    UNION ALL SELECT 'theme_aliases'       FROM theme_aliases
+    UNION ALL SELECT 'model_export_markets' FROM model_export_markets
+    UNION ALL SELECT 'countries'           FROM countries
+    UNION ALL SELECT 'locations'           FROM locations
+    UNION ALL SELECT 'tag_vocab'           FROM tag_vocab
+    UNION ALL SELECT 'franchises'          FROM franchises
+    UNION ALL SELECT 'series'              FROM series
+    UNION ALL SELECT 'credit_roles'        FROM credit_roles
+    UNION ALL SELECT 'credits'             FROM credits
+    UNION ALL SELECT 'model_credits'       FROM model_credits
+    UNION ALL SELECT 'country_aliases'     FROM country_aliases
+    UNION ALL SELECT 'location_aliases'    FROM location_aliases
+    UNION ALL SELECT 'reward_types'          FROM reward_types
+    UNION ALL SELECT 'reward_type_aliases'   FROM reward_type_aliases
+    UNION ALL SELECT 'manufacturer_aliases'  FROM manufacturer_aliases
+    UNION ALL SELECT 'corporate_entity_aliases'  FROM corporate_entity_aliases
+    UNION ALL SELECT 'person_aliases'        FROM person_aliases
+    UNION ALL SELECT 'model_abbreviations'   FROM model_abbreviations
+    UNION ALL SELECT 'title_abbreviations'   FROM title_abbreviations
+    UNION ALL SELECT 'game_formats'        FROM game_formats
+    UNION ALL SELECT 'cabinets'            FROM cabinets
+    UNION ALL SELECT 'display_types'       FROM display_types
+    UNION ALL SELECT 'display_subtypes'    FROM display_subtypes
+    UNION ALL SELECT 'systems'             FROM systems
+    UNION ALL SELECT 'production_statuses' FROM production_statuses
+    UNION ALL SELECT 'technology_generations'    FROM technology_generations
+    UNION ALL SELECT 'technology_subgenerations' FROM technology_subgenerations
+    UNION ALL SELECT 'corporate_entities'  FROM corporate_entities
+    UNION ALL SELECT 'titles'              FROM titles
+    UNION ALL SELECT 'people'              FROM people
+    UNION ALL SELECT 'title_size'          FROM title_size
+    UNION ALL SELECT 'domain_vocab'        FROM domain_vocab
+    UNION ALL SELECT 'entity_subjects'     FROM entity_subjects
+    UNION ALL SELECT 'claims'              FROM claims
+    UNION ALL SELECT 'model_claims'        FROM model_claims
+    UNION ALL SELECT 'claim_identity_parts' FROM claim_identity_parts
+    UNION ALL SELECT 'actors'              FROM actors
+    UNION ALL SELECT 'ingest_sources'      FROM ingest_sources
+    UNION ALL SELECT 'ingest_runs'         FROM ingest_runs
+    UNION ALL SELECT 'changesets'          FROM changesets
+    UNION ALL SELECT 'citation_sources'    FROM citation_sources
+    UNION ALL SELECT 'citation_roots'      FROM citation_roots
+    UNION ALL SELECT 'citation_instances'  FROM citation_instances
+    UNION ALL SELECT 'claim_citations'     FROM claim_citations
+    UNION ALL SELECT 'citation_root_domains' FROM citation_root_domains
+    UNION ALL SELECT 'patch_claims'          FROM patch_claims
+    UNION ALL SELECT 'patch_retractions'     FROM patch_retractions
+    UNION ALL SELECT 'patch_cites'           FROM patch_cites
+    UNION ALL SELECT 'patch_entries'         FROM patch_entries
+    UNION ALL SELECT 'patch_entry_cites'     FROM patch_entry_cites
+  )
+  GROUP BY view_name
   ORDER BY view_name;
 
 -- ─── Generated dark anchors ─────────────────────────────────────────────────
@@ -365,6 +397,13 @@ CREATE OR REPLACE VIEW _anchor_scan AS
   UNION ALL SELECT 'model_abbreviations',      col, live FROM _dark_cols('model_abbreviations')
   UNION ALL SELECT 'title_abbreviations',      col, live FROM _dark_cols('title_abbreviations')
   UNION ALL SELECT 'game_formats',           col, live FROM _dark_cols('game_formats')
+  UNION ALL SELECT 'cabinets',               col, live FROM _dark_cols('cabinets')
+  UNION ALL SELECT 'display_types',          col, live FROM _dark_cols('display_types')
+  UNION ALL SELECT 'display_subtypes',       col, live FROM _dark_cols('display_subtypes')
+  UNION ALL SELECT 'systems',                col, live FROM _dark_cols('systems')
+  UNION ALL SELECT 'production_statuses',    col, live FROM _dark_cols('production_statuses')
+  UNION ALL SELECT 'technology_generations',    col, live FROM _dark_cols('technology_generations')
+  UNION ALL SELECT 'technology_subgenerations', col, live FROM _dark_cols('technology_subgenerations')
   UNION ALL SELECT 'rewards',                col, live FROM _dark_cols('rewards')
   UNION ALL SELECT 'themes',                 col, live FROM _dark_cols('themes')
   UNION ALL SELECT 'tags',                   col, live FROM _dark_cols('tags')
@@ -1328,17 +1367,13 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE NOT EXISTS (SELECT 1 FROM duckdb_tables()
                     WHERE database_name = 'fc' AND table_name = e.entity_table)
 
-  -- kind IS DISTINCT FROM 'dim', not kind = 'view', so an unrecognized kind demands a
-  -- view rather than quietly exempting the entity.
   UNION ALL
   SELECT 'missing_entity_view',
          e.entity_table || ' -> ' || coalesce(e.view_name, 'NULL')
-           || ' (' || coalesce(e.kind, 'NULL') || ')'
   FROM _entity_view e
-  WHERE e.kind IS DISTINCT FROM 'dim'
-    AND (e.view_name IS NULL
-         OR NOT EXISTS (SELECT 1 FROM information_schema.tables
-                        WHERE table_schema = 'main' AND table_name = e.view_name))
+  WHERE e.view_name IS NULL
+     OR NOT EXISTS (SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'main' AND table_name = e.view_name)
 
   -- ── every alias/abbreviation lookup table is exposed ──
   -- This one exists because of a PROCESS failure, not a code failure, and it's the only

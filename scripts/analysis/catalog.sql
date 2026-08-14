@@ -1,11 +1,24 @@
 -- Catalog analysis foundation — the shared decode layer over the live DB.
 --
--- `.read` this from an analysis file to get a connected, decoded catalog: it ATTACHes
--- backend/db.sqlite3 READ-ONLY and defines views over the awkward physical schema (JSON
--- extra_data, the model -> corporate_entity -> manufacturer chain, reward M2M). Run from
--- the REPO ROOT — the ATTACH path and every `.read` resolve against the current directory.
+-- `.read` this from an analysis file to get a connected, decoded catalog: it ATTACHes the
+-- catalog READ-ONLY and defines views over the awkward physical schema (JSON extra_data,
+-- the model -> corporate_entity -> manufacturer chain, reward M2M). Run from the REPO
+-- ROOT — the ATTACH path and every `.read` resolve against the current directory.
 --
---     duckdb -init <analysis>.sql :memory: "FROM <a_view> LIMIT 5;"
+--     scripts/analysis/analysis query <analysis>.sql "FROM <a_view> LIMIT 5;"
+--
+-- What `fc` attaches is db.analytics.duckdb, an IMPORT of backend/db.sqlite3 into
+-- DuckDB's own storage — not the SQLite file itself. The runner re-imports whenever the
+-- source changes (under a second, and it is what `scripts/analysis/analysis` does before
+-- every command), so going through the runner is the supported entry point. A bare
+-- `duckdb -init` still works but attaches whatever the last import produced; read
+-- `analysis_context.snapshot_imported_at` if that matters to you.
+--
+-- Reading a SQLite file in place is what this arrangement exists to avoid, and the
+-- reason is correctness, not speed: DuckDB's sqlite scanner silently hands one table's
+-- aggregate to another when two branches of a query share a pushed-down projection and
+-- filter, which the liveness predicate makes near-universal here. EDITING.md has the
+-- measurements and the two defects it caused.
 --
 -- Four conventions hold throughout and are NOT restated per view:
 --   * UNPREFIXED = public API. `_underscore` = private helper.
@@ -20,9 +33,7 @@
 --
 -- README.md to write an analysis; EDITING.md to change this file.
 
-INSTALL sqlite;
-LOAD sqlite;
-ATTACH IF NOT EXISTS 'backend/db.sqlite3' AS fc (TYPE sqlite, READ_ONLY);
+ATTACH IF NOT EXISTS 'backend/db.analytics.duckdb' AS fc (READ_ONLY);
 
 -- ═══ NAME NORMALIZATION — macros for comparing names across records ═════════
 -- The key for comparing a catalog name against another record's — a source's game title,
@@ -305,7 +316,7 @@ COMMENT ON VIEW country_aliases IS
 -- game_formats — the machine-genre vocabulary. Join models.game_format_id to it, or check
 -- that a format slug you hardcode still exists.
 CREATE OR REPLACE VIEW game_formats AS
-  SELECT id, slug, name FROM fc.catalog_gameformat
+  SELECT id, slug, name, description FROM fc.catalog_gameformat
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW game_formats IS
   'One row per live game format — the machine-genre vocabulary; join models.game_format_id, or check that a slug you hardcode still exists.';
@@ -314,10 +325,92 @@ COMMENT ON VIEW game_formats IS
 -- `rewards` says which types a model has, this says what the closed set is, and
 -- `reward_type_aliases` resolves a source's phrasing into it.
 CREATE OR REPLACE VIEW reward_types AS
-  SELECT id, slug, name FROM fc.catalog_rewardtype
+  SELECT id, slug, name, description FROM fc.catalog_rewardtype
   WHERE status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW reward_types IS
   'One row per live reward type — the payout vocabulary behind the rewards name-list; join reward_type_aliases to resolve a source phrasing into it.';
+
+-- ─── Taxonomy dims, at entity grain ─────────────────────────────────────────
+-- One view per taxonomy dim. `models` carries these as SLUG ONLY and still does — these
+-- are the other half of that decision rather than a reversal of it. The slug is what you
+-- predicate and group on, so it is all a model row needs; the rest of the RECORD lives
+-- here, where the subject is the vocabulary itself.
+--
+-- `description` is the field that forced them. It is authored prose that no `models`
+-- column could carry, and while these tables were reachable only by raw-joining
+-- fc.catalog_<dim>, "which vocabulary terms are still undocumented" had no answer in the
+-- foundation at all — the shape EDITING.md warns about, where a column missing from a
+-- view gets read as a field the Django model does not have.
+--
+-- Uniform shape: id, slug, name, description, plus the decoded parent where the dim has
+-- one. Live rows only, and every parent join live-filtered, as everywhere else here.
+CREATE OR REPLACE VIEW technology_generations AS
+  SELECT id, slug, name, description FROM fc.catalog_technologygeneration
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW technology_generations IS
+  'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State) behind models.technology_generation_slug.';
+
+CREATE OR REPLACE VIEW technology_subgenerations AS
+  SELECT
+    tsg.id, tsg.slug, tsg.name, tsg.description,
+    tsg.technology_generation_id,
+    tg.slug AS technology_generation_slug
+  FROM fc.catalog_technologysubgeneration tsg
+  LEFT JOIN fc.catalog_technologygeneration tg ON tg.id = tsg.technology_generation_id
+                                          AND tg.status IS DISTINCT FROM 'deleted'
+  WHERE tsg.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW technology_subgenerations IS
+  'One row per live technology subgeneration — the subdivision vocabulary, carrying its parent generation decoded to a slug.';
+
+CREATE OR REPLACE VIEW display_types AS
+  SELECT id, slug, name, description FROM fc.catalog_displaytype
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW display_types IS
+  'One row per live display type — the display-technology vocabulary (Score Reels, DMD, LCD) behind models.display_type_slug.';
+
+CREATE OR REPLACE VIEW display_subtypes AS
+  SELECT
+    dst.id, dst.slug, dst.name, dst.description,
+    dst.display_type_id,
+    dt.slug AS display_type_slug
+  FROM fc.catalog_displaysubtype dst
+  LEFT JOIN fc.catalog_displaytype dt ON dt.id = dst.display_type_id
+                                     AND dt.status IS DISTINCT FROM 'deleted'
+  WHERE dst.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW display_subtypes IS
+  'One row per live display subtype — the subdivision vocabulary, carrying its parent display type decoded to a slug.';
+
+-- systems — the one dim whose name is not a mangled slug (`Bally AS-2518-35`), which is
+-- why `models` keeps system_name alongside system_slug. Manufacturer is a required FK:
+-- a system belongs to whoever built it.
+CREATE OR REPLACE VIEW systems AS
+  SELECT
+    s.id, s.slug, s.name, s.description,
+    s.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
+    s.technology_subgeneration_id,
+    tsg.slug AS technology_subgeneration_slug
+  FROM fc.catalog_system s
+  LEFT JOIN fc.catalog_manufacturer mf ON mf.id = s.manufacturer_id
+                                      AND mf.status IS DISTINCT FROM 'deleted'
+  LEFT JOIN fc.catalog_technologysubgeneration tsg ON tsg.id = s.technology_subgeneration_id
+                                      AND tsg.status IS DISTINCT FROM 'deleted'
+  WHERE s.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW systems IS
+  'One row per live system — the hardware-generation vocabulary (WPC-95, SAM, SPIKE) with its manufacturer and technology subgeneration decoded.';
+
+CREATE OR REPLACE VIEW cabinets AS
+  SELECT id, slug, name, description FROM fc.catalog_cabinet
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW cabinets IS
+  'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail) behind models.cabinet_slug.';
+
+-- production_statuses is the ProductionStatus vocabulary, NOT the soft-delete `status`
+-- every other view here filters on. Same trap as the column on `models`.
+CREATE OR REPLACE VIEW production_statuses AS
+  SELECT id, slug, name, description FROM fc.catalog_productionstatus
+  WHERE status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW production_statuses IS
+  'One row per live production status — the commercial-production vocabulary (produced, announced, one-off) behind models.production_status_slug; NOT the soft-delete status.';
 
 -- ═══ MANUFACTURERS AND CORPORATE ENTITIES ═══════════════════════════════════
 -- presumed_producing — the still-producing verdict the SITE publishes, which is not
@@ -1321,9 +1414,10 @@ CREATE OR REPLACE VIEW analysis_context AS
        WHERE status = 'success' AND patch_id IS NOT NULL ORDER BY id DESC LIMIT 1) AS latest_patch,
     (SELECT input_fingerprint FROM fc.provenance_ingestrun
        WHERE status = 'success' AND patch_id IS NOT NULL ORDER BY id DESC LIMIT 1) AS patch_fingerprint,
-    (SELECT max(id) FROM fc.provenance_changeset) AS latest_changeset;
+    (SELECT max(id) FROM fc.provenance_changeset) AS latest_changeset,
+    (SELECT imported_at FROM fc._import_stamp)    AS snapshot_imported_at;
 COMMENT ON VIEW analysis_context IS
-  'One row — the input watermark: DuckDB version, live model count, migration point, latest successful patch + fingerprint, latest changeset id. Printed by every analysis run.';
+  'One row — the input watermark: DuckDB version, live model count, migration point, latest successful patch + fingerprint, latest changeset id, and when the catalog was imported. Printed by every analysis run.';
 
 -- ═══ PROVENANCE — who said so (provenance.sql) ══════════════════════════════
 -- The attribution and citation layer — claims, ingest sources, ingest runs, citation

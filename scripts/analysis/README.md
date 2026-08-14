@@ -203,11 +203,20 @@ CREATE OR REPLACE VIEW _orphan_class AS
 
 Then `<prefix>_checks` can catch a classification that's missing a candidate, one that names a model no longer in the set, a duplicate or a `category` outside the allowed vocabulary. Reach for this only when the manual split is worth keeping honest; a one-off count in prose is fine otherwise.
 
-## The engine: DuckDB over the live DB
+## The engine: DuckDB over an import of the catalog
 
-We query the live catalog with the DuckDB CLI. The CLI must already be on the machine, it's not a project dependency.
+We query the catalog with the DuckDB CLI. The CLI must already be on the machine, it's not a project dependency.
 
-A script `ATTACH`es `backend/db.sqlite3` **read-only** and defines views over it. Nothing is written to the localhost product DB, nothing is persisted, there is no build step and no artifact to clean up; re-running always reflects the current DB.
+`backend/db.sqlite3` is **imported** into `backend/db.analytics.duckdb` — DuckDB's own storage — and the foundation defines its views over that. Nothing is ever written to the localhost product DB.
+
+The import is not a step you take. `scripts/analysis/analysis` compares the source's mtime and size against the copy before every command and re-imports only when they differ, which in practice means after a prod refresh or `make ingest-patches`. It takes under a second for the whole database. Everything in between skips it and runs against native storage, which is roughly twice as fast as reading SQLite in place.
+
+Two things follow that the old arrangement didn't have:
+
+- **Your answers hold still inside a session.** A rule that reported 29 hits does not report 3 an hour later because someone ingested a patch underneath you. `analysis_context.snapshot_imported_at` says which copy you measured, and it's printed above every run.
+- **`db.analytics.duckdb` is an artifact.** It's gitignored and disposable — delete it and the next command rebuilds it. If you invoke `duckdb -init` directly instead of going through `analysis`, you get whatever the last import produced, with nothing to re-check it; that's the reason the runner is the supported entry point.
+
+Reading the SQLite file in place is what this avoids, and the reason is correctness rather than speed — see [EDITING.md](EDITING.md#never-union-all-two-aggregates-over-different-fc-tables).
 
 ## Editing the foundation
 

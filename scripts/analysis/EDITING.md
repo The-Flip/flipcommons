@@ -30,7 +30,7 @@ When adding a new relationship view, match it to one of the [model relationship 
 
 So the split is by KIND of view, not by demand:
 
-- **Entity grain — exhaustive.** One view per first-class entity. `unexposed_entity` derives the entity set structurally (a `catalog_*` table carrying both `slug` and `status`, which selects exactly the concrete `LinkableModel`s) and fails for one that is neither exposed nor exempted, with `stale_entity_view` and `missing_entity_view` closing the other two directions. The seven taxonomy dims are exempted `dim` on the record rather than silently absent, because `all_models` already documents why they are slug-only.
+- **Entity grain — exhaustive, with no exemptions.** One view per first-class entity. `unexposed_entity` derives the entity set structurally (a `catalog_*` table carrying both `slug` and `status`, which selects exactly the concrete `LinkableModel`s) and fails for one that is not exposed, with `stale_entity_view` and `missing_entity_view` closing the other two directions. The seven taxonomy dims used to be exempted on the record, on the argument that `all_models` documents why they are slug-only. That argument was about the model row and did not survive contact with the record: a dim carries an authored `description`, and with no view over it the foundation could not say which vocabulary terms were still undocumented. They are ordinary entity views now, and `_entity_view` no longer has a way to opt out.
 - **Derived, relationship and measure views — demand-driven, as before.** `model_edges_bidir`, `model_number_collisions`, the vocabulary DAG columns. There is no bound on the questions these answer, and promoting them speculatively is how a foundation grows surface nobody reads.
 
 Watch the entity-vs-projection line when adding one. `countries` is not the Location entity — it is the parentless slice of it, and it is defined over `locations` rather than beside it so the two cannot disagree about what a live location is. A projection that reads the physical table independently is a second definition waiting to drift.
@@ -117,6 +117,55 @@ A third member splits them, silently and in opposite directions — the denylist
 If it ever fires, **don't mechanically port `catalog.sql` to the allowlist.** The right answer depends on what the new status means: an archived cohort may well belong in `models` for analysis even though the product hides it — surfacing the odd cohort is often the whole job — or it may not. Deciding now, in the abstract, would bake in exactly the kind of unchosen cutoff the section above warns against. The check preserves that choice; porting early spends it.
 
 Coverage of the liveness filter is generated rather than trusted: the dim list `catalog.sql` live-filters is swept against the physical column list of `catalog_machinemodel`, so **a new dim FK on the model fails `uncovered_model_dim`** instead of silently going unfiltered and unchecked. Adding a dim means adding its live-filtered join, not just its column.
+
+## Why the catalog is imported rather than attached
+
+`fc` is `backend/db.analytics.duckdb`, an import of `backend/db.sqlite3` into DuckDB's own storage, refreshed by the runner whenever the source changes. It would be simpler to `ATTACH` the SQLite file directly, and that is what this layer did until it produced two silent wrong answers.
+
+DuckDB's sqlite scanner gets the following wrong, and the liveness predicate is what makes the shape common enough to matter.
+
+```sql
+-- WRONG. Returns cabinets' count for BOTH rows; the second table is never scanned.
+SELECT 'cabinets' AS v, count(*) FROM fc.catalog_cabinet WHERE status IS DISTINCT FROM 'deleted'
+UNION ALL SELECT 'game_formats', count(*) FROM fc.catalog_gameformat WHERE status IS DISTINCT FROM 'deleted';
+```
+
+When two branches of one query aggregate over different attached-SQLite tables and their pushed-down projection and filter are textually identical, the optimizer treats the scans as equivalent and evaluates one of them. `SET sqlite_debug_show_queries=true` shows a single `SELECT "status" FROM "a" WHERE ROWID BETWEEN ? AND ?` issued for both branches. Every simple dim view is that shape, because every one of them selects the same columns under the same liveness predicate.
+
+What is and isn't affected, measured on DuckDB v1.5.5 / `sqlite_scanner` f79b1db:
+
+- **Any aggregate, not just `count`.** `max()` and `sum()` collapse identically.
+- **Every branch, not just the second.** With three branches all three take the first's value.
+- **Scalar subqueries do not help** — `SELECT 'a', (SELECT count(*) FROM x WHERE …)` collapses the same way. Neither does `OFFSET 0`, `threads=1`, `sqlite_disable_multithreaded_scans`, nor disabling `filter_pushdown`.
+- **Differing filter literals are safe.** `WHERE status IS DISTINCT FROM 'deleted'` against `WHERE status IS DISTINCT FROM 'zzz'` gives the right answers for both, which is why this stayed hidden: it needs the branches to agree, and the liveness predicate is the one thing every view here spells the same way.
+- **Row-level unions are safe.** `SELECT slug FROM a WHERE … UNION ALL SELECT slug FROM b WHERE …` returns both tables' rows correctly, which is why `entity_subjects`, `_dim_vocab` and `_dim_status` are unaffected.
+
+**Importing removes the whole class**, which is the fix this layer took: every variant below is correct against native storage, verified with the workarounds stripped out. `_dark_cols` carried one for a while and no longer needs it.
+
+The hazard is still live for any SQLite file you attach yourself — an evidence bridge, a scratch comparison against a second catalog, a sister repo's cache. In that case, four workarounds, all verified against the repro. Pick by what the query is shaped like:
+
+1. **Aggregate over a union of labelled rows.** The default, and what `foundation_summary` does. Nothing is aggregated per-branch, so there is nothing for the optimizer to consider equivalent.
+
+   ```sql
+   SELECT v, count(*) FROM (
+     SELECT 'cabinets' AS v FROM cabinets UNION ALL SELECT 'game_formats' FROM game_formats
+   ) GROUP BY v;
+   ```
+
+   One consequence: a relation with zero rows contributes nothing and drops out rather than reporting 0.
+
+2. **Materialize each branch's source.** `WITH x AS MATERIALIZED (SELECT * FROM …)` per branch. Reach for this when the per-branch aggregate is doing real work and can't be turned into rows. It is close to free — one line immunized the whole `_anchor_scan` sweep and the checks run timed the same to within 0.3s.
+3. **Put each aggregate in its own statement.** The bug needs both branches in one query; two statements always agree with the truth. Fine for ad-hoc measurement, useless inside a view.
+4. **Vary the filter literal.** Only if the branches genuinely differ — do not perturb a predicate to dodge the bug, because the next person will "clean it up" and silently reintroduce the defect.
+
+What does NOT work, so don't reach for them: scalar subqueries, `OFFSET 0`, `threads=1`, `sqlite_disable_multithreaded_scans`, and `SET disabled_optimizers='filter_pushdown'`.
+
+Two places this was actually found, both of which had been publishing wrong numbers with every check green:
+
+- `foundation_summary` reported `game_formats` as 6 — `reward_types`' count — for a vocabulary holding 11 live rows.
+- `_anchor_scan` reported `cabinets`, `display_types` and `technology_generations` as 11 live rows each, all inheriting `game_formats`. That is the dark-column detector unable to see a dark column, on views whose whole safety net it is.
+
+Neither failed anything. The rows were all present; only the aggregates were wrong. Assume any analysis in this repo or a sister one that tabulates per-table counts this way has the same defect.
 
 ## Editing the foundation? Run its self-test
 

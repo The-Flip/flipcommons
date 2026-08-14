@@ -54,6 +54,67 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 
 need() { command -v duckdb >/dev/null 2>&1 || { echo "duckdb not on PATH" >&2; exit 127; }; }
 
+# The catalog is IMPORTED into DuckDB's own storage, not read out of SQLite in place,
+# and `ensure_snapshot` is what keeps that invisible: it re-imports only when
+# backend/db.sqlite3 has actually changed, which in practice means after a prod import
+# or `make ingest-patches`. The import is under a second for the whole database; the
+# staleness test is one stat. Nobody has to ask for a rebuild.
+#
+# Importing rather than ATTACHing the SQLite file is a CORRECTNESS decision first.
+# DuckDB's sqlite scanner collapses two branches of one query that aggregate over
+# different attached tables when the pushed-down projection and filter match — and
+# `WHERE status IS DISTINCT FROM 'deleted'` makes them match across every simple view
+# here. It silently gave `foundation_summary` one vocabulary's count for another's, and
+# left `_anchor_scan` reporting one view's liveness for three others. Both defects
+# vanish against native storage; see EDITING.md. Speed is the second reason and much
+# the smaller one (the self-test roughly halves).
+source_db="$root/backend/db.sqlite3"
+snapshot="$root/backend/db.analytics.duckdb"
+
+# mtime+size, BSD and GNU stat. Size is in there because mtime alone has one-second
+# granularity, and an ingest that rewrites the file inside the same second as the last
+# import would otherwise read as unchanged.
+source_stamp() {
+  stat -f '%m %z' "$source_db" 2>/dev/null || stat -c '%Y %s' "$source_db"
+}
+
+ensure_snapshot() {
+  need
+  [ -f "$source_db" ] || {
+    echo "no catalog database at $source_db — run 'make bootstrap' first" >&2; exit 2; }
+  want=$(source_stamp)
+  if [ -f "$snapshot" ]; then
+    # A snapshot written by an older DuckDB fails to open. That is a rebuild, not an
+    # error, so the read is allowed to fail and falls through to the import below.
+    have=$(duckdb "$snapshot" -noheader -list \
+             "SELECT source_mtime || ' ' || source_size FROM _import_stamp" 2>/dev/null) || have=
+    [ "$have" = "$want" ] && return 0
+  fi
+  printf 'importing catalog into DuckDB (source changed)… ' >&2
+  # Table by table rather than COPY FROM DATABASE, which refuses on the partial indexes
+  # Django creates. Indexes are not copied at all: DuckDB does not use them.
+  copy_stmts=$(duckdb :memory: -noheader -list "
+    INSTALL sqlite; LOAD sqlite;
+    ATTACH '$source_db' AS src (TYPE sqlite, READ_ONLY);
+    SELECT 'CREATE TABLE out.\"' || table_name || '\" AS SELECT * FROM src.\"' || table_name || '\";'
+    FROM duckdb_tables() WHERE database_name = 'src' ORDER BY table_name;")
+  # Build beside the target and rename, so a concurrent reader never sees a half-written
+  # snapshot and a failed import leaves the previous one intact.
+  tmp="$snapshot.tmp.$$"
+  rm -f "$tmp" "$tmp.wal"
+  duckdb :memory: "
+    INSTALL sqlite; LOAD sqlite;
+    ATTACH '$source_db' AS src (TYPE sqlite, READ_ONLY);
+    ATTACH '$tmp' AS out;
+    $copy_stmts
+    CREATE TABLE out._import_stamp AS
+      SELECT ${want%% *}::BIGINT AS source_mtime, ${want##* }::BIGINT AS source_size,
+             now() AS imported_at;" >/dev/null
+  mv "$tmp" "$snapshot"
+  rm -f "$tmp.wal"
+  echo "done" >&2
+}
+
 
 usage() {
   # The whole header comment, less the shebang: everything down to `set -eu`.
@@ -72,6 +133,7 @@ resolve_and_cd() {
   [ -f "$1" ] || { echo "no such file: $1" >&2; exit 2; }
   analysis_file=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")
   cd "$root"
+  ensure_snapshot
 }
 
 # Public = a view in the session's own catalog (`memory`), not the read-only `fc`

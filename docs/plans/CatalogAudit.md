@@ -41,9 +41,7 @@ Don't build anything in advance of actually needing it.
 
 ### Easy to author
 
-Let's make it easy to add new rules. AI sessions should be able to do this as a side errand without it being their primary job. All the stuff around a rule to be self-contained and not spread out all over the place. Self-documenting. Understandable without reading the entire system.
-
-Like maybe each one is its own file like `audit/rules/<rule>.sql`? Just a thought, don't over-index on it.
+Let's make it easy to add new rules. AI sessions should be able to do this as a side errand without it being their primary job. All the stuff around a rule to be self-contained and not spread out all over the place. Self-documenting. Understandable without reading the entire system. Hard to do the wrong thing, come up with a confidently wrong answer.
 
 ### Apply rules to a particular area
 
@@ -131,9 +129,11 @@ A person name in cited quotes not credited on that model.
 
 A bounded vocabulary record without a description. That's cabinet, display type, display subtype, game format, production status, reward type, tag, technology generation, technology subgeneration.
 
-**Measured, and the two halves are backwards from how this doc presents them.** The bounded vocabularies contribute **2** findings — both game formats. The open vocabularies contribute **693** (themes 540, gameplay features 142, credit roles 10, tags 1). The bounded rule is very nearly a no-op; see [Description coverage on the open vocabularies](#description-coverage-on-the-open-vocabularies) for the rule that actually carries the backlog.
+**Measured, and the two halves are backwards from how this doc presents them.** The bounded vocabularies contribute **5** findings — game formats `one-ball` and `rolldown`, systems `fast-pinball` and `stern-spike-3`, and the tag `limited-edition`. The open vocabularies contribute **693** (themes 540, gameplay features 142, credit roles 10, tags 1). The bounded rule is very nearly a no-op; see [Description coverage on the open vocabularies](#description-coverage-on-the-open-vocabularies) for the rule that actually carries the backlog.
 
-The bounded rule also can't ship as written: those dims have a physical `description` column, but no foundation view exposes it — `game_formats` and `reward_types` omit it and the rest have no view at all. Promoting the field comes first. This is exactly the case `EDITING.md` warns about, where a column absent from a view says nothing about the Django model.
+The list above is missing one: **`system` is a tenth bounded vocabulary**, 75 live rows, and it holds two of the five findings. It reads as a dim rather than a vocabulary because a model points at it the same way it points at cabinet, but a System is an authored record with a manufacturer and a description like any other.
+
+**The promotion this rule was blocked on is done** (2026-08-13). It could not ship before then: those dims have a physical `description` column, but no foundation view exposed it — `game_formats` and `reward_types` omitted it and the other seven had no view at all, which is exactly the case `EDITING.md` warns about, where a column absent from a view says nothing about the Django model. `catalog.sql` now carries `description` on `game_formats` and `reward_types` plus an entity view per taxonomy dim (`cabinets`, `display_types`, `display_subtypes`, `systems`, `production_statuses`, `technology_generations`, `technology_subgenerations`), and `_entity_view`'s `dim` exemption is retired, so entity-grain coverage is exhaustive with no opt-out.
 
 ### Missing themes
 
@@ -312,6 +312,8 @@ The most important item here, because it happened twice in one sitting to someon
 - `WHERE subject_type='person'` returned **zero rows**. The stored value is `catalog.person`, so the real answer was **56**.
 
 Both read as clean passes. Nothing distinguished them from a rule that was working. This is the argument for the mutation gate, and it lands harder here than in the foundation self-test for two reasons: nearly every rule in this doc is a `NOT EXISTS` / `LEFT JOIN … IS NULL` / `count(*) FILTER` shape, which is exactly the shape that goes quietly no-op; and this layer runs against a catalog that patches are actively reshaping underneath it. **Every rule should ship with a known-failing fixture**, and the rules born at zero rows (like [Missing parents](#missing-parents)) need it most, since for them a green result is indistinguishable from a broken query.
+
+A third instance turned up while promoting the vocabulary `description` field (2026-08-13), and it is the worst of the three because no author wrote anything wrong. `foundation_summary` had been reporting **`game_formats` as 6** for a vocabulary holding **11** live rows — it had taken `reward_types`' count. The cause is upstream: DuckDB's sqlite scanner collapses two branches of a `UNION ALL` that aggregate over different attached tables when the pushed-down projection and filter are identical, and `WHERE status IS DISTINCT FROM 'deleted'` makes them identical across every simple dim view. It affects `max` and `sum` as well as `count`, and with three branches all three take the first's value. The same defect had also silently disabled `_anchor_scan` for those views — it reported `cabinets`, `display_types` and `technology_generations` as 11 live rows each, all inheriting `game_formats`, which is the dark-column detector unable to see a dark column. The foundation's own health dashboard and its own safety net both published wrong numbers and every check stayed green, because the rows were all present and only the aggregates were wrong. Details and the four verified workarounds are in `EDITING.md`; the shape never to write is a `UNION ALL` of aggregates over `fc.` tables. **Assume any rule in this layer that tabulates a count per dim has this defect until it is written the other way.**
 
 ### Rule precision is where the work is
 
