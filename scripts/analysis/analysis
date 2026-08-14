@@ -20,6 +20,7 @@
 #   scripts/analysis/analysis ui  <analysis.sql>
 #   scripts/analysis/analysis snapshot <analysis.sql> <view> [<view>...]
 #   scripts/analysis/analysis query <analysis.sql> "<sql>" [--format json|csv|table] [--check <prefix>]
+#   scripts/analysis/analysis columns [<analysis.sql>] <view> | --all
 #
 # <prefix> names the analysis file's own summary/checks pair: `export` ->
 # export_summary, export_checks. Both must exist. But the gate is not limited to
@@ -44,6 +45,15 @@
 # Both read the session itself, so neither can drift the way a prose table did.
 # Both args are optional and order-free — anything ending in .sql is the analysis
 # file (default: the foundation), anything else is a view or macro name or a term.
+# `columns` is measurement where `describe` is reference: per column, how many rows,
+# how many NULL and how many empty string. Named, it prints every column of one view.
+# `--all` sweeps every public view and shows only the columns worth a look — any holding
+# '' (absence spelled the wrong way; the layer's rule is that absent is NULL) and any
+# entirely NULL (a facet the catalog does not hold yet, or a decode that broke). Run it
+# after editing a view that reads a physical table. It is a command rather than a check
+# because the same measurement as a gate needs an exemption list — 38 of 68 views carry a
+# bare `fc.` reference, and `path_prefix` is legitimately '' — and that list is the
+# maintenance burden, not the coverage. ~7s for a full sweep, seconds for one view.
 # `browse` materializes every public relation (view or table) into
 # <analysis>.browse.duckdb, a static, disposable database that desktop clients such
 # as TablePlus can open directly.
@@ -485,6 +495,54 @@ EOF
     [ -n "$check" ] && gate "$check" stderr
     # Pure data on stdout; DuckDB's own diagnostics already go to stderr.
     duckdb -init "$analysis_file" -"$fmt" :memory: "$query"
+    ;;
+
+  columns)
+    # Both args order-free, like describe: *.sql is the file, anything else a view.
+    sql=scripts/analysis/catalog.sql; view=; all=
+    for a in "$@"; do
+      case "$a" in
+        --all) all=1 ;;
+        *.sql) sql=$a ;;
+        *)     view=$a ;;
+      esac
+    done
+    [ -n "$view" ] || [ -n "$all" ] || { echo "columns needs a <view> or --all" >&2; exit 2; }
+    resolve_and_cd "$sql"
+
+    # The view list is derived HERE, in the shell, and that is the whole reason this is a
+    # command and not a check. A SQL view cannot iterate relations — query_table() takes
+    # literals only — so the same measurement written as a check needs one hand-written
+    # UNION branch per view plus a meta-check to keep that list honest. See EDITING.md.
+    views=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+      "SELECT view_name FROM duckdb_views() $pub_where
+         ${view:+AND view_name = '$view'} ORDER BY view_name;")
+    [ -n "$views" ] || { echo "no such public view: $view" >&2; exit 2; }
+
+    branches=
+    for v in $views; do
+      branches=${branches:+"$branches UNION ALL "}"SELECT '$v' AS view_name, * FROM _colstats('$v')"
+    done
+
+    # Unscoped, the sweep is the interesting reading and the rows are the product: an
+    # all-NULL column is a facet the catalog does not hold yet, which is a worklist entry
+    # rather than a defect. Filtered when sweeping so the output stays readable; a named
+    # view prints every column, because there you asked about that view specifically.
+    filter=; [ -n "$all" ] && [ -z "$view" ] && filter="WHERE n_blank > 0 OR n_null = n_rows"
+    duckdb -box :memory: -f /dev/stdin <<SQL
+.read $analysis_file
+-- n_blank cannot see a blank INSIDE a list element: ['a',''] casts to [a, ], never ''.
+-- Zero such values today; the gap is latent, and list-typed facets are exactly where a
+-- reader would assume coverage.
+CREATE OR REPLACE MACRO _colstats(vn) AS TABLE
+  WITH n AS (UNPIVOT (SELECT count(*) FILTER (COLUMNS(*) IS NULL) FROM query_table(vn))
+               ON COLUMNS(*) INTO NAME col VALUE n_null),
+       b AS (UNPIVOT (SELECT count(*) FILTER (COLUMNS(*)::VARCHAR = '') FROM query_table(vn))
+               ON COLUMNS(*) INTO NAME col VALUE n_blank)
+  SELECT n.col, (SELECT count(*) FROM query_table(vn)) AS n_rows, n.n_null, b.n_blank
+  FROM n JOIN b USING (col);
+SELECT * FROM ($branches) $filter ORDER BY n_blank DESC, view_name, col;
+SQL
     ;;
 
   snapshot)

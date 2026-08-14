@@ -142,6 +142,18 @@ Measured on DuckDB v1.5.5 / `sqlite_scanner` f79b1db: it hits any aggregate, not
 
 It was found in two places, both publishing wrong numbers with every check green: `foundation_summary` reported one vocabulary's count for another's, and the dark-column sweep that has since been removed reported one view's liveness for three others. Assume any analysis in a sister repo that tabulates per-table counts this way has the same defect.
 
+## Changed a view that reads a physical table? Sweep its columns
+
+```bash
+scripts/analysis/analysis columns <view>   # or --all
+```
+
+Per column: rows, NULLs, empty strings. Two things it catches, both of which a row-level invariant cannot see — a column holding `''` (absence spelled the wrong way; the rule here is that absent is NULL, and `live`/`blanks_null` are how that is applied), and a column entirely NULL, which is either a facet the catalog does not hold yet or a decode that broke.
+
+**It is a command and not a check, deliberately, and this is the more interesting half.** Written as a gate the same measurement needs an exemption list, and every formulation lands there. The data-based form — no public view column may hold `''` — needs one hand-written `UNION` branch per view, since `query_table()` takes literals only and SQL cannot iterate relations, plus a meta-check to keep that list honest, plus an exemption for `citation_root_domains.path_prefix` where `''` legitimately means "whole host". The text-based form — no view may carry a bare `fc.` reference — needs no iteration at all and would catch an unwrapped join that the data-based one misses, but 38 of 68 views carry one, so it needs 38 exemptions. Roughly 60 entries one way, 38 the other. At that size the exemption list is the maintenance burden rather than the coverage, which is what retired the dark-anchor sweep. The rows here are a worklist for a reader, not an invariant, and `path_prefix` at 116 of 118 is the case that shows the difference: a gate must excuse it, a reader just reads the number.
+
+One blind spot to know: `n_blank` cannot see a blank inside a list element — `['a','']` casts to `[a, ]`, never `''`. Zero such values today, so it is latent, and list-typed facets are exactly where a reader would assume coverage.
+
 ## Editing the foundation? Run its self-test
 
 ```bash

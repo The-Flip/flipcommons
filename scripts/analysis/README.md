@@ -22,6 +22,10 @@ scripts/analysis/analysis describe
 scripts/analysis/analysis describe model_edges  # Exact match prints its description and, for views, its columns
 scripts/analysis/analysis describe edge         # Otherwise, list all partial matches in name or description
 
+# How full is a view? Per column: rows, NULLs, empty strings
+scripts/analysis/analysis columns models         # every column of one view
+scripts/analysis/analysis columns --all          # sweep, showing only columns worth a look (~7s)
+
 # Get the map — what areas exist, when you don't have a term yet
 grep '═══' scripts/analysis/catalog.sql scripts/analysis/provenance.sql scripts/analysis/data_patches.sql
 
