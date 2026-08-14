@@ -285,6 +285,7 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'gameplay_feature_vocab'   FROM gameplay_feature_vocab
     UNION ALL SELECT 'gameplay_feature_aliases' FROM gameplay_feature_aliases
     UNION ALL SELECT 'model_themes'        FROM model_themes
+    UNION ALL SELECT 'model_tags'          FROM model_tags
     UNION ALL SELECT 'theme_vocab'         FROM theme_vocab
     UNION ALL SELECT 'theme_aliases'       FROM theme_aliases
     UNION ALL SELECT 'model_export_markets' FROM model_export_markets
@@ -944,6 +945,33 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'theme_subject_not_live', 'model_id=' || model_id::VARCHAR
   FROM model_themes WHERE model_id NOT IN (SELECT id FROM models)
+
+  -- the tag family, mirroring the three theme checks above. `tags` and `tag_vocab` are
+  -- both built from model_tags, so these guard the one definition they share.
+  UNION ALL
+  SELECT 'tag_grain_dup',
+         'model_id=' || model_id::VARCHAR || ' tag_id=' || tag_id::VARCHAR
+           || ' n=' || count(*)::VARCHAR
+  FROM model_tags GROUP BY model_id, tag_id HAVING count(*) > 1
+
+  UNION ALL
+  SELECT 'tag_subject_not_live', 'model_id=' || model_id::VARCHAR
+  FROM model_tags WHERE model_id NOT IN (SELECT id FROM models)
+
+  -- grain and display list describe the same memberships, compared by VALUE. Same key-set
+  -- reasoning as theme_views_disagree: the union of both sides, so a model carried by only
+  -- one of them is on the key set rather than invisible to the comparison.
+  UNION ALL
+  SELECT 'tag_views_disagree',
+         'model_id=' || model_id::VARCHAR || ' grain=' || COALESCE(grain::VARCHAR, '<none>')
+           || ' list=' || COALESCE(list::VARCHAR, '<none>')
+  FROM (
+    SELECT k.model_id,
+           (SELECT list_sort(list(mt.tag_slug)) FROM model_tags mt WHERE mt.model_id = k.model_id) AS grain,
+           t.tags AS list
+    FROM (SELECT id AS model_id FROM models UNION SELECT model_id FROM tags) k
+    LEFT JOIN tags t ON t.model_id = k.model_id
+  ) WHERE grain IS DISTINCT FROM list
 
   -- ── credits: the polymorphic subject, in both of the ways it can go wrong ──
   -- `credits` is the one grain view whose subject is not a machine model: it is a live

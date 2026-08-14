@@ -154,6 +154,7 @@ CREATE OR REPLACE VIEW _live_manufacturer      AS SELECT * FROM live('fc.catalog
 CREATE OR REPLACE VIEW _live_series            AS SELECT * FROM live('fc.catalog_series');
 CREATE OR REPLACE VIEW _live_person            AS SELECT * FROM live('fc.catalog_person');
 CREATE OR REPLACE VIEW _live_credit_role       AS SELECT * FROM live('fc.catalog_creditrole');
+CREATE OR REPLACE VIEW _live_tag               AS SELECT * FROM live('fc.catalog_tag');
 CREATE OR REPLACE VIEW _live_theme             AS SELECT * FROM live('fc.catalog_theme');
 CREATE OR REPLACE VIEW _live_gameplay_feature  AS SELECT * FROM live('fc.catalog_gameplayfeature');
 
@@ -756,14 +757,24 @@ COMMENT ON VIEW theme_vocab IS
 -- keyed by MODEL and answers "what is this tagged"; this is keyed by tag and answers "what
 -- tags exist, and how much is each used". Much of the vocabulary is soft-deleted, so check
 -- a hardcoded slug against this view before trusting it. Flat, no DAG.
+-- model_tags — one row per (live model, live tag). The GRAIN twin of `tags`, and THE
+-- reader of the through table: `tags` and `tag_vocab` are both built from it, so the
+-- live-subject rule is stated once and the two cannot disagree about the population.
+-- Flat, no DAG to roll up, unlike model_themes.
+CREATE OR REPLACE VIEW model_tags AS
+  SELECT mt.machinemodel_id AS model_id, tg.id AS tag_id, tg.slug AS tag_slug
+  FROM fc.catalog_machinemodel_tags mt
+  JOIN _live_tag tg ON tg.id = mt.tag_id
+  SEMI JOIN models s ON s.id = mt.machinemodel_id;
+COMMENT ON VIEW model_tags IS
+  'One row per (live model, live tag) — the grain twin of tags; predicate and join on tag_slug. Flat, no DAG.';
+
 CREATE OR REPLACE VIEW tag_vocab AS
   SELECT
     tg.*,
-    -- count(m.id), not the link: the through-row survives its model's soft-delete.
-    count(m.id) AS n
-  FROM live('fc.catalog_tag') tg
-  LEFT JOIN fc.catalog_machinemodel_tags mt ON mt.tag_id = tg.id
-  LEFT JOIN models m ON m.id = mt.machinemodel_id
+    count(mt.model_id) AS n
+  FROM _live_tag tg
+  LEFT JOIN model_tags mt ON mt.tag_id = tg.id
   GROUP BY ALL;
 COMMENT ON VIEW tag_vocab IS
   'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of model-keyed tags. Flat, no DAG.';
@@ -773,11 +784,9 @@ COMMENT ON VIEW tag_vocab IS
 -- classification vocabulary you PREDICATE on (`'widebody' IN tags`). NB `conversion_kit`
 -- and re-themes are NOT tags and won't appear here — they're ModelRelationship types.
 CREATE OR REPLACE VIEW tags AS
-  SELECT mt.machinemodel_id AS model_id, list_sort(list(tg.slug)) AS tags
-  FROM fc.catalog_machinemodel_tags mt
-  JOIN tag_vocab tg ON tg.id = mt.tag_id
-  SEMI JOIN models s ON s.id = mt.machinemodel_id
-  GROUP BY mt.machinemodel_id;
+  SELECT model_id, list_sort(list(tag_slug)) AS tags
+  FROM model_tags
+  GROUP BY model_id;
 COMMENT ON VIEW tags IS
   'One row per tagged LIVE model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
 
