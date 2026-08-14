@@ -63,6 +63,37 @@ Before we decide anything, let's evaluate Pinexplore's DuckDB analytics architec
 
 ---
 
+## Direction: burndown lists first (user, 2026-08-14)
+
+**The valuable thing is the lists** — burndown lists, candidate proposals, gap lists. Do not build structural support for checks, severities, whitelisting or rigid area scoping. Everything below that designs those mechanisms is retained as prior thinking, not as a build plan.
+
+What a list needs is what it already has: a name, row-level detail, a usage or impact ordering so the worklist leads with what matters, and a `COMMENT ON VIEW` so `analysis describe` indexes it. Nothing more. If a specific list later earns a gate, it can take a `*_checks` view of its own then.
+
+**Much of the analysis below is superseded by the foundation changes of 2026-08-13/14.** Before acting on any of it, check against `describe`:
+
+- `live(tbl)` folds `''` to NULL on every entity view, so "has no description" is `WHERE description IS NULL` with no per-column blank test. The hand-picked blank tests this doc worried about are gone.
+- `json_scalar_text(v)` folds `"500"` and `500` to one value, which is most of what the [scalar type disagreement](#scalar-claims-with-type-disagreements) rule existed to expose, and it retires the `json_type()` UBIGINT/DOUBLE trap recorded under the prototype.
+- `entity_registry` + `entity_type_of(table)` give the project's own `entity_type` keyed to the physical table, which answers the open question about what the spine should call an entity type: `game-format`, not `catalog.gameformat`.
+- Vocabulary views were renamed to their grain — `themes`, `gameplay_features`, `tags`, not `*_vocab`.
+
+One caveat on the new tooling: `analysis columns --all` truncates its output (31 rows when swept here), so it is a per-view command in practice, not a catalog-wide sweep. Reading it as exhaustive reports three vocabularies missing descriptions where the real answer spans more.
+
+## Row-level completeness is the missing primitive
+
+Raised by a flippatch session, and the clearest gap in the layer today. `columns` answers completeness **column-wise** — how full is this field across all rows. Nothing answers it **row-wise** — how complete is this model, and which are the least complete since 1995.
+
+That session hand-enumerated 16 columns and hand-picked a blank test for each, twice. The two runs are comparable only because one person kept their own list; a different session asking the same question picks a different field set, gets a different answer, and neither can tell. That is the confidently-wrong-answer failure this whole layer exists to prevent, and it is currently unguarded.
+
+**The field set is the whole design.** A hand-declared list reproduces the problem one level up — it is still somebody's list, just a shared one. The project rule is that the Django model is the source of truth and metadata is derived by introspection, with only what Django cannot express declared. So:
+
+- Derive the candidate field set structurally from the physical columns of the entity's table, the way the foundation already sweeps `catalog_machinemodel` for dim FKs.
+- Declare only the exclusions — system-generated (`id`, timestamps), derived (`location_path`), and source bookkeeping (`opdb_id`, `ipdb_id`, `extra_data`) — each with a reason.
+- A **new column on the model fails until someone classifies it** as counted or excluded, rather than silently joining or missing the set. That is the one check worth having here, and it is the same shape as `uncovered_model_dim`.
+
+Shape: `model_completeness` at one row per model, carrying `n_filled`, `n_fields` and `missing[]` — the array of missing field names. `n_filled` plus the array is enough for both questions, and the array is what makes it a worklist rather than a score. With `live()` already folding blanks, the test is uniformly `IS NULL` and no per-field predicate is needed.
+
+That turns "least complete models since 1995" into a one-liner and makes the number stable across sessions, which also makes "did the campaign move the floor" a direct comparison instead of a diff of two ad-hoc queries.
+
 ## Pinexplore analysis
 
 Preliminary AI analysis of Pinexplore found the following. This is NOT a user analysis, it could easily be wrong.
@@ -102,17 +133,7 @@ Mechanisms there are more evolved than pinexplore's:
 
 `stale_exception` matters more here than it does there, because your exceptions will be keyed by slug and patches rename slugs — 0232 renamed yukon-yeti and its corporate entity mid-campaign. A misspelled or orphaned exception exempts nothing while looking like it exempts something.
 
-#### `_anchor_skip` was the model for whitelisting here, and it has been retired — don't port it
-
-An earlier draft held up `_anchor_skip`'s two-kind exemption split (`sparse` = empty indefinitely, `pending` = empty until data lands, so it must expire) as the answer to the [Whitelisting](#whitelisting) question. The whole anchor apparatus was retired in `43074efe1` — `_dark_cols`, `_anchor_scan`, `_anchor_skip`, `_anchor_array`, seven checks and 51 exemption entries. `anchor_dark` fired only at `live = 0`, so a join breaking for half its rows passed silently, while a total break on a well-populated column would be caught by ordinary use. Its coverage was inversely correlated with its value, and six of its seven checks existed only to police the exemption list of the one doing the work.
-
-**The reason it needed an exemption list at all is the part that matters here, and it is not a lesson about exemptions.** A `sparse` entry meant "this facet is legitimately empty" — which in this doc's taxonomy is not an exemption, it is a **`gap` finding**. The list existed because the foundation has exactly one severity: a thing either gates or does not exist. Give the same finding a severity that never gates and the entry evaporates.
-
-The `pending` half dissolves the same way, and more sharply. `pending` meant "empty only until data lands", which required `expired_anchor_skip` to retire the entry once the facet went live. Under a non-gating severity none of that is needed: when the data lands the rule stops matching and the gap disappears on its own. `expired_anchor_skip` was machinery for un-suppressing something that a `gap` severity would never have suppressed.
-
-So the idea was not wrong, it was a workaround for gating a concern that should not gate — and the three-severity split is the better version of it. Exemptions genuinely remain for `violation` rules with real known-good exceptions, the "Alexandre Dumas is not a credit" case, where `stale_exception` above still applies. Expect those lists to be short, and treat one getting long as a signal about the rule rather than about the data.
-
-What replaced the sweep is a **command rather than a check**: `analysis columns <view>` / `--all` reports per-column row, NULL and blank counts across views and tables. The measurement `anchor_dark` was trying to make survives; what it sheds is the obligation to decide, at authoring time and permanently, which empty facets are allowed. That reinforces the severity design from the other direction — a legitimately empty facet is a row a reader judges, not something a gate has to be taught to excuse.
+`analysis columns <view>` / `--all` reports per-column row, NULL and blank counts across views and tables. That is the column-wise half of completeness; see [Row-level completeness](#row-level-completeness-is-the-missing-primitive) for the row-wise half it does not answer.
 
 **The mutation gate is the single highest-value thing in either repo**, and I'd argue it's more necessary for this layer than for the foundation self-test. The reasoning from catalog_mutations.tsv: a check that is broken and a check that is passing both return zero rows, and every defect ever found in that suite was a check that had silently become a no-op, usually via a comparison going NULL. Nearly every rule on your list is a NOT EXISTS / LEFT JOIN … IS NULL shape — precisely the shape that goes quietly no-op. And unlike the foundation, this layer runs against a catalog that patches are actively reshaping underneath it.
 
@@ -279,7 +300,7 @@ A field present on the variant and absent on its base is usually one of: a claim
 
 **Severity: review. 3 live hits.**
 
-`production_status: announced` on a model whose `year` is now in the past. These claims were correct when written and rot silently, and nothing in the current design expires. (An earlier draft said "except `pending` entries in `_anchor_skip`" — that mechanism is [retired](#_anchor_skip-was-the-model-for-whitelisting-here-and-it-has-been-retired--dont-port-it), so there is now no expiry anywhere in the stack.)
+`production_status: announced` on a model whose `year` is now in the past. These claims were correct when written and rot silently, and nothing anywhere in the stack expires.
 
 ```sql
 SELECT slug, name, year, production_status_slug FROM models
