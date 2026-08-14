@@ -745,6 +745,20 @@ CREATE OR REPLACE VIEW foundation_checks AS
     AND v.sql NOT LIKE '%live(%'
     AND v.sql NOT LIKE '%_live_%'
 
+  -- The base layer's one property: a `_live_*` view is a bare read of a single table. No
+  -- join, no aggregate, no derived column — which is what leaves it with no outgoing edge,
+  -- and what makes a cycle THROUGH it impossible rather than merely absent today. A join
+  -- added here restores the hazard the layer exists to remove, and restores it silently:
+  -- the view still returns the right rows, and the cycle only appears later, in whichever
+  -- unrelated view next tries to compose. A text match, with the limits of one — it catches
+  -- the shape going wrong, not a bare read that is somehow still wrong.
+  UNION ALL
+  SELECT 'base_view_not_flat', v.view_name
+  FROM duckdb_views() v
+  WHERE v.database_name = 'memory'
+    AND starts_with(v.view_name, '_live_')
+    AND (v.sql ILIKE '%join%' OR v.sql ILIKE '%group by%')
+
   -- live filter: models carries no soft-deleted row. Asserted against the PHYSICAL table
   -- rather than against a status column on the view, because the view no longer carries
   -- one — and comparing the view to its source is the stronger claim anyway.
