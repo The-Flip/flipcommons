@@ -639,7 +639,7 @@ CREATE OR REPLACE VIEW rewards AS
   SELECT rt2.machinemodel_id AS model_id, list_sort(list(rt.name)) AS rewards
   FROM fc.catalog_machinemodel_reward_types rt2
   JOIN reward_types rt ON rt.id = rt2.rewardtype_id
-  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = rt2.machinemodel_id)  -- live subjects
+  SEMI JOIN models s ON s.id = rt2.machinemodel_id
   GROUP BY rt2.machinemodel_id;
 COMMENT ON VIEW rewards IS
   'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
@@ -652,7 +652,7 @@ CREATE OR REPLACE VIEW themes AS
   SELECT mt.machinemodel_id AS model_id, list_sort(list(t.name)) AS themes
   FROM fc.catalog_machinemodel_themes mt
   JOIN _live_theme t ON t.id = mt.theme_id
-  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = mt.machinemodel_id)  -- live subjects
+  SEMI JOIN models s ON s.id = mt.machinemodel_id
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW themes IS
   'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, theme_vocab for questions about the vocabulary itself.';
@@ -674,7 +674,7 @@ CREATE OR REPLACE VIEW model_themes AS
   SELECT mt.machinemodel_id AS model_id, t.id AS theme_id, t.slug AS theme_slug
   FROM fc.catalog_machinemodel_themes mt
   JOIN _live_theme t ON t.id = mt.theme_id
-  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = mt.machinemodel_id);  -- live subjects
+  SEMI JOIN models s ON s.id = mt.machinemodel_id;
 COMMENT ON VIEW model_themes IS
   'One row per (live model, live theme) — the grain twin of themes; predicate and join on theme_slug. Direct attachments only, DAG not rolled up.';
 
@@ -753,7 +753,7 @@ CREATE OR REPLACE VIEW tags AS
   SELECT mt.machinemodel_id AS model_id, list_sort(list(tg.slug)) AS tags
   FROM fc.catalog_machinemodel_tags mt
   JOIN tag_vocab tg ON tg.id = mt.tag_id
-  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = mt.machinemodel_id)  -- live subjects
+  SEMI JOIN models s ON s.id = mt.machinemodel_id
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW tags IS
   'One row per tagged LIVE model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
@@ -779,7 +779,7 @@ CREATE OR REPLACE VIEW model_gameplay_features AS
     mgf.count           AS count
   FROM fc.catalog_machinemodelgameplayfeature mgf
   JOIN _live_gameplay_feature gf ON gf.id = mgf.gameplayfeature_id
-  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = mgf.machinemodel_id);  -- live subjects
+  SEMI JOIN models s ON s.id = mgf.machinemodel_id;
 COMMENT ON VIEW model_gameplay_features IS
   'One row per (live model, gameplay feature) with its optional count (Flippers x2, Trap Holes x25) — the counted grain. Direct attachments only, DAG not rolled up.';
 
@@ -937,8 +937,8 @@ CREATE OR REPLACE VIEW model_relationships AS
     NULLIF(r.target_label, '') AS target_label,
     tgt.* EXCLUDE (id)
   FROM fc.catalog_modelrelationship r
-  LEFT JOIN _model_target tgt ON tgt.id = r.target_machine_id   -- resolved target, if live
-  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = r.machine_model_id);  -- live subjects only
+  SEMI JOIN models s ON s.id = r.machine_model_id
+  LEFT JOIN _model_target tgt ON tgt.id = r.target_machine_id;  -- resolved target, if live
 
 COMMENT ON VIEW model_relationships IS
   'One row per typed ModelRelationship edge — multi-valued, closed relationship_type and license_status vocabularies, target either a resolved model or a free-text label. A component of model_edges.';
@@ -958,8 +958,8 @@ CREATE OR REPLACE VIEW model_export_markets AS
     c.name                              AS target_country_name,
     NULLIF(em.target_market_label, '')  AS target_label
   FROM fc.catalog_modelexportmarket em
-  LEFT JOIN locations c ON c.id = em.target_market_location_id AND c.is_country
-  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = em.machine_model_id);
+  SEMI JOIN models s ON s.id = em.machine_model_id
+  LEFT JOIN locations c ON c.id = em.target_market_location_id AND c.is_country;
 COMMENT ON VIEW model_export_markets IS
   'One row per export destination of a live model — the target is a LOCATION, not a model, so this is NOT part of model_edges. The target ladder is optional: a country, a free-text region, or neither.';
 
