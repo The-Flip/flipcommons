@@ -251,10 +251,16 @@ CREATE OR REPLACE VIEW claims AS
          THEN coalesce(json_extract_string(c.value, '$.exists'), 'true') <> 'false'
     END                                           AS member_exists,
     r.ref_id                                      AS ref_id,
+    -- The eligibility test is stated twice — nulling the rank AND partitioning by it — and
+    -- the two must agree. row_number() numbers every row it is given, so testing only in
+    -- the CASE lets an ineligible claim consume 1 and leaves the real winner at 2, with
+    -- `rank = 1` naming nothing. `rank_not_dense` holds the pair in step.
     CASE WHEN c.is_active
           AND a.actor_resolution_status IS DISTINCT FROM 'suppressed'
          THEN row_number() OVER (
-                PARTITION BY c.content_type_id, c.object_id, p.register
+                PARTITION BY c.content_type_id, c.object_id, p.register,
+                             c.is_active
+                               AND a.actor_resolution_status IS DISTINCT FROM 'suppressed'
                 ORDER BY a.actor_priority DESC, c.created_at DESC, c.id DESC)
     END                                           AS rank,
     c.is_active                                   AS is_active,

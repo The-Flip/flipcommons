@@ -114,6 +114,19 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   GROUP BY subject_type, subject_id, register
   HAVING count(*) > 1
 
+  -- ...and the other half: a partition with eligible claims has a rank 1 AT ALL. This is
+  -- the silent direction — too many winners fans a join out, while none makes `rank = 1`
+  -- return nothing, which reads as "no claim here" and drops the subject from an
+  -- attribution answer. Asserted as DENSITY, not `min(rank) = 1`: ranks come from one
+  -- sequence, so whether the hole lands at the front or the middle is an accident of sort.
+  UNION ALL
+  SELECT 'rank_not_dense',
+         'subject=' || subject_type || ':' || subject_id::VARCHAR || ' register=' || register
+           || ' ranked=' || count(rank)::VARCHAR || ' max_rank=' || max(rank)::VARCHAR
+  FROM claims
+  GROUP BY subject_type, subject_id, register
+  HAVING count(rank) > 0 AND max(rank) IS DISTINCT FROM count(rank)
+
   -- A suppressed actor never ranks — that is the kill switch ranked_claims implements
   -- by excluding them, and `rank` is NULL for exactly that reason.
   UNION ALL
