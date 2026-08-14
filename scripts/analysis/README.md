@@ -7,7 +7,6 @@ This is how to use our DuckDB analytics layer to explore the Flipcommons localho
 **A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks. Consequences:
 
 - **A view is not its table.** `models` is live-filtered and denormalized across a dozen joins; `tags` is keyed by model while `tag_vocab` is keyed by tag. Matching names do not mean matching columns or matching grain.
-- **A view may not carry all fields.** Absence may mean nobody has promoted it yet. Inspect the Django model and promote fields when required.
 
 ## Quick start
 
@@ -75,7 +74,13 @@ Found a phrasing the catalog lacks? Add it with a [data patch](../../docs/DataPa
 
 Claims and patch entries name their subject polymorphically — `subject_type` plus a bare integer `subject_id` — and models are only the dominant type, not the only one. `entity_subjects` resolves the pair, so `claims` and everything built on it carry `subject_public_id`, `subject_name` and `subject_status` for a person, theme or location subject exactly as for a model. A per-type entity view can't do that job: joining one needs the type known in advance.
 
+`subject_type` is spelled the way the app spells an entity — `person`, `model`, `corporate-entity` — not the way a Django content type stores it. `entity_registry` is the full vocabulary, and translates to and from the physical `catalog.person` / `catalog_person` spellings.
+
 `model_slug` / `model_status` on the `patch_*` views are the narrower pair and stay narrow: NULL on every non-model row, by design, so `WHERE model_slug = …` can't admit a Title that happens to share the slug. Reach for `subject_*` unless the query is specifically about models.
+
+### A claim's asserted value is `value_text`, not `value`
+
+`claims.value` is raw JSON, which keeps `"500"` apart from `500`, and both spellings are in the data for the same field. 73 claims assert `production_quantity = 500` — `value = '500'` finds one, `value = '"500"'` finds 72, and neither query looks wrong. `value_text` folds both, and folds `''` to NULL. It is NULL on membership and list claims, which have no scalar to report; use `member_exists` and `ref_id` for those.
 
 ### Liveness is the default
 

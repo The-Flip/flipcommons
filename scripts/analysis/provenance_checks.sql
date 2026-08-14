@@ -147,19 +147,30 @@ CREATE OR REPLACE VIEW _provenance_checks AS
         IS DISTINCT FROM (SELECT count(*) FROM changesets)
 
   -- ─── Subject resolution ──────────────────────────────────────────────────
-  -- Every claim's subject resolves through `entity_subjects`. The join there is LEFT, so
-  -- failure costs no rows — it NULLs subject_public_id/name/status, and a consumer gets
-  -- an anonymous claim rather than an error. This is what stands behind that view being a
-  -- hand-written union: a branch forgotten for a new entity, one keyed to the wrong
-  -- constant, and a subject row that no longer exists all surface here. Zero today.
+  -- Every claim's subject resolves through `entity_subjects`. Both joins in `claims` are
+  -- LEFT, so failure costs no rows — it NULLs subject_type and subject_public_id/name/
+  -- status, and a consumer gets an anonymous claim rather than an error. Two ways in: a
+  -- content type absent from `entity_registry`, and a subject row that no longer exists.
+  -- Zero today.
   --
   -- NOT EXISTS, not `subject_public_id IS NULL`: the claim is that the SUBJECT resolves, and
   -- the cheaper spelling stops meaning that as soon as a nullable column joins the set —
   -- `subject_status` already is one.
+  --
+  -- The fallback names the content type because `entity_registry` has no name for an
+  -- unregistered subject. A scalar subquery, so it runs per reported row, not per scan.
+  -- A NULL anywhere in the concatenation blanks the whole detail, hence both coalesces.
   UNION ALL
   SELECT 'unresolved_claim_subject',
          'claim_id=' || c.claim_id::VARCHAR
-           || ' subject=' || c.subject_type || ':' || c.subject_id::VARCHAR
+           || ' subject=' || coalesce(
+                c.subject_type,
+                'UNREGISTERED[' || coalesce((SELECT ct.app_label || '.' || ct.model
+                                             FROM fc.provenance_claim pc
+                                             JOIN fc.django_content_type ct
+                                               ON ct.id = pc.content_type_id
+                                             WHERE pc.id = c.claim_id), '?') || ']')
+           || ':' || c.subject_id::VARCHAR
   FROM claims c
   WHERE NOT EXISTS (SELECT 1 FROM entity_subjects e
                     WHERE e.subject_type = c.subject_type

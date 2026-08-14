@@ -177,8 +177,11 @@ CREATE OR REPLACE VIEW _claim_ref AS
 
 -- ─── claims ────────────────────────────────────────────────────────────────
 -- The spine of this file. One row per claim across EVERY subject type — 21 of them, so
--- the content-type decode is generic (subject_type = 'catalog.machinemodel') and no
--- per-entity list appears anywhere here.
+-- the content-type decode is generic and no per-entity list appears anywhere here.
+--
+-- THE decode point: a content type spells the subject `catalog.machinemodel`,
+-- `entity_registry` translates it, and the Django spelling survives in exactly one join
+-- predicate below. `subject_type = 'person'` is the query that works.
 --
 -- NOT LIVE-FILTERED, deliberately, and the one place this file departs from the rest of
 -- the foundation. Provenance of a soft-deleted record is legitimate history (39 claims
@@ -193,7 +196,12 @@ CREATE OR REPLACE VIEW _claim_ref AS
 --
 --   register / is_member : see the register block above. Predicate on `register` when
 --             asking "what competed"; `field_name` when asking "what kind of fact".
---   value   : the raw asserted JSON, as stored.
+--   value   : the raw asserted JSON, for the member and list shapes that have no scalar
+--             spelling. Anything else wants value_text.
+--   value_text : the SCALAR value as text, and the column to predicate on. JSON keeps
+--             `"500"` apart from `500` and both are in the data for the same field, so
+--             `value = '500'` finds ONE of the 73 claims asserting production_quantity =
+--             500 and `value = '"500"'` finds 72. NULL for a member or a list claim.
 --   member_exists : NULL for a scalar. For a member, FALSE means a TOMBSTONE — this
 --             actor asserts the member is ABSENT. 119 active claims say this today, and
 --             a membership query that ignores it reports the exact opposite of the
@@ -230,7 +238,7 @@ CREATE OR REPLACE VIEW _claim_ref AS
 CREATE OR REPLACE VIEW claims AS
   SELECT
     c.id                                          AS claim_id,
-    ct.app_label || '.' || ct.model               AS subject_type,
+    er.entity_type                                AS subject_type,
     c.object_id                                   AS subject_id,
     e.subject_public_id, e.subject_name, e.subject_status,
     c.field_name                                  AS field_name,
@@ -238,6 +246,7 @@ CREATE OR REPLACE VIEW claims AS
     p.register                                    AS register,
     p.is_member                                   AS is_member,
     c.value                                       AS value,
+    json_scalar_text(c.value)                     AS value_text,
     CASE WHEN p.is_member
          THEN coalesce(json_extract_string(c.value, '$.exists'), 'true') <> 'false'
     END                                           AS member_exists,
@@ -263,9 +272,11 @@ CREATE OR REPLACE VIEW claims AS
     c.created_at                                  AS created_at
   FROM fc.provenance_claim c
   JOIN fc.django_content_type ct   ON ct.id = c.content_type_id
-  -- LEFT, though every claim resolves today: an inner join would silently drop a claim
-  -- whose subject row vanished. `unresolved_claim_subject` reports that and names it.
-  LEFT JOIN entity_subjects e      ON e.subject_type = ct.app_label || '.' || ct.model
+  -- Both LEFT, though every claim resolves today: an inner join would silently drop a
+  -- claim whose subject type is unregistered or whose subject row vanished. Either way
+  -- `subject_type` lands NULL and the checks report it.
+  LEFT JOIN entity_registry er     ON er.django_label = ct.app_label || '.' || ct.model
+  LEFT JOIN entity_subjects e      ON e.subject_type = er.entity_type
                                   AND e.subject_id = c.object_id
   JOIN _claim_key_parts p          ON p.claim_id = c.id
   JOIN fc.provenance_changeset cs  ON cs.id = c.changeset_id
@@ -276,7 +287,7 @@ CREATE OR REPLACE VIEW claims AS
   LEFT JOIN fc.provenance_changeset cs_r ON cs_r.id = c.retracted_by_changeset_id
   LEFT JOIN fc.provenance_ingestrun ir_r ON ir_r.id = cs_r.ingest_run_id;
 COMMENT ON VIEW claims IS
-  'One row per claim, every subject type — who asserted what, with the subject resolved (subject_public_id/name/status), rank, member_exists, ref_id, ingest source, changeset and patch_id, plus the changeset/patch that later retracted it. NOT live-filtered; use model_claims for the live-model lens.';
+  'One row per claim, every subject type — who asserted what, with the subject resolved (subject_public_id/name/status), rank, member_exists, ref_id, ingest source, changeset and patch_id, plus the changeset/patch that later retracted it. Predicate on value_text, not value: JSON keeps "500" and 500 apart and both write paths are in the data. NOT live-filtered; use model_claims for the live-model lens.';
 
 -- model_claims — claims about LIVE machine models, keyed model_id so it joins straight
 -- to `models` and the grain views. The live-only lens `claims` deliberately isn't, and
@@ -306,7 +317,7 @@ COMMENT ON VIEW claims IS
 CREATE OR REPLACE VIEW model_claims AS
   SELECT c.*, c.subject_id AS model_id, c.subject_public_id AS model_slug
   FROM claims c
-  WHERE c.subject_type = 'catalog.machinemodel'
+  WHERE c.subject_type = 'model'
     AND EXISTS (SELECT 1 FROM models m WHERE m.id = c.subject_id);
 COMMENT ON VIEW model_claims IS
   'One row per claim about a LIVE machine model, keyed model_id to join and model_slug to emit, with the model also as subject_public_id/subject_name — the live lens on claims. Join to a model grain view on (model_id, field_name, ref_id) to attribute a resolved fact to its ingest source.';

@@ -235,6 +235,17 @@ VALUES (1, 'live-null-status', 'A', '',    0, NULL,      '2020-01-01', '2020-01-
        (2, 'live-active',      'B', 'has', 1, 'active',  '2020-01-01', '2020-01-01'),
        (3, 'soft-deleted',     'C', 'has', 2, 'deleted', '2020-01-01', '2020-01-01');
 
+-- _fx_claim_value — the JSON shapes a claim value comes in, for json_scalar_text.
+CREATE OR REPLACE TABLE _fx_claim_value AS
+  SELECT id, value FROM fc.provenance_claim LIMIT 0;
+INSERT INTO _fx_claim_value (id, value)
+VALUES (1, '"500"'),            -- one asserted value, the two spellings both write paths
+       (2, '500'),              --   produce
+       (3, '""'),               -- absent, the blank= spelling
+       (4, 'null'),             -- absent, the nullable spelling
+       (5, '{"exists":true}'),  -- shapes with no scalar, which must not be serialized
+       (6, '["Widebody"]');     --   into one
+
 -- foundation_summary — row count per public view; doubles as a health dashboard.
 --
 -- The counting is done by UNIONing one LABELLED ROW per view row and grouping, rather
@@ -306,6 +317,7 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'people'              FROM people
     UNION ALL SELECT 'title_size'          FROM title_size
     UNION ALL SELECT 'domain_vocab'        FROM domain_vocab
+    UNION ALL SELECT 'entity_registry'     FROM entity_registry
     UNION ALL SELECT 'entity_subjects'     FROM entity_subjects
     UNION ALL SELECT 'claims'              FROM claims
     UNION ALL SELECT 'model_claims'        FROM model_claims
@@ -689,6 +701,15 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE (SELECT description FROM live('_fx_lifecycle') WHERE id = 1) IS NOT NULL
      OR (SELECT description FROM live('_fx_lifecycle') WHERE id = 2) IS DISTINCT FROM 'has'
 
+  -- One expected-vs-actual string, so a regression names what it produced.
+  UNION ALL
+  SELECT 'fixture_json_scalar_text',
+         (SELECT string_agg(coalesce(json_scalar_text(value), '<NULL>'), ',' ORDER BY id)
+          FROM _fx_claim_value)
+  WHERE (SELECT string_agg(coalesce(json_scalar_text(value), '<NULL>'), ',' ORDER BY id)
+         FROM _fx_claim_value)
+        IS DISTINCT FROM '500,500,<NULL>,<NULL>,<NULL>,<NULL>'
+
   -- ── the OUTCOME, asserted across every entity view at once ──
   -- The fixtures prove the macro; these prove it was actually applied. A view that
   -- hand-rolls its own projection and forgets is caught here regardless of how it is
@@ -919,10 +940,19 @@ CREATE OR REPLACE VIEW foundation_checks AS
   FROM credits
   WHERE subject_id IS NULL
      OR CASE subject_type
-          WHEN 'catalog.machinemodel' THEN subject_id NOT IN (SELECT id FROM models)
-          WHEN 'catalog.series'       THEN subject_id NOT IN (SELECT id FROM series)
+          WHEN 'model' THEN subject_id NOT IN (SELECT id FROM models)
+          WHEN 'series'       THEN subject_id NOT IN (SELECT id FROM series)
           ELSE true
         END
+
+  -- VOCABULARY — the subject types `credits` emits are types this layer knows. Not the
+  -- guard: the resolution check above already fails closed on an unrecognized value. This
+  -- is the DIAGNOSIS, one row naming the value against 7,251 naming individual credits.
+  -- `IS NULL OR NOT IN` per the house rule at the top of this view.
+  UNION ALL
+  SELECT 'unregistered_subject_type', coalesce(v, 'NULL')
+  FROM (SELECT DISTINCT subject_type AS v FROM credits)
+  WHERE v IS NULL OR v NOT IN (SELECT entity_type FROM entity_registry)
 
   -- POPULATION — every credit whose subject, person and role are all live is HERE,
   -- compared against the independent physical count above. This is the check for the
