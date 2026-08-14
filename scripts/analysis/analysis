@@ -510,14 +510,23 @@ EOF
     [ -n "$view" ] || [ -n "$all" ] || { echo "columns needs a <view> or --all" >&2; exit 2; }
     resolve_and_cd "$sql"
 
-    # The view list is derived HERE, in the shell, and that is the whole reason this is a
-    # command and not a check. A SQL view cannot iterate relations — query_table() takes
-    # literals only — so the same measurement written as a check needs one hand-written
-    # UNION branch per view plus a meta-check to keep that list honest. See EDITING.md.
+    # The relation list is derived HERE, in the shell, and that is the whole reason this
+    # is a command and not a check. A SQL view cannot iterate relations — query_table()
+    # takes literals only — so the same measurement written as a check needs one
+    # hand-written UNION branch per relation plus a meta-check to keep that list honest.
+    # See EDITING.md.
+    # TABLES as well as views, on `browse`'s reasoning: an analysis materializes an
+    # expensive intermediate as a table so downstream views don't recompute it, and those
+    # are the big relations where a stray '' is least likely to be caught by eye. Sweeping
+    # only views would under-report exactly there, and silently.
     views=$(duckdb -init "$analysis_file" -noheader -list :memory: \
-      "SELECT view_name FROM duckdb_views() $pub_where
-         ${view:+AND view_name = '$view'} ORDER BY view_name;")
-    [ -n "$views" ] || { echo "no such public view: $view" >&2; exit 2; }
+      "SELECT view_name AS rel FROM duckdb_views() $pub_where
+         ${view:+AND view_name = '$view'}
+       UNION ALL
+       SELECT table_name FROM duckdb_tables() $pub_table_where
+         ${view:+AND table_name = '$view'}
+       ORDER BY rel;")
+    [ -n "$views" ] || { echo "no such public view or table: $view" >&2; exit 2; }
 
     branches=
     for v in $views; do
