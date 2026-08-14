@@ -112,6 +112,8 @@ The `pending` half dissolves the same way, and more sharply. `pending` meant "em
 
 So the idea was not wrong, it was a workaround for gating a concern that should not gate — and the three-severity split is the better version of it. Exemptions genuinely remain for `violation` rules with real known-good exceptions, the "Alexandre Dumas is not a credit" case, where `stale_exception` above still applies. Expect those lists to be short, and treat one getting long as a signal about the rule rather than about the data.
 
+What replaced the sweep is a **command rather than a check**: `analysis columns <view>` / `--all` reports per-column row, NULL and blank counts across views and tables. The measurement `anchor_dark` was trying to make survives; what it sheds is the obligation to decide, at authoring time and permanently, which empty facets are allowed. That reinforces the severity design from the other direction — a legitimately empty facet is a row a reader judges, not something a gate has to be taught to excuse.
+
 **The mutation gate is the single highest-value thing in either repo**, and I'd argue it's more necessary for this layer than for the foundation self-test. The reasoning from catalog_mutations.tsv: a check that is broken and a check that is passing both return zero rows, and every defect ever found in that suite was a check that had silently become a no-op, usually via a comparison going NULL. Nearly every rule on your list is a NOT EXISTS / LEFT JOIN … IS NULL shape — precisely the shape that goes quietly no-op. And unlike the foundation, this layer runs against a catalog that patches are actively reshaping underneath it.
 
 ## Rules
@@ -353,7 +355,7 @@ A rule shaped as **"this row deviates from N of M comparable rows"** needs no ma
 
 The [cross-actor disagreement](#cross-actor-disagreement) rule unscoped returns **525 models** — a backlog nobody reads. Scoped to claims written by patches ≥ 0215 it returns **3 rows**, and all three were conflicts the campaign's family notes had already flagged by hand. Identical SQL, one predicate different.
 
-That is the concrete case for [Audit a particular area](#audit-a-particular-area), and it suggests the scope predicate should be **one shared mechanism every rule consumes** rather than something each rule reimplements — both because copy-pasted predicates diverge subtly, and because per-rule scoping fights the [Easy to author](#easy-to-author) goal.
+That is the concrete case for [Apply rules to a particular area](#apply-rules-to-a-particular-area), and it suggests the scope predicate should be **one shared mechanism every rule consumes** rather than something each rule reimplements — both because copy-pasted predicates diverge subtly, and because per-rule scoping fights the [Easy to author](#easy-to-author) goal.
 
 ### Check whether the apply engine already prevents it — but don't trust a guard's coverage
 
@@ -422,7 +424,7 @@ Decisions a designer still needs to make.
 
 - **Gaps are described as "tracked as a trend" and this layer has nowhere to keep a trend.** Nothing is persisted, `*.duckdb` is gitignored, and `analysis_context` exists precisely because what's reproducible is queries and not results. Either drop the trend and treat gaps as a worklist you query, or introduce a committed summary artifact — a new artifact class for this layer.
 - **What does the spine call an entity type?** `subject_type` holds Django's `catalog.person`, and a session guessing `'person'` got zero rows and read it as a clean pass. Expose the project's own entity key, or carry both.
-- **Is the exemption count a diagnosis or a design-time test?** See [the two caveats](#two-caveats-on-the-exemption-count).
+- ~~Is the exemption count a diagnosis or a design-time test?~~ Settled: [a diagnosis](#the-count-is-a-diagnosis-not-a-design-time-test).
 
 ### Answered
 
@@ -455,7 +457,21 @@ Measured both directions against the current `catalog_checks.sql`:
 | the `live()` fixtures           | input the fixture supplies itself      | 0          |
 | `anchor_dark` (retired)         | "is this column entirely empty"        | 51         |
 
-`anchor_dark` could not tell a broken join from a facet nobody populates, and 51 entries is what that costs. A second probe: pinning "no public view column may hold `''`" needs ~60 entries, and a differently-formulated attempt at the same underlying concern — a text match for a bare `fc.` reference — needs 38, because 38 of 68 views legitimately carry one.
+`anchor_dark` could not tell a broken join from a facet nobody populates, and 51 entries is what that costs.
+
+### A long list is a symptom of three different diseases
+
+The first version of this argument set `anchor_dark`'s 51 against two other rules with similar-looking counts and read the similarity as a wall. Re-audited, the three fail in three unrelated ways, and only the last is what the principle is about:
+
+| rule                          | count          | what the count means                                                      |
+| ----------------------------- | -------------- | ------------------------------------------------------------------------- |
+| no public view column is `''` | 66 + **1**     | mechanical — 66 `UNION` branches enumerating subjects, one real exemption |
+| bare `fc.` reference          | 38 of 68 views | predicate aimed at the wrong thing                                        |
+| `anchor_dark`                 | 51             | irreducible variety — the only one the principle describes                |
+
+The `''` rule's 66 is an _enumeration_, not a set of exemptions: SQL cannot iterate relations, so `query_table()` needs literals. The obstacle vanishes outside SQL, which is why the same measurement runs fine as `analysis columns`. The bare-`fc.` rule's 38 is not variety resisting discrimination either — a semantic layer over an attached database reads that database, so the predicate never described the defect.
+
+**So before reading a count as evidence, check what kind of thing is being counted.** Enumeration, mis-aimed predicate and irreducible variety produce similar numbers and take three different fixes: none, reformulate, downgrade the severity.
 
 Running this doc's candidates through it, that session's read:
 
@@ -463,14 +479,16 @@ Running this doc's candidates through it, that session's read:
 - **`scalar_type_disagreement` reads like a violation but isn't.** Its self-tuning form is minority-flagging over a population, so `review`.
 - **Everything else is `review` or `gap`** — vocabulary descriptions, cross-actor disagreement, uncited claims, title-sibling gaps, variant carry, orphan leaves, decaying facts. The prototype's own measurement supports the title-sibling one: "no edge to explain the asymmetry" turned out not to be the noise filter this doc assumed.
 
-### Two caveats on the exemption count
+### The count is a diagnosis, not a design-time test
 
-The principle holds. The count is a good symptom of it and a poor test, for two reasons worth knowing before leaning on it:
+**Decide a new rule's severity by asking the structural-versus-heuristic question directly.** That is the thing you actually want to know and it is answerable before any exemption exists. The count then earns its keep as the tripwire for a rule that was classified structural and turned out not to be.
 
-- **It conflates two failure modes with opposite prescriptions.** A long exemption list can mean the predicate is a bad proxy for the rule (reformulate it) or that the population genuinely contains legitimate variety (downgrade the severity). The `''`-versus-`fc.` probe above is offered as one concern in two formulations hitting one wall, but 38 of 68 views legitimately referencing `fc.` in a semantic layer over an attached database reads more like a mis-aimed predicate than like irreducible variety. Same count, different fix.
-- **It cannot classify a rule that has no exemptions yet.** The count is observable only after someone writes the exemptions, so a rule born at zero rows scores zero and the test says nothing. That is exactly `Missing parents`, nominated above as the one clean violation — on judgment ("no legitimate exception expected"), not on the metric. A related gap: narrowing a rule's population makes exemptions vanish without improving the predicate at all, which is what `anchor_dark` restricted to non-sparse columns would have looked like.
+Two reasons not to run it the other way round:
 
-Use it to diagnose a rule that is already misbehaving. Don't use it to decide a new rule's severity — for that, ask the structural-versus-heuristic question directly.
+- **It is silent exactly when severity is hardest to call.** The count is observable only once someone has written exemptions, so a rule born at zero rows scores zero and the metric says nothing. `Missing parents` is the proof: it is nominated above as the one clean violation on judgment — "no legitimate exception expected" — and the metric never reached that conclusion.
+- **It is gameable by scope.** Narrowing a rule's population makes exemptions vanish without the predicate improving at all. `anchor_dark` restricted to non-sparse columns would have scored 0 and been exactly as weak.
+
+The principle itself survives all of this unchanged; it is only the count as evidence that was doing more work than it could bear.
 
 ## Proof: fixtures and mutations are a pair
 
