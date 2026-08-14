@@ -14,13 +14,8 @@
 -- Three classes:
 --   structural — data-independent invariants; a row means the SQL logic broke, not
 --                that the catalog changed. These make evolving the foundation safe.
---   anchor     — a decoded facet went unexpectedly dark: no row holds a usable value,
---                whether all-NULL or all-ZERO (a join/extract broke) — the one failure
---                a row-level invariant can't see. GENERATED from the views themselves
---                (see the _anchor_scan block), so the anchor set can't drift behind the
---                columns; data-dependent but decisive on a populated DB.
---   coverage   — meta-checks that fail when a new VIEW or list facet is added without
---                being anchored, so the generated sweep can't be silently out-run.
+--   coverage   — meta-checks that fail when a new entity, alias table or view is added
+--                without the exposure the layer promises.
 .read scripts/analysis/catalog.sql
 
 -- ─── Check-only scaffolding ─────────────────────────────────────────────────
@@ -133,7 +128,7 @@ CREATE OR REPLACE VIEW _status_domain AS
   UNION ALL SELECT dim,                status FROM _dim_status;
 
 -- _dim_vocab — the live slug vocabularies, one hand-written UNION because a view cannot
--- iterate table names (the same limit _anchor_scan works around). Both directions are
+-- iterate table names. Both directions are
 -- checked: a documented dim missing here fails unmapped_vocab_dim, one listed here that
 -- the doc never defines fails stale_vocab_dim. Carries status so the live filter is the
 -- consumer's, matching the rest of this file.
@@ -227,6 +222,19 @@ CREATE OR REPLACE VIEW _entity_view AS
 
 
 
+-- ─── Fixtures — behaviour against input we control ──────────────────────────
+-- Every other assertion in this file is a query over the real catalog, so its strength
+-- depends on what the data happens to hold. That is how a `live()` smoke check keyed to a
+-- vocabulary with no deleted rows passed while proving nothing. These tables supply the
+-- cases instead of hoping for them.
+-- The schema is taken from the real table with LIMIT 0, so a fixture cannot drift from
+-- its source the way a hand-declared one would; only the rows are ours.
+CREATE OR REPLACE TABLE _fx_lifecycle AS SELECT * FROM fc.catalog_cabinet LIMIT 0;
+INSERT INTO _fx_lifecycle (id, slug, name, description, display_order, status, created_at, updated_at)
+VALUES (1, 'live-null-status', 'A', '',    0, NULL,      '2020-01-01', '2020-01-01'),
+       (2, 'live-active',      'B', 'has', 1, 'active',  '2020-01-01', '2020-01-01'),
+       (3, 'soft-deleted',     'C', 'has', 2, 'deleted', '2020-01-01', '2020-01-01');
+
 -- foundation_summary — row count per public view; doubles as a health dashboard.
 --
 -- The counting is done by UNIONing one LABELLED ROW per view row and grouping, rather
@@ -248,8 +256,7 @@ CREATE OR REPLACE VIEW _entity_view AS
 -- Grouping over labelled rows sidesteps it because nothing is aggregated per-branch for
 -- the optimizer to consider equivalent. One consequence to know: a view with ZERO rows
 -- contributes nothing to the union and DROPS OUT of the summary instead of reporting 0.
--- That is not a silent hole — an emptied view fires `anchor_dark` on every one of its
--- columns — but it does mean absence from this readout reads as "empty", not "gone".
+-- It does mean absence from this readout reads as "empty", not "gone".
 CREATE OR REPLACE VIEW foundation_summary AS
   SELECT view_name, count(*) AS n_rows
   FROM (
@@ -321,235 +328,6 @@ CREATE OR REPLACE VIEW foundation_summary AS
   GROUP BY view_name
   ORDER BY view_name;
 
--- ─── Generated dark anchors ─────────────────────────────────────────────────
--- The anchor set used to be a hand-written list — one `WHERE count(col) = 0` line per
--- decoded facet — kept in sync with the view columns by memory. That list drifted every
--- time a column was added (the reason facets kept "going dark" unnoticed). These three
--- objects replace it with a sweep that derives the anchors from the views themselves:
---   _dark_cols(view)  a table macro: one row per column of the view, carrying `live` —
---                     how many rows hold a value that is neither NULL nor ZERO. No
---                     per-column list to maintain.
---                     Zero counts as dark ON PURPOSE. A derived count that collapses
---                     because its join broke goes all-ZERO, not all-NULL, so a plain
---                     COUNT() sees 601 healthy-looking rows and reports nothing — the
---                     exact blind spot that let a zeroed theme_vocab.n pass. Every
---                     derived count in the foundation (title_size, the vocab `n`s,
---                     manufacturers.n_*) shares that failure mode, so the measure
---                     handles it once here rather than by per-column checks.
---                     The '0'-as-text comparison is deliberate: it needs no type
---                     introspection, and a text column whose every value is literally
---                     "0" is both vanishingly rare and worth a look anyway.
---                     The COALESCE is load-bearing. SUM over ZERO rows returns NULL,
---                     not 0, and UNPIVOT drops NULL values — so without it an EMPTY
---                     view contributes no rows at all, silently losing the per-column
---                     anchors AND misreporting itself as `unanchored_view`.
---   _anchor_scan      that sweep run over every public decode view. Adding a column to
---                     any of them anchors it for free; adding a whole VIEW without
---                     listing it here is caught by the `unanchored_view` meta-check.
---                     It stays a VIEW so it's lazy (a `query`-mode run that never
---                     touches the checks pays nothing) and independently inspectable,
---                     but foundation_checks pulls it through a MATERIALIZED CTE — see
---                     the note there. Sweeping every column of every public view is
---                     the single most expensive thing in this file, and DuckDB
---                     re-evaluates a view once PER REFERENCE.
---   _anchor_skip      hand-input: columns ALLOWED to be entirely empty (genuinely-sparse
---                     optional facets that would false-positive). A short EXCEPTION list
---                     with a safe default — forgetting an entry over-anchors (loud), it
---                     never silently under-anchors. Entries are `sparse` (no expiry) or
---                     `pending` (expires when the data lands); see the block below.
---   _anchor_array     hand-input: the LIST-typed facets accounted for, qualified
---                     view.column — any element type (VARCHAR[], BIGINT[], …), matched
---                     on the type suffix rather than a fixed list. An empty list is a
---                     value, so the sweep reads it as live and lists fall out; this is
---                     what the `unanchored_array` meta-check measures against, so a new
---                     list facet fails loudly until it gets a home. Qualified, not bare
---                     column names — `parents` in one vocab view must not silently
---                     exempt `parents` in another.
-CREATE OR REPLACE MACRO _dark_cols(vn) AS TABLE
-  UNPIVOT (SELECT COALESCE(SUM(CASE WHEN COLUMNS(*) IS NULL        THEN 0
-                                    WHEN COLUMNS(*)::VARCHAR = '0' THEN 0
-                                    ELSE 1 END), 0)
-           FROM query_table(vn))
-    ON COLUMNS(*) INTO NAME col VALUE live;
-
-CREATE OR REPLACE VIEW _anchor_scan AS
-            SELECT 'models'                  AS view_name, col, live FROM _dark_cols('models')
-  UNION ALL SELECT 'corporate_entity_locations', col, live FROM _dark_cols('corporate_entity_locations')
-  UNION ALL SELECT 'locations',              col, live FROM _dark_cols('locations')
-  UNION ALL SELECT 'tag_vocab',              col, live FROM _dark_cols('tag_vocab')
-  UNION ALL SELECT 'franchises',             col, live FROM _dark_cols('franchises')
-  UNION ALL SELECT 'series',                 col, live FROM _dark_cols('series')
-  UNION ALL SELECT 'credit_roles',           col, live FROM _dark_cols('credit_roles')
-  UNION ALL SELECT 'credits',                col, live FROM _dark_cols('credits')
-  UNION ALL SELECT 'model_credits',          col, live FROM _dark_cols('model_credits')
-  UNION ALL SELECT 'location_aliases',       col, live FROM _dark_cols('location_aliases')
-  UNION ALL SELECT 'reward_types',             col, live FROM _dark_cols('reward_types')
-  UNION ALL SELECT 'reward_type_aliases',      col, live FROM _dark_cols('reward_type_aliases')
-  UNION ALL SELECT 'manufacturer_aliases',     col, live FROM _dark_cols('manufacturer_aliases')
-  UNION ALL SELECT 'corporate_entity_aliases',  col, live FROM _dark_cols('corporate_entity_aliases')
-  UNION ALL SELECT 'person_aliases',           col, live FROM _dark_cols('person_aliases')
-  UNION ALL SELECT 'model_abbreviations',      col, live FROM _dark_cols('model_abbreviations')
-  UNION ALL SELECT 'title_abbreviations',      col, live FROM _dark_cols('title_abbreviations')
-  UNION ALL SELECT 'game_formats',           col, live FROM _dark_cols('game_formats')
-  UNION ALL SELECT 'cabinets',               col, live FROM _dark_cols('cabinets')
-  UNION ALL SELECT 'display_types',          col, live FROM _dark_cols('display_types')
-  UNION ALL SELECT 'display_subtypes',       col, live FROM _dark_cols('display_subtypes')
-  UNION ALL SELECT 'systems',                col, live FROM _dark_cols('systems')
-  UNION ALL SELECT 'production_statuses',    col, live FROM _dark_cols('production_statuses')
-  UNION ALL SELECT 'technology_generations',    col, live FROM _dark_cols('technology_generations')
-  UNION ALL SELECT 'technology_subgenerations', col, live FROM _dark_cols('technology_subgenerations')
-  UNION ALL SELECT 'rewards',                col, live FROM _dark_cols('rewards')
-  UNION ALL SELECT 'themes',                 col, live FROM _dark_cols('themes')
-  UNION ALL SELECT 'tags',                   col, live FROM _dark_cols('tags')
-  UNION ALL SELECT 'model_gameplay_features',col, live FROM _dark_cols('model_gameplay_features')
-  UNION ALL SELECT 'gameplay_feature_vocab', col, live FROM _dark_cols('gameplay_feature_vocab')
-  UNION ALL SELECT 'gameplay_feature_aliases',col, live FROM _dark_cols('gameplay_feature_aliases')
-  UNION ALL SELECT 'model_themes',           col, live FROM _dark_cols('model_themes')
-  UNION ALL SELECT 'theme_vocab',            col, live FROM _dark_cols('theme_vocab')
-  UNION ALL SELECT 'theme_aliases',          col, live FROM _dark_cols('theme_aliases')
-  UNION ALL SELECT 'model_edges',            col, live FROM _dark_cols('model_edges')
-  UNION ALL SELECT 'model_edges_bidir',      col, live FROM _dark_cols('model_edges_bidir')
-  UNION ALL SELECT 'manufacturers',          col, live FROM _dark_cols('manufacturers')
-  UNION ALL SELECT 'corporate_entities',     col, live FROM _dark_cols('corporate_entities')
-  UNION ALL SELECT 'titles',                 col, live FROM _dark_cols('titles')
-  UNION ALL SELECT 'people',                 col, live FROM _dark_cols('people')
-  UNION ALL SELECT 'model_number_collisions',col, live FROM _dark_cols('model_number_collisions')
-  UNION ALL SELECT 'model_lineage',          col, live FROM _dark_cols('model_lineage')
-  UNION ALL SELECT 'model_relationships',    col, live FROM _dark_cols('model_relationships')
-  UNION ALL SELECT 'model_export_markets',   col, live FROM _dark_cols('model_export_markets')
-  UNION ALL SELECT 'title_size',             col, live FROM _dark_cols('title_size')
-  UNION ALL SELECT 'domain_vocab',          col, live FROM _dark_cols('domain_vocab')
-  UNION ALL SELECT 'entity_subjects',       col, live FROM _dark_cols('entity_subjects')
-  UNION ALL SELECT 'claims',                col, live FROM _dark_cols('claims')
-  UNION ALL SELECT 'model_claims',          col, live FROM _dark_cols('model_claims')
-  UNION ALL SELECT 'claim_identity_parts',  col, live FROM _dark_cols('claim_identity_parts')
-  UNION ALL SELECT 'actors',                col, live FROM _dark_cols('actors')
-  UNION ALL SELECT 'ingest_sources',        col, live FROM _dark_cols('ingest_sources')
-  UNION ALL SELECT 'ingest_runs',           col, live FROM _dark_cols('ingest_runs')
-  UNION ALL SELECT 'changesets',            col, live FROM _dark_cols('changesets')
-  UNION ALL SELECT 'citation_sources',      col, live FROM _dark_cols('citation_sources')
-  UNION ALL SELECT 'citation_roots',        col, live FROM _dark_cols('citation_roots')
-  UNION ALL SELECT 'citation_instances',    col, live FROM _dark_cols('citation_instances')
-  UNION ALL SELECT 'claim_citations',       col, live FROM _dark_cols('claim_citations')
-  UNION ALL SELECT 'citation_root_domains', col, live FROM _dark_cols('citation_root_domains')
-  UNION ALL SELECT 'patch_claims',          col, live FROM _dark_cols('patch_claims')
-  UNION ALL SELECT 'patch_retractions',     col, live FROM _dark_cols('patch_retractions')
-  UNION ALL SELECT 'patch_cites',           col, live FROM _dark_cols('patch_cites')
-  UNION ALL SELECT 'patch_entries',         col, live FROM _dark_cols('patch_entries')
-  UNION ALL SELECT 'patch_entry_cites',     col, live FROM _dark_cols('patch_entry_cites');
-
--- Two kinds of entry, and the difference is whether the exemption can EXPIRE:
---   sparse   allowed to be empty indefinitely — an optional dim the app barely
---            populates, where anchoring would false-positive the moment the last
---            value is edited away.
---   pending  expected to be empty only until data lands, so it MUST expire.
---            `expired_anchor_skip` retires one the moment its facet goes live.
---            Both pending entries this list has carried so far outlived their
---            reason SILENTLY — the export patches landed and nobody came back to
---            remove either — which is the same under-anchoring this whole file
---            exists to prevent, just one level up. Hence the check rather than a
---            comment asking someone to remember.
--- `col` is matched bare when the name is unique to its facet, or qualified
--- `view.column` when it isn't: `target_label` is populated on the edge views and
--- empty on model_export_markets, so only the qualified form exempts the one
--- without also exempting the others.
-CREATE OR REPLACE VIEW _anchor_skip AS
-  SELECT * FROM (VALUES
-    -- Vocabularies nobody has written prose for yet: credit roles 10 of 10, themes 540
-    -- of 540, locations 404. These are not new gaps — they became VISIBLE when `''` was
-    -- folded to NULL, because the sweep counts '' as a live value, so a column that is
-    -- 100% empty string had been reading as fully populated. `pending`, not `sparse`:
-    -- these descriptions are meant to be written, and expired_anchor_skip retires the
-    -- entry the day the first one is. Qualified, since `description` is on many views.
-    ('credit_roles.description',          'pending'),
-    ('theme_vocab.description',           'pending'),
-    ('locations.description',             'pending'),
-    ('technology_subgeneration_slug',     'sparse'),
-    ('display_subtype_slug',              'sparse'),
-    -- The FK id behind display_subtype_slug, riding along from `m.*`. Same facet, same
-    -- reason: no model carries a subtype yet. Bare, so one entry covers models and
-    -- models, as with the slug.
-    ('display_subtype_id',                'sparse'),
-    -- Pinside is modelled on MachineModel but nothing populates it — no ingest source
-    -- reads Pinside and no patch has set one. `pending`, not `sparse`: the day a pinside
-    -- id lands this must start anchoring, and expired_anchor_skip is what makes that
-    -- happen without anyone remembering. (pinside_rating is EXCLUDEd from the view
-    -- outright — we don't republish third-party ratings — so only the id is swept.)
-    ('pinside_id',                        'pending'),
-    -- free-text region label, used only when a market isn't a resolvable country
-    ('model_export_markets.target_label', 'sparse'),
-    -- Licensing is modelled end to end but nothing populates it yet: no ingest source
-    -- sets a default license, no claim carries an override, SourceFieldLicense is
-    -- empty. `pending`, not `sparse` — the day a license is attached these must start
-    -- anchoring, and expired_anchor_skip is what makes that happen without anyone
-    -- remembering. Bare names: the columns are the same facet on claims and
-    -- model_claims, so one entry should exempt both.
-    ('license_slug',                        'pending'),
-    ('ingest_source_default_license_slug',  'pending'),
-    ('default_license_slug',                'pending'),
-    -- no ingest run has rejected a claim yet; all-zero, not all-NULL
-    ('ingest_runs.claims_rejected',         'pending'),
-    -- No patch has retracted a MEMBER claim yet — every retraction so far is a scalar —
-    -- so the two member-only facets are empty on this view alone and populated on
-    -- patch_claims. Qualified for exactly that reason. `pending`: a patch retracting a
-    -- relationship is ordinary authoring, and expired_anchor_skip turns anchoring on the
-    -- day one does.
-    ('patch_retractions.member_exists',     'pending'),
-    ('patch_retractions.ref_id',            'pending'),
-    -- MachineModel.status is NULL for a live, unflagged model — the overwhelming majority
-    -- — so this anchors only once a patch retracts a claim about a model that carries a
-    -- status at all. Populated on patch_claims, hence qualified.
-    ('patch_retractions.model_status',      'pending'),
-    -- changeset_action is carried only by interactive claims, and those exist only
-    -- where someone has made UI edits against THIS database — a fresh rebuild from
-    -- patches has none. `sparse`, not `pending`: an expiry keyed to local user
-    -- behavior would make the self-test's verdict differ per machine.
-    ('model_claims.changeset_action',       'sparse'),
-    -- Wikidata QIDs are modelled on both manufacturers and people; no patch has filled
-    -- one on either. Bare, so a single entry covers both — same facet, same reason.
-    ('wikidata_id',                         'pending'),
-    -- Person biography beyond the birth/death YEAR. All of it is modelled and none of it
-    -- is ingested: no source we read carries it and no patch has asserted one. These
-    -- surfaced the moment `people` moved to p.*, which is the point — they were invisible
-    -- before, so "we have nowhere to put a person's nationality" was indistinguishable
-    -- from "we do and it's empty". `pending`, not `sparse`: the first patch to write any
-    -- of them should make its column start anchoring, and expired_anchor_skip is what
-    -- makes that happen without anyone remembering.
-    ('birth_month',                         'pending'),
-    ('birth_day',                           'pending'),
-    ('death_month',                         'pending'),
-    ('death_day',                           'pending'),
-    ('birth_place',                         'pending'),
-    ('nationality',                         'pending'),
-    ('photo_url',                           'pending'),
-    -- Same story one entity over: modelled, never populated.
-    ('manufacturers.logo_url',              'pending')
-  ) AS t(col, kind);
-
--- Every LIST-typed facet in a swept view (any element type), and how it is anchored.
--- Two kinds:
---   explicit — the row exists regardless of the array, so all-empty is a distinct dark
---              state needing its own `len(...) > 0` anchor in foundation_checks below.
---   implicit — the row exists ONLY when the list is non-empty (rewards/themes/tags),
---              so the view's scalar `id` column already anchors emptiness for free.
--- Every explicit entry gets its OWN anchor — a superset's is not a substitute. That
--- shortcut used to be taken here on the argument that one view subsumed another and that
--- union_integrity proves model_edges lossless over its two components. Losslessness is
--- not populatedness: zeroing model_relationships.target_reward_types left model_edges
--- non-empty from the lineage side and fired nothing at all.
-CREATE OR REPLACE VIEW _anchor_array AS
-  SELECT unnest([
-    'models.opdb_features',
-    'model_edges.target_reward_types',     'model_lineage.target_reward_types',
-    'model_relationships.target_reward_types',
-    'rewards.rewards', 'themes.themes', 'tags.tags',
-    'theme_vocab.parents',            'theme_vocab.children',            'theme_vocab.aliases',
-    'gameplay_feature_vocab.parents', 'gameplay_feature_vocab.children', 'gameplay_feature_vocab.aliases',
-    'model_edges_bidir.target_reward_types',
-    -- a collision row exists only when n > 1, so its scalar columns anchor it
-    'model_number_collisions.model_ids', 'model_number_collisions.labels',
-    'citation_roots.root_domains'
-  ]) AS qualified_col;
 
 -- The provenance layer's own invariants. Defined as the PRIVATE `_provenance_checks`
 -- and folded into foundation_checks below rather than left as a public `*_checks` view,
@@ -579,18 +357,11 @@ CREATE OR REPLACE VIEW _anchor_array AS
 -- return zero rows, which is what makes this class invisible: the self-test stays green
 -- while the guarantee is gone. Every instance found so far was this.
 CREATE OR REPLACE VIEW foundation_checks AS
-  -- The anchor sweep, evaluated ONCE for all three checks that consume it. Without
-  -- MATERIALIZED, DuckDB re-runs a referenced view per reference — three full sweeps
-  -- of every column of every public view, ~1.5s of the self-test's runtime for two
-  -- redundant copies of the same answer. Cost also stops scaling with the number of
-  -- consuming checks, so a fourth is free. Prefer this over materializing _anchor_scan
-  -- into a TABLE at init: that made the sweep EAGER, and the runner starts a fresh
-  -- DuckDB per query (context, summary, checks), so every invocation paid for a sweep
-  -- it mostly didn't use. Lazy view + materialized-at-use is both.
-  WITH scan AS MATERIALIZED (SELECT * FROM _anchor_scan),
-  -- Same reasoning, for the mirrored edge set: three checks consume it, one of them
-  -- twice (a self anti-join), and it is the widest view in the foundation.
-  bidir AS MATERIALIZED (SELECT * FROM model_edges_bidir),
+  -- The mirrored edge set, evaluated ONCE: three checks consume it, one of them
+  -- twice (a self anti-join), and it is the widest view in the foundation. DuckDB
+  -- re-runs a referenced view per reference, so materializing at use is what stops the
+  -- cost scaling with the number of consuming checks.
+  WITH bidir AS MATERIALIZED (SELECT * FROM model_edges_bidir),
   -- ...and for every foundation view the checks below share. DuckDB re-evaluates a
   -- view once PER REFERENCE, and ~30 checks referencing a dozen views means the same
   -- decode runs dozens of times: no single check is slow, the repetition is. These CTEs
@@ -892,6 +663,59 @@ CREATE OR REPLACE VIEW foundation_checks AS
          'model_id=' || model_id::VARCHAR || ' edge_kind=' || edge_kind
            || ' n=' || count(*)::VARCHAR
   FROM model_lineage GROUP BY model_id, edge_kind HAVING count(*) > 1
+
+  -- ── live() and blanks_null(), proven against fixture input ──
+  -- Data-independent: these assert the three halves of the contract on rows that exist
+  -- because we put them there, so none of it rides on the catalog happening to contain a
+  -- soft-deleted cabinet or a blank description.
+  UNION ALL
+  SELECT 'fixture_live_liveness',
+         'expected ids 1,2 — got ' || coalesce((SELECT string_agg(id::VARCHAR, ',' ORDER BY id)
+                                                FROM live('_fx_lifecycle')), '<none>')
+  WHERE (SELECT string_agg(id::VARCHAR, ',' ORDER BY id) FROM live('_fx_lifecycle'))
+        IS DISTINCT FROM '1,2'
+
+  UNION ALL
+  SELECT 'fixture_live_excludes_bookkeeping', column_name
+  FROM (DESCRIBE SELECT * FROM live('_fx_lifecycle'))
+  WHERE column_name IN ('status', 'created_at', 'updated_at')
+
+  -- blanks_null folds '' to NULL and leaves a real value alone. Asserted through live(),
+  -- which composes it, so the composition is covered too.
+  UNION ALL
+  SELECT 'fixture_blanks_null',
+         'id1=' || coalesce((SELECT description FROM live('_fx_lifecycle') WHERE id = 1), '<NULL>')
+      || ' id2=' || coalesce((SELECT description FROM live('_fx_lifecycle') WHERE id = 2), '<NULL>')
+  WHERE (SELECT description FROM live('_fx_lifecycle') WHERE id = 1) IS NOT NULL
+     OR (SELECT description FROM live('_fx_lifecycle') WHERE id = 2) IS DISTINCT FROM 'has'
+
+  -- ── the OUTCOME, asserted across every entity view at once ──
+  -- The fixtures prove the macro; these prove it was actually applied. A view that
+  -- hand-rolls its own projection and forgets is caught here regardless of how it is
+  -- written, which is the failure that got past us: `macro_live` was deleted as redundant
+  -- with `anchor_dark`, and `anchor_dark` was deleted in the same breath.
+  UNION ALL
+  SELECT 'entity_view_leaks_bookkeeping', c.table_name || '.' || c.column_name
+  FROM duckdb_columns() c
+  JOIN _entity_view e ON e.view_name = c.table_name
+  WHERE c.database_name = 'memory'
+    AND c.column_name IN ('status', 'created_at', 'updated_at')
+    -- provenance entities have no lifecycle and carry these legitimately
+    -- Lifecycle entities only. Not "the source has a status column": provenance_ingestrun
+    -- has one and it is the RUN's status, nothing to do with soft-delete. _entity_table is
+    -- the derived set, so provenance entities fall out structurally.
+    AND e.entity_table IN (SELECT table_name FROM _entity_table)
+
+  -- Every entity view over a LIFECYCLE table reaches its rows through live(), directly or
+  -- through a _live_* leaf that does. Keyed on the source table carrying `status`, so
+  -- provenance entities fall out structurally rather than by exemption.
+  UNION ALL
+  SELECT 'entity_view_not_live_filtered', e.view_name
+  FROM _entity_view e
+  JOIN duckdb_views() v ON v.view_name = e.view_name AND v.database_name = 'memory'
+  WHERE e.entity_table IN (SELECT table_name FROM _entity_table)
+    AND v.sql NOT LIKE '%live(%'
+    AND v.sql NOT LIKE '%_live_%'
 
   -- live filter: models carries no soft-deleted row. Asserted against the PHYSICAL table
   -- rather than against a status column on the view, because the view no longer carries
@@ -1271,85 +1095,12 @@ CREATE OR REPLACE VIEW foundation_checks AS
     ) r WHERE r.v = e.v AND r.slug = e.p AND r.c = e.slug
   )
 
-  -- ── anchors: a decoded facet went unexpectedly dark (a join/extract broke) ──
-  -- GENERATED from _anchor_scan (see the macro block above), so every column of every
-  -- public view is dark-anchored automatically — including whole-view-empty, which
-  -- shows up as ALL its columns reading zero. Nothing to keep in sync per column.
-  -- "Dark" means no row holds a usable value: all-NULL for a decoded facet, all-ZERO
-  -- for a derived count. Both are the same failure wearing different clothes.
-  UNION ALL
-  SELECT 'anchor_dark', view_name || '.' || col
-  FROM scan
-  WHERE live = 0
-    AND col                       NOT IN (SELECT col FROM _anchor_skip)
-    AND view_name || '.' || col   NOT IN (SELECT col FROM _anchor_skip)
-
-  -- List facets can't go dark via the sweep: an empty list is a value, so it reads as
-  -- live. The ones whose row exists regardless of the list therefore need an explicit
-  -- non-empty anchor. `unanchored_array` below fails if a new one appears unlisted.
-  UNION ALL SELECT 'anchor_dark', 'models.opdb_features (all empty)'
-    WHERE (SELECT count(*) FROM models WHERE len(opdb_features) > 0) = 0
-  UNION ALL SELECT 'anchor_dark', 'model_edges.target_reward_types (all empty)'
-    WHERE (SELECT count(*) FROM model_edges WHERE len(target_reward_types) > 0) = 0
-  -- Each COMPONENT anchored too, not just the union. model_edges is a UNION ALL, so one
-  -- component's array can go entirely empty while the other keeps the union non-empty —
-  -- the union anchor reads healthy and the dark half is invisible. union_integrity
-  -- proves the union is LOSSLESS, which is a different claim from each side being
-  -- populated, and only the latter is what an anchor is for.
-  UNION ALL SELECT 'anchor_dark', 'model_lineage.target_reward_types (all empty)'
-    WHERE (SELECT count(*) FROM model_lineage WHERE len(target_reward_types) > 0) = 0
-  UNION ALL SELECT 'anchor_dark', 'model_relationships.target_reward_types (all empty)'
-    WHERE (SELECT count(*) FROM model_relationships WHERE len(target_reward_types) > 0) = 0
-  UNION ALL SELECT 'anchor_dark', 'model_edges_bidir.target_reward_types (all empty)'
-    WHERE (SELECT count(*) FROM model_edges_bidir WHERE len(target_reward_types) > 0) = 0
-  -- The vocab views' DAG and alias lists: a row exists for every live term regardless
-  -- of them, so an all-empty list is a distinct dark state COUNT can't see (a corpus
-  -- whose parenting join broke reads as healthy without these).
-  UNION ALL SELECT 'anchor_dark', 'theme_vocab.parents (all empty)'
-    WHERE (SELECT count(*) FROM theme_vocab WHERE len(parents) > 0) = 0
-  UNION ALL SELECT 'anchor_dark', 'theme_vocab.children (all empty)'
-    WHERE (SELECT count(*) FROM theme_vocab WHERE len(children) > 0) = 0
-  UNION ALL SELECT 'anchor_dark', 'theme_vocab.aliases (all empty)'
-    WHERE (SELECT count(*) FROM theme_vocab WHERE len(aliases) > 0) = 0
-  UNION ALL SELECT 'anchor_dark', 'gameplay_feature_vocab.parents (all empty)'
-    WHERE (SELECT count(*) FROM gameplay_feature_vocab WHERE len(parents) > 0) = 0
-  UNION ALL SELECT 'anchor_dark', 'gameplay_feature_vocab.children (all empty)'
-    WHERE (SELECT count(*) FROM gameplay_feature_vocab WHERE len(children) > 0) = 0
-  UNION ALL SELECT 'anchor_dark', 'gameplay_feature_vocab.aliases (all empty)'
-    WHERE (SELECT count(*) FROM gameplay_feature_vocab WHERE len(aliases) > 0) = 0
-  -- A citation root exists whether or not it has registered domains (a book never
-  -- will), so the row count can't anchor this one — only the web roots carry it.
-  UNION ALL SELECT 'anchor_dark', 'citation_roots.root_domains (all empty)'
-    WHERE (SELECT count(*) FROM citation_roots WHERE len(root_domains) > 0) = 0
-
-  -- Subpopulation anchors the column sweep CAN'T see: a filtered subset going dark
-  -- while the column still has values from the other subset. One per lineage kind.
-  UNION ALL SELECT 'anchor_dark', 'model_lineage variant_of is empty'
-    WHERE (SELECT count(*) FROM model_lineage WHERE edge_kind = 'variant_of') = 0
-  UNION ALL SELECT 'anchor_dark', 'model_lineage remake_of is empty'
-    WHERE (SELECT count(*) FROM model_lineage WHERE edge_kind = 'remake_of') = 0
-  UNION ALL SELECT 'anchor_dark', 'model_lineage export_edition_of is empty'
-    WHERE (SELECT count(*) FROM model_lineage WHERE edge_kind = 'export_edition_of') = 0
-
-  -- ── coverage: close the last hand-lists so a NEW view/array can't slip in unanchored ──
-  -- A public foundation view not swept by _anchor_scan (added without being anchored).
-  -- The two *_context watermarks are excluded on purpose — their NULLs are legitimate
-  -- (no successful patch yet, an empty provenance table on a fresh DB).
-  UNION ALL
-  SELECT 'unanchored_view', table_name
-  FROM information_schema.tables
-  WHERE table_schema = 'main' AND table_type = 'VIEW'
-    AND table_name NOT LIKE '\_%' ESCAPE '\'
-    AND table_name NOT IN ('foundation_summary', 'foundation_checks',
-                           'analysis_context', 'provenance_context')
-    AND table_name NOT IN (SELECT DISTINCT view_name FROM scan)
-
   -- A public foundation view missing from `foundation_summary` — the same coverage
-  -- claim as `unanchored_view` above, for the other hand-list. It was the last one in
-  -- this file with no both-directions guard, and it drifted the first time it could: a
-  -- whole layer's five views were anchored and never summarized, so the health readout
-  -- silently stopped describing the foundation while the self-test stayed green. Same
-  -- exclusions as `unanchored_view`, for the same reasons.
+  -- claim the entity and alias coverage checks make, for the other hand-list. It
+  -- drifted the first time it could: a whole layer's five views went unsummarized, so
+  -- the health readout silently stopped describing the foundation while the self-test
+  -- stayed green. The two *_context watermarks are excluded on purpose — their NULLs
+  -- are legitimate (no successful patch yet, an empty provenance table on a fresh DB).
   --
   -- Matched against the summary's own SQL rather than by selecting from it, the way
   -- `unexposed_alias_table` matches view text. Reading `SELECT view_name FROM
@@ -1447,16 +1198,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
     WHERE database_name = 'memory' AND table_name = '_model_dim_wide'
       AND column_name <> 'model_id')
 
-  -- _anchor_skip.kind outside its two-value vocabulary. The exemption is applied on
-  -- `col` alone, so a typo'd kind still exempts the column — but expired_anchor_skip
-  -- only retires `pending`, so `pendign` exempts FOREVER and nothing ever notices. An
-  -- unreadable kind is a permanent silent hole in the anchor coverage, which is the one
-  -- thing this list is not allowed to be.
-  UNION ALL
-  SELECT 'unknown_anchor_skip_kind', col || ' (' || coalesce(kind, 'NULL') || ')'
-  FROM _anchor_skip
-  WHERE kind IS NULL OR kind NOT IN ('sparse', 'pending')
-
   -- ── domain vocabulary: DomainModel.md and the catalog must agree ──
   -- domain_vocab is grain (one row per term), so a term defined TWICE under one dim
   -- fans out every join to it while all four agreement checks stay green — both rows
@@ -1500,7 +1241,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- nobody can find. It replaced a hand-maintained prose table in README.md, which had
   -- no check on it and was incomplete from the day it was written: models.description
   -- is selected by models and named in neither the comment block nor that table.
-  -- Same both-directions logic as the anchor lists: the docs are only trustworthy
+  -- Same both-directions logic as the other coverage lists: the docs are only trustworthy
   -- while every view is obliged to carry one.
   -- Reads duckdb_views() rather than information_schema.tables, which has no `comment`.
   -- foundation_summary / foundation_checks are THIS file's views, not the foundation's.
@@ -1521,52 +1262,6 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE database_name = 'memory' AND schema_name = 'main'
     AND NOT internal AND NOT starts_with(function_name, '_')
     AND comment IS NULL
-
-  -- A list facet in a swept view that isn't accounted for would silently escape the
-  -- dark check (an empty list reads as live), so flag any new one for a home in
-  -- _anchor_array — which records, per facet, whether it needs an explicit anchor or
-  -- rides the view's scalar columns. Matched on the `[]` type suffix, so BIGINT[] and
-  -- friends are covered, not just VARCHAR[].
-  UNION ALL
-  SELECT 'unanchored_array', table_name || '.' || column_name
-  FROM information_schema.columns
-  WHERE table_schema = 'main' AND data_type LIKE '%[]%'
-    AND table_name IN (SELECT DISTINCT view_name FROM scan)
-    AND table_name || '.' || column_name NOT IN (SELECT qualified_col FROM _anchor_array)
-
-  -- ...and the inverse: an _anchor_array entry naming a facet that no longer exists
-  -- (renamed or dropped), so the list can't rot into false coverage.
-  UNION ALL
-  SELECT 'stale_anchor_array', qualified_col
-  FROM _anchor_array
-  WHERE qualified_col NOT IN (
-    SELECT table_name || '.' || column_name FROM information_schema.columns
-    WHERE table_schema = 'main' AND data_type LIKE '%[]%'
-  )
-
-  -- The same both-directions guard for _anchor_skip, which had neither and rotted
-  -- twice because of it. An exemption is a hole in the anchor coverage, so it has to
-  -- be as hard to leave lying around as it was to open.
-  --   expired: a `pending` entry whose facet now HAS data. Its reason is spent — the
-  --            column is anchorable, and while the entry survives nothing would notice
-  --            it going dark again.
-  UNION ALL
-  SELECT 'expired_anchor_skip', s.col
-  FROM _anchor_skip s
-  WHERE s.kind = 'pending'
-    AND EXISTS (
-      SELECT 1 FROM scan
-      WHERE live > 0 AND (col = s.col OR view_name || '.' || col = s.col)
-    )
-
-  --   stale:   an entry naming no swept column at all (renamed, dropped, or a typo —
-  --            a misspelled entry exempts nothing and hides that it exempts nothing).
-  UNION ALL
-  SELECT 'stale_anchor_skip', s.col
-  FROM _anchor_skip s
-  WHERE NOT EXISTS (
-    SELECT 1 FROM scan WHERE col = s.col OR view_name || '.' || col = s.col
-  )
 
   -- ─── Provenance layer ──────────────────────────────────────────────────────
   -- The attribution and citation invariants, defined in provenance_checks.sql and

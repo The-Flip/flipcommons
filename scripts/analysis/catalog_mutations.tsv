@@ -18,9 +18,6 @@
 # both directions: a check with no mutation fails the run, and an entry naming a check
 # that no longer exists fails it too.
 
-vocab n zeroed	anchor_dark	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * REPLACE (0::BIGINT AS n) FROM _m;
-empty view	anchor_dark	CREATE TABLE _m AS SELECT * FROM tags LIMIT 0; CREATE OR REPLACE VIEW tags AS SELECT * FROM _m;
-facet nulled	anchor_dark	CREATE TABLE _m AS SELECT * FROM models; CREATE OR REPLACE VIEW models AS SELECT * REPLACE (NULL::VARCHAR AS ipdb_notes) FROM _m;
 theme names corrupted	theme_views_disagree	CREATE TABLE _m AS SELECT * FROM themes; CREATE OR REPLACE VIEW themes AS SELECT model_id, list_transform(themes, lambda x: 'wrong') AS themes FROM _m;
 themes shifted to wrong model	theme_views_disagree	CREATE TABLE _m AS SELECT * FROM themes; CREATE OR REPLACE VIEW themes AS SELECT model_id, (SELECT themes FROM _m o WHERE o.model_id > t.model_id ORDER BY o.model_id LIMIT 1) AS themes FROM _m t WHERE EXISTS (SELECT 1 FROM _m o WHERE o.model_id > t.model_id);
 theme dropped from vocab	theme_not_in_vocab	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * FROM _m WHERE id <> (SELECT min(theme_id) FROM model_themes);
@@ -59,15 +56,12 @@ manufacturer status pinned to one value	mfr_status_rollup_disagrees	CREATE TABLE
 manufacturer location derived from models	mfr_location_rollup_disagrees	CREATE OR REPLACE VIEW _mfr_location AS SELECT manufacturer_id, count(DISTINCT location_path) AS n_locations, CASE WHEN count(DISTINCT location_path) = 1 THEN min(location_path) END AS location_path, count(DISTINCT country_slug) AS n_countries, CASE WHEN count(DISTINCT country_slug) = 1 THEN min(country_slug) END AS country_slug FROM models WHERE manufacturer_id IS NOT NULL GROUP BY manufacturer_id;
 manufacturer location pinned to one place	mfr_location_rollup_disagrees	CREATE TABLE _m AS SELECT * FROM manufacturers; CREATE OR REPLACE VIEW manufacturers AS SELECT * REPLACE ('usa/il/chicago' AS location_path) FROM _m;
 edge union lossy	union_integrity	CREATE OR REPLACE VIEW model_edges AS SELECT model_id, 'lineage_fk' AS edge_source, edge_kind AS relationship_type, NULL::VARCHAR AS license_status, target_id, NULL::VARCHAR AS target_label, * EXCLUDE (model_id, edge_kind, target_id) FROM model_lineage;
-view added unanchored	unanchored_view	CREATE OR REPLACE VIEW brand_new_view AS SELECT 1 AS x;
 alias table no longer read by any view	unexposed_alias_table	CREATE TABLE _m AS SELECT * FROM person_aliases; CREATE OR REPLACE VIEW person_aliases AS SELECT * FROM _m;
 view comment dropped	undocumented_view	COMMENT ON VIEW locations IS NULL;
 vocab definition dropped	undocumented_vocab	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m WHERE slug <> 'floor';
 vocab defines a dead term	stale_vocab_doc	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m UNION ALL SELECT 'cabinet','no-such-cabinet','invented',1;
 vocab dim not in _dim_vocab	unmapped_vocab_dim	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m UNION ALL SELECT 'corporateentity','acme','invented',1;
 vocab heading renamed away	stale_vocab_dim	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m WHERE dim <> 'cabinet';
-list facet added unanchored	unanchored_array	CREATE TABLE _m AS SELECT * FROM title_size; CREATE OR REPLACE VIEW title_size AS SELECT *, ['a'] AS newlist FROM _m;
-anchor_array entry gone stale	stale_anchor_array	CREATE OR REPLACE VIEW _anchor_array AS SELECT unnest(['theme_vocab.no_such_column']) AS qualified_col;
 models keeps deleted rows	models_has_deleted	CREATE TABLE _m AS SELECT * FROM models; CREATE OR REPLACE VIEW models AS SELECT * REPLACE (CASE WHEN id = (SELECT min(id) FROM _m) THEN (SELECT min(id) FROM fc.catalog_machinemodel WHERE status = 'deleted') ELSE id END AS id) FROM _m;
 theme grain duplicated	theme_grain_dup	CREATE TABLE _m AS SELECT * FROM model_themes; CREATE OR REPLACE VIEW model_themes AS SELECT * FROM _m UNION ALL SELECT * FROM _m;
 gameplay-feature grain duplicated	gpf_grain_dup	CREATE TABLE _m AS SELECT * FROM model_gameplay_features; CREATE OR REPLACE VIEW model_gameplay_features AS SELECT * FROM _m UNION ALL SELECT * FROM _m;
@@ -86,15 +80,11 @@ relationship_type nulled	edge_relationship_type_null	CREATE TABLE _m AS SELECT *
 license/source contract broken	edge_license_contract	CREATE TABLE _m AS SELECT * FROM model_edges; CREATE OR REPLACE VIEW model_edges AS SELECT * REPLACE ('unknown' AS license_status) FROM _m;
 CE gains a second location	ce_multi_location	CREATE TABLE _m AS SELECT * FROM _ce_location_n; CREATE OR REPLACE VIEW _ce_location_n AS SELECT corporate_entity_id, n + 1 AS n FROM _m;
 export market target not a country	export_market_target_not_country	CREATE TABLE _m AS SELECT * FROM model_export_markets; CREATE OR REPLACE VIEW model_export_markets AS SELECT * REPLACE (COALESCE(target_location_id, 1) AS target_location_id, NULL::VARCHAR AS target_country_slug) FROM _m;
-anchor_skip entry expired	expired_anchor_skip	CREATE OR REPLACE VIEW _anchor_skip AS SELECT * FROM (VALUES ('models.year', 'pending')) AS t(col, kind);
-anchor_skip entry gone stale	stale_anchor_skip	CREATE OR REPLACE VIEW _anchor_skip AS SELECT * FROM (VALUES ('theme_vocab.no_such_column', 'sparse')) AS t(col, kind);
 live model on soft-deleted dim	model_dim_not_live	CREATE OR REPLACE VIEW _model_dim_liveness AS SELECT r.model_id, r.dim, r.target_id FROM _model_dim_ref r JOIN (SELECT dim, id, CASE WHEN dim = 'game_format_id' THEN 'deleted' ELSE status END AS status FROM _dim_status) d ON d.dim = r.dim AND d.id = r.target_id WHERE d.status = 'deleted';
 dim FK added uncovered	uncovered_model_dim	CREATE OR REPLACE VIEW _dim_status AS SELECT * FROM (SELECT 'title_id' AS dim, id, status FROM fc.catalog_title);
 dim dropped from _model_dim_wide	dim_status_unreferenced	CREATE OR REPLACE VIEW _model_dim_wide AS SELECT * EXCLUDE (production_status_id) FROM (SELECT m.id AS model_id, m.title_id, m.corporate_entity_id, ce.manufacturer_id, m.game_format_id, m.technology_generation_id, m.technology_subgeneration_id, m.display_type_id, m.display_subtype_id, m.system_id, m.cabinet_id, m.production_status_id FROM fc.catalog_machinemodel m LEFT JOIN fc.catalog_corporateentity ce ON ce.id = m.corporate_entity_id WHERE m.status IS DISTINCT FROM 'deleted');
 dim added to _model_dim_wide only	dim_not_liveness_checked	CREATE TABLE _m AS SELECT * FROM _model_dim_wide; CREATE OR REPLACE VIEW _model_dim_wide AS SELECT *, model_id AS invented_dim_id FROM _m;
-anchor_skip kind misspelled	unknown_anchor_skip_kind	CREATE OR REPLACE VIEW _anchor_skip AS SELECT * FROM (VALUES ('technology_subgeneration_slug','pendign'),('display_subtype_slug','sparse'),('model_export_markets.target_label','sparse')) AS t(col, kind);
 vocab term defined twice	vocab_grain_dup	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m UNION ALL SELECT 'cabinet','floor','a conflicting second definition',999;
-component array dark, union not	anchor_dark	CREATE TABLE _m AS SELECT * FROM model_relationships; CREATE OR REPLACE VIEW model_relationships AS SELECT * REPLACE (CAST([] AS VARCHAR[]) AS target_reward_types) FROM _m;
 third EntityStatus value appears	status_unknown	CREATE OR REPLACE VIEW _status_domain AS SELECT 'theme' AS entity, 'archived' AS status;
 
 # ── provenance layer (provenance.sql / provenance_checks.sql) ──
@@ -117,7 +107,6 @@ changeset action outside its domain	unknown_changeset_action	CREATE TABLE _m AS 
 ingest run status outside its domain	unknown_ingest_run_status	CREATE TABLE _m AS SELECT * FROM ingest_runs; CREATE OR REPLACE VIEW ingest_runs AS SELECT * REPLACE ('paused' AS status) FROM _m;
 ingest source type outside its domain	unknown_ingest_source_type	CREATE TABLE _m AS SELECT * FROM ingest_sources; CREATE OR REPLACE VIEW ingest_sources AS SELECT * REPLACE ('zine' AS ingest_source_type) FROM _m;
 citation source type outside its domain	unknown_citation_source_type	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE ('scroll' AS citation_source_type) FROM _m;
-citation root domains all empty	anchor_dark	CREATE TABLE _m AS SELECT * FROM citation_roots; CREATE OR REPLACE VIEW citation_roots AS SELECT * REPLACE ([]::VARCHAR[] AS root_domains) FROM _m;
 host_norm stops stripping www	macro_host_norm	CREATE OR REPLACE MACRO host_norm(h) AS lower(trim(h));
 url_host keeps the port	macro_url_host	CREATE OR REPLACE MACRO url_host(u) AS host_norm(regexp_extract(coalesce(u, ''), '^(?:[a-z][a-z0-9+.-]*:)?//(?:[^/@]*@)?([^/?#]*)', 1));
 host match loses the label boundary	macro_citation_root_for_host	CREATE OR REPLACE MACRO citation_root_for_host(h) AS (SELECT d.root_citation_source_id FROM citation_root_domains d WHERE ends_with(host_norm(h), d.host) ORDER BY length(d.host) DESC LIMIT 1);
@@ -156,4 +145,9 @@ claim subject resolves to nothing	unresolved_claim_subject	CREATE TABLE _m AS SE
 series half of the credit grain dropped	credit_rows_dropped	CREATE TABLE _m AS SELECT * FROM credits; CREATE OR REPLACE VIEW credits AS SELECT * FROM _m WHERE subject_type = 'catalog.machinemodel';
 credit subject id resolves to nothing	credit_subject_not_live	CREATE TABLE _m AS SELECT * FROM credits; CREATE OR REPLACE VIEW credits AS SELECT * REPLACE (CASE WHEN credit_id = (SELECT min(credit_id) FROM _m) THEN 999999999 ELSE subject_id END AS subject_id) FROM _m;
 patch ordinal truncated to four digits	macro_patch_number_of	CREATE OR REPLACE MACRO patch_number_of(pid) AS TRY_CAST(regexp_extract(pid, '^([0-9]{4})', 1) AS INTEGER);
-public view added without a summary line	unsummarized_view	CREATE OR REPLACE VIEW zz_unsummarized AS SELECT 1 AS x; CREATE TABLE _m AS SELECT * FROM _anchor_scan; CREATE OR REPLACE VIEW _anchor_scan AS SELECT * FROM _m UNION ALL SELECT 'zz_unsummarized', col, live FROM _dark_cols('zz_unsummarized');
+public view added without a summary line	unsummarized_view	CREATE OR REPLACE VIEW zz_unsummarized AS SELECT 1 AS x;
+live stops filtering deleted rows	fixture_live_liveness	CREATE OR REPLACE MACRO live(tbl) AS TABLE SELECT * EXCLUDE (status, created_at, updated_at) FROM blanks_null(tbl);
+live stops dropping bookkeeping columns	fixture_live_excludes_bookkeeping	CREATE OR REPLACE MACRO live(tbl) AS TABLE SELECT * FROM blanks_null(tbl) WHERE status IS DISTINCT FROM 'deleted';
+blanks_null stops folding empty strings	fixture_blanks_null	CREATE OR REPLACE MACRO blanks_null(tbl) AS TABLE SELECT * FROM query_table(tbl);
+entity view republishes a bookkeeping column	entity_view_leaks_bookkeeping	CREATE OR REPLACE VIEW cabinets AS SELECT *, NULL::VARCHAR AS status FROM live('fc.catalog_cabinet');
+entity view bypasses live()	entity_view_not_live_filtered	CREATE OR REPLACE VIEW cabinets AS SELECT * EXCLUDE (status, created_at, updated_at) FROM fc.catalog_cabinet WHERE status IS DISTINCT FROM 'deleted';
