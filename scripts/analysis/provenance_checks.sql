@@ -25,6 +25,18 @@
 --   VOCABULARY  closed enum domains, asserted rather than assumed — the same reasoning
 --               as status_unknown in catalog_checks.sql.
 
+-- _changeset_action — every changeset's action AS STORED, at full changeset grain.
+-- Check-only scaffolding, because no public view carries both halves a vocabulary check
+-- needs. `claims` holds the raw value but names only changesets that WROTE a claim, so
+-- the retraction-only ones are outside it entirely — the population `changesets` exists
+-- to reach. `changesets` is that complete grain but reads through blanks_null, which
+-- folds a stored '' onto the NULL that legitimately marks an ingest changeset, making
+-- the defect indistinguishable from the healthy shape.
+-- A VIEW and not a read of `fc`, so check-mutations can break it: `fc` is attached
+-- READ_ONLY and its tables cannot be shadowed. Same reasoning as _citation_parent_chain.
+CREATE OR REPLACE VIEW _changeset_action AS
+  SELECT id AS changeset_id, action FROM fc.provenance_changeset;
+
 CREATE OR REPLACE VIEW _provenance_checks AS
   -- `claims` decoded ONCE for the branches below, on foundation_checks' reasoning and
   -- with its shadowing trick — DuckDB re-evaluates a view per REFERENCE, and this is the
@@ -114,6 +126,19 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   GROUP BY subject_type, subject_id, register
   HAVING count(*) > 1
 
+  -- ...and the other half: a partition with eligible claims has a rank 1 AT ALL. This is
+  -- the silent direction — too many winners fans a join out, while none makes `rank = 1`
+  -- return nothing, which reads as "no claim here" and drops the subject from an
+  -- attribution answer. Asserted as DENSITY, not `min(rank) = 1`: ranks come from one
+  -- sequence, so whether the hole lands at the front or the middle is an accident of sort.
+  UNION ALL
+  SELECT 'rank_not_dense',
+         'subject=' || subject_type || ':' || subject_id::VARCHAR || ' register=' || register
+           || ' ranked=' || count(rank)::VARCHAR || ' max_rank=' || max(rank)::VARCHAR
+  FROM claims
+  GROUP BY subject_type, subject_id, register
+  HAVING count(rank) > 0 AND max(rank) IS DISTINCT FROM count(rank)
+
   -- A suppressed actor never ranks — that is the kill switch ranked_claims implements
   -- by excluding them, and `rank` is NULL for exactly that reason.
   UNION ALL
@@ -147,19 +172,30 @@ CREATE OR REPLACE VIEW _provenance_checks AS
         IS DISTINCT FROM (SELECT count(*) FROM changesets)
 
   -- ─── Subject resolution ──────────────────────────────────────────────────
-  -- Every claim's subject resolves through `entity_subjects`. The join there is LEFT, so
-  -- failure costs no rows — it NULLs subject_public_id/name/status, and a consumer gets
-  -- an anonymous claim rather than an error. This is what stands behind that view being a
-  -- hand-written union: a branch forgotten for a new entity, one keyed to the wrong
-  -- constant, and a subject row that no longer exists all surface here. Zero today.
+  -- Every claim's subject resolves through `entity_subjects`. Both joins in `claims` are
+  -- LEFT, so failure costs no rows — it NULLs subject_type and subject_public_id/name/
+  -- status, and a consumer gets an anonymous claim rather than an error. Two ways in: a
+  -- content type absent from `entity_registry`, and a subject row that no longer exists.
+  -- Zero today.
   --
   -- NOT EXISTS, not `subject_public_id IS NULL`: the claim is that the SUBJECT resolves, and
   -- the cheaper spelling stops meaning that as soon as a nullable column joins the set —
   -- `subject_status` already is one.
+  --
+  -- The fallback names the content type because `entity_registry` has no name for an
+  -- unregistered subject. A scalar subquery, so it runs per reported row, not per scan.
+  -- A NULL anywhere in the concatenation blanks the whole detail, hence both coalesces.
   UNION ALL
   SELECT 'unresolved_claim_subject',
          'claim_id=' || c.claim_id::VARCHAR
-           || ' subject=' || c.subject_type || ':' || c.subject_id::VARCHAR
+           || ' subject=' || coalesce(
+                c.subject_type,
+                'UNREGISTERED[' || coalesce((SELECT ct.app_label || '.' || ct.model
+                                             FROM fc.provenance_claim pc
+                                             JOIN fc.django_content_type ct
+                                               ON ct.id = pc.content_type_id
+                                             WHERE pc.id = c.claim_id), '?') || ']')
+           || ':' || c.subject_id::VARCHAR
   FROM claims c
   WHERE NOT EXISTS (SELECT 1 FROM entity_subjects e
                     WHERE e.subject_type = c.subject_type
@@ -189,16 +225,17 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   HAVING count(*) > 1
 
   -- The DB constraint provenance_changeset_action_iff_interactive, restated where an
-  -- analysis can see it. `action` is spelled '' for ingest here, so the test is on
-  -- emptiness rather than NULL — and it matters because `is_interactive` is what
-  -- consumers filter on while `action` is what they display.
+  -- analysis can see it. It matters because `is_interactive` is what consumers filter
+  -- on while `action` is what they display. Absent is NULL, as everywhere in this layer,
+  -- so `coalesce` in the detail: concatenating a NULL action yields a NULL detail, and
+  -- 34,000 findings that all read NULL name nothing at all.
   UNION ALL
   SELECT 'changeset_action_iff_interactive',
          'changeset_id=' || changeset_id::VARCHAR
            || ' is_interactive=' || is_interactive::VARCHAR
-           || ' action=[' || action || ']'
+           || ' action=[' || coalesce(action, '<NULL>') || ']'
   FROM changesets
-  WHERE is_interactive IS DISTINCT FROM (action <> '')
+  WHERE is_interactive IS DISTINCT FROM (action IS NOT NULL)
 
   -- A changeset that neither wrote nor retracted a claim did nothing at all. Zero of
   -- 32,126 today. One would mean a write path recording the grouping record and then
@@ -321,34 +358,51 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   -- status_unknown load-bearing for catalog.sql's liveness spelling. Notably
   -- actor_resolution_status: a third member would join neither the "ranks" nor the
   -- "suppressed" branch, and `rank` would keep looking right.
+  --
+  -- EACH ONE TESTS FOR ABSENCE SEPARATELY, because the two ways an enum goes wrong are
+  -- different defects and only one of them is loud. `v NOT IN (…)` is NULL on a NULL v
+  -- and a NULL predicate selects nothing, so an enum arriving blank passes the very
+  -- check written to police it. Three of these views read through blanks_null, which
+  -- turns a '' in the table into exactly that NULL — and none of these columns has a
+  -- CHECK constraint behind it, since `choices` is enforced by full_clean() alone.
+  -- A closed enum has no absent state: the five below are NOT NULL with a default, so a
+  -- NULL here is a blank that reached the view, never a value nobody set.
   UNION ALL
-  SELECT 'unknown_actor_kind', v
+  SELECT 'unknown_actor_kind', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT actor_kind AS v FROM claims)
-  WHERE v NOT IN ('source', 'user')
+  WHERE v IS NULL OR v NOT IN ('source', 'user')
 
   UNION ALL
-  SELECT 'unknown_actor_resolution_status', v
+  SELECT 'unknown_actor_resolution_status', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT actor_resolution_status AS v FROM claims)
-  WHERE v NOT IN ('active', 'suppressed')
+  WHERE v IS NULL OR v NOT IN ('active', 'suppressed')
 
-  -- ChangeSetAction, plus '' — the empty action is REQUIRED for an ingest changeset
-  -- (the provenance_changeset_action_iff_interactive constraint), not a missing value.
+  -- ChangeSetAction, and the one branch where NULL is CORRECT rather than a defect:
+  -- `action` is nullable, and provenance_changeset_action_iff_interactive makes it null
+  -- exactly when there is no ingest run, so every ingest changeset carries one. `''` is
+  -- NOT that state — it satisfies the constraint's interactive half while naming no
+  -- action at all — so absence is admitted by an explicit NULL test and nothing wider.
+  --
+  -- Scanned over _changeset_action, the scaffolding, and not over `claims`: this is a
+  -- fact about CHANGESETS, and `claims.changeset_id` names only the ones that wrote,
+  -- leaving the retraction-only rows — the population `changesets` exists to reach —
+  -- outside a check that claims to police the whole vocabulary.
   UNION ALL
-  SELECT 'unknown_changeset_action', v
-  FROM (SELECT DISTINCT changeset_action AS v FROM claims)
-  WHERE v NOT IN ('', 'create', 'edit', 'delete', 'revert')
+  SELECT 'unknown_changeset_action', coalesce(v, 'NULL')
+  FROM (SELECT DISTINCT action AS v FROM _changeset_action)
+  WHERE v IS NOT NULL AND v NOT IN ('create', 'edit', 'delete', 'revert')
 
   UNION ALL
-  SELECT 'unknown_ingest_run_status', v
+  SELECT 'unknown_ingest_run_status', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT status AS v FROM ingest_runs)
-  WHERE v NOT IN ('running', 'success', 'failed')
+  WHERE v IS NULL OR v NOT IN ('running', 'success', 'failed')
 
   UNION ALL
-  SELECT 'unknown_ingest_source_type', v
+  SELECT 'unknown_ingest_source_type', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT ingest_source_type AS v FROM ingest_sources)
-  WHERE v NOT IN ('database', 'wiki', 'book', 'editorial', 'other')
+  WHERE v IS NULL OR v NOT IN ('database', 'wiki', 'book', 'editorial', 'other')
 
   UNION ALL
-  SELECT 'unknown_citation_source_type', v
+  SELECT 'unknown_citation_source_type', coalesce(v, 'NULL')
   FROM (SELECT DISTINCT citation_source_type AS v FROM citation_sources)
-  WHERE v NOT IN ('book', 'periodical', 'web', 'video', 'document');
+  WHERE v IS NULL OR v NOT IN ('book', 'periodical', 'web', 'video', 'document');

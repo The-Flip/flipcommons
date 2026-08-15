@@ -24,6 +24,8 @@ codegen:
 	cd backend && uv run python manage.py export_entity_meta
 	cd backend && uv run python manage.py export_citation_type_meta
 	cd backend && uv run python manage.py export_relationship_type_meta
+	cd backend && uv run python manage.py export_entity_registry
+	cd backend && uv run python manage.py export_shared_hosts
 	cd frontend && pnpm exec prettier --write src/lib/entities/entity-meta.ts src/lib/citation-types/citation-type-meta.ts src/lib/entities/relationship-type-meta.ts
 	cd frontend && pnpm api:gen
 

@@ -177,8 +177,11 @@ CREATE OR REPLACE VIEW _claim_ref AS
 
 -- ─── claims ────────────────────────────────────────────────────────────────
 -- The spine of this file. One row per claim across EVERY subject type — 21 of them, so
--- the content-type decode is generic (subject_type = 'catalog.machinemodel') and no
--- per-entity list appears anywhere here.
+-- the content-type decode is generic and no per-entity list appears anywhere here.
+--
+-- THE decode point: a content type spells the subject `catalog.machinemodel`,
+-- `entity_registry` translates it, and the Django spelling survives in exactly one join
+-- predicate below. `subject_type = 'person'` is the query that works.
 --
 -- NOT LIVE-FILTERED, deliberately, and the one place this file departs from the rest of
 -- the foundation. Provenance of a soft-deleted record is legitimate history (39 claims
@@ -193,7 +196,12 @@ CREATE OR REPLACE VIEW _claim_ref AS
 --
 --   register / is_member : see the register block above. Predicate on `register` when
 --             asking "what competed"; `field_name` when asking "what kind of fact".
---   value   : the raw asserted JSON, as stored.
+--   value   : the raw asserted JSON, for the member and list shapes that have no scalar
+--             spelling. Anything else wants value_text.
+--   value_text : the SCALAR value as text, and the column to predicate on. JSON keeps
+--             `"500"` apart from `500` and both are in the data for the same field, so
+--             `value = '500'` finds ONE of the 73 claims asserting production_quantity =
+--             500 and `value = '"500"'` finds 72. NULL for a member or a list claim.
 --   member_exists : NULL for a scalar. For a member, FALSE means a TOMBSTONE — this
 --             actor asserts the member is ABSENT. 119 active claims say this today, and
 --             a membership query that ignores it reports the exact opposite of the
@@ -230,7 +238,7 @@ CREATE OR REPLACE VIEW _claim_ref AS
 CREATE OR REPLACE VIEW claims AS
   SELECT
     c.id                                          AS claim_id,
-    ct.app_label || '.' || ct.model               AS subject_type,
+    er.entity_type                                AS subject_type,
     c.object_id                                   AS subject_id,
     e.subject_public_id, e.subject_name, e.subject_status,
     c.field_name                                  AS field_name,
@@ -238,14 +246,21 @@ CREATE OR REPLACE VIEW claims AS
     p.register                                    AS register,
     p.is_member                                   AS is_member,
     c.value                                       AS value,
+    json_scalar_text(c.value)                     AS value_text,
     CASE WHEN p.is_member
          THEN coalesce(json_extract_string(c.value, '$.exists'), 'true') <> 'false'
     END                                           AS member_exists,
     r.ref_id                                      AS ref_id,
+    -- The eligibility test is stated twice — nulling the rank AND partitioning by it — and
+    -- the two must agree. row_number() numbers every row it is given, so testing only in
+    -- the CASE lets an ineligible claim consume 1 and leaves the real winner at 2, with
+    -- `rank = 1` naming nothing. `rank_not_dense` holds the pair in step.
     CASE WHEN c.is_active
           AND a.actor_resolution_status IS DISTINCT FROM 'suppressed'
          THEN row_number() OVER (
-                PARTITION BY c.content_type_id, c.object_id, p.register
+                PARTITION BY c.content_type_id, c.object_id, p.register,
+                             c.is_active
+                               AND a.actor_resolution_status IS DISTINCT FROM 'suppressed'
                 ORDER BY a.actor_priority DESC, c.created_at DESC, c.id DESC)
     END                                           AS rank,
     c.is_active                                   AS is_active,
@@ -263,9 +278,11 @@ CREATE OR REPLACE VIEW claims AS
     c.created_at                                  AS created_at
   FROM fc.provenance_claim c
   JOIN fc.django_content_type ct   ON ct.id = c.content_type_id
-  -- LEFT, though every claim resolves today: an inner join would silently drop a claim
-  -- whose subject row vanished. `unresolved_claim_subject` reports that and names it.
-  LEFT JOIN entity_subjects e      ON e.subject_type = ct.app_label || '.' || ct.model
+  -- Both LEFT, though every claim resolves today: an inner join would silently drop a
+  -- claim whose subject type is unregistered or whose subject row vanished. Either way
+  -- `subject_type` lands NULL and the checks report it.
+  LEFT JOIN entity_registry er     ON er.django_label = ct.app_label || '.' || ct.model
+  LEFT JOIN entity_subjects e      ON e.subject_type = er.entity_type
                                   AND e.subject_id = c.object_id
   JOIN _claim_key_parts p          ON p.claim_id = c.id
   JOIN fc.provenance_changeset cs  ON cs.id = c.changeset_id
@@ -276,7 +293,7 @@ CREATE OR REPLACE VIEW claims AS
   LEFT JOIN fc.provenance_changeset cs_r ON cs_r.id = c.retracted_by_changeset_id
   LEFT JOIN fc.provenance_ingestrun ir_r ON ir_r.id = cs_r.ingest_run_id;
 COMMENT ON VIEW claims IS
-  'One row per claim, every subject type — who asserted what, with the subject resolved (subject_public_id/name/status), rank, member_exists, ref_id, ingest source, changeset and patch_id, plus the changeset/patch that later retracted it. NOT live-filtered; use model_claims for the live-model lens.';
+  'One row per claim, every subject type — who asserted what, with the subject resolved (subject_public_id/name/status), rank, member_exists, ref_id, ingest source, changeset and patch_id, plus the changeset/patch that later retracted it. Predicate on value_text, not value: JSON keeps "500" and 500 apart and both write paths are in the data. NOT live-filtered; use model_claims for the live-model lens.';
 
 -- model_claims — claims about LIVE machine models, keyed model_id so it joins straight
 -- to `models` and the grain views. The live-only lens `claims` deliberately isn't, and
@@ -306,7 +323,7 @@ COMMENT ON VIEW claims IS
 CREATE OR REPLACE VIEW model_claims AS
   SELECT c.*, c.subject_id AS model_id, c.subject_public_id AS model_slug
   FROM claims c
-  WHERE c.subject_type = 'catalog.machinemodel'
+  WHERE c.subject_type = 'model'
     AND EXISTS (SELECT 1 FROM models m WHERE m.id = c.subject_id);
 COMMENT ON VIEW model_claims IS
   'One row per claim about a LIVE machine model, keyed model_id to join and model_slug to emit, with the model also as subject_public_id/subject_name — the live lens on claims. Join to a model grain view on (model_id, field_name, ref_id) to attribute a resolved fact to its ingest source.';
@@ -347,11 +364,12 @@ CREATE OR REPLACE VIEW ingest_sources AS
     a.actor_resolution_status AS resolution_status,
     s.is_enabled            AS is_enabled,
     s.url                   AS url,
+    s.description           AS ingest_source_description,
     a.ingest_source_default_license_slug AS default_license_slug,
     count(c.claim_id)                                          AS n_claims,
     count(*) FILTER (c.is_active)                              AS n_active_claims,
     count(*) FILTER (c.rank = 1)                               AS n_top_ranked
-  FROM fc.provenance_source s
+  FROM blanks_null('fc.provenance_source') s
   JOIN _claim_actor a ON a.actor_id = s.actor_id
   LEFT JOIN claims c  ON c.actor_id = s.actor_id
   GROUP BY ALL;
@@ -376,8 +394,11 @@ CREATE OR REPLACE VIEW ingest_runs AS
     ir.records_parsed, ir.records_matched, ir.records_created,
     ir.claims_asserted, ir.claims_retracted, ir.claims_rejected,
     ir.citation_sources_created, ir.citation_source_links_created,
+    -- Why a run failed or complained. Modelled since the first ingest and never surfaced;
+    -- the reason to read them is a run whose status is not 'success'.
+    ir.errors, ir.warnings,
     ir.note             AS note
-  FROM fc.provenance_ingestrun ir
+  FROM blanks_null('fc.provenance_ingestrun') ir
   LEFT JOIN fc.provenance_source s ON s.id = ir.source_id;
 COMMENT ON VIEW ingest_runs IS
   'One row per ingest run — patch_id, ingest source, status, fingerprint and the asserted/retracted/rejected claim counts. Reach for it when the subject is a patch rather than what the patch wrote.';
@@ -409,8 +430,8 @@ COMMENT ON VIEW ingest_runs IS
 --   is_interactive : a human edit, i.e. no ingest run. Carried as a column rather than
 --             as a filter on this view because the ingest side is not noise — it is
 --             where the invisible rows live. `action` is present exactly when this is
---             true (`provenance_changeset_action_iff_interactive`), and is spelled ''
---             for ingest to match `claims.changeset_action`, not NULL.
+--             true (`provenance_changeset_action_iff_interactive`), and is NULL for
+--             ingest, as absence is spelled everywhere in this layer.
 --   n_claims / n_retracted : what the changeset actually did. `n_claims = 0 AND
 --             n_retracted > 0` is the 739; both zero is the state `inert_changeset`
 --             forbids. Counted over ALL claims, not live subjects — a changeset that
@@ -431,7 +452,7 @@ CREATE OR REPLACE VIEW changesets AS
   SELECT
     cs.id                             AS changeset_id,
     cs.ingest_run_id IS NULL          AS is_interactive,
-    coalesce(cs.action, '')           AS action,
+    cs.action                         AS action,
     a.actor_id, a.actor_kind, a.actor_name, a.actor_slug,
     cs.ingest_run_id                  AS ingest_run_id,
     ir.patch_id                       AS patch_id,
@@ -439,7 +460,7 @@ CREATE OR REPLACE VIEW changesets AS
     coalesce(r.n, 0)                  AS n_retracted,
     cs.note                           AS note,
     cs.created_at                     AS created_at
-  FROM fc.provenance_changeset cs
+  FROM blanks_null('fc.provenance_changeset') cs
   LEFT JOIN actors a                   ON a.actor_id = cs.actor_id
   LEFT JOIN fc.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
   LEFT JOIN wrote w                    ON w.changeset_id = cs.id
@@ -448,6 +469,13 @@ COMMENT ON VIEW changesets IS
   'One row per ChangeSet — the finest attribution grain, ingest and interactive alike, with its note, actor and n_claims/n_retracted. The ONLY view that sees the 739 retraction-only changesets: claims.changeset_id names only changesets that wrote.';
 
 -- ═══ CITATION SOURCES — external evidence ═══════════════════════════════════
+-- shared_hosts (the declared multi-tenant hosts), GENERATED by `manage.py
+-- export_shared_hosts` (`make codegen`) from apps/citation/shared_hosts.py. A Python
+-- declaration with no database row behind it, so no runtime read could reach it.
+-- Read here, ahead of the section: DuckDB binds a macro's table references at CREATE,
+-- and _shared_cdn_host below reads this view.
+.read scripts/analysis/shared_hosts.sql
+
 -- The EVIDENCE side. A citation source is a two-level tree: a ROOT (the work — a book,
 -- a periodical, a website) and its children (the specific cited item — IPDB page #5235).
 -- Exactly two levels today, and `citation_tree_too_deep` asserts it: root resolution
@@ -463,7 +491,7 @@ COMMENT ON VIEW changesets IS
 -- fire. Same reasoning as _ce_location_n and _dim_status in catalog.sql.
 CREATE OR REPLACE VIEW _citation_parent_chain AS
   SELECT c.id AS citation_source_id, c.parent_id, p.parent_id AS grandparent_id
-  FROM fc.citation_citationsource c
+  FROM blanks_null('fc.citation_citationsource') c
   LEFT JOIN fc.citation_citationsource p ON p.id = c.parent_id;
 
 CREATE OR REPLACE VIEW _citation_root_domains AS
@@ -504,6 +532,7 @@ CREATE OR REPLACE VIEW citation_sources AS
     coalesce(c.parent_id, c.id)               AS root_citation_source_id,
     coalesce(r.name, c.name)                  AS root_citation_source_name,
     c.parent_id IS NULL                       AS is_root,
+    c.description                             AS citation_source_description,
     c.author, c.publisher,
     c.year, c.month, c.day, c.date_note,
     c.isbn,
@@ -521,8 +550,8 @@ CREATE OR REPLACE VIEW citation_sources AS
     -- issue-normalizing utility queries.
     c.slug                                    AS slug,
     coalesce(r.slug, c.slug)                  AS root_citation_source_slug
-  FROM fc.citation_citationsource c
-  LEFT JOIN fc.citation_citationsource r ON r.id = c.parent_id;
+  FROM blanks_null('fc.citation_citationsource') c
+  LEFT JOIN blanks_null('fc.citation_citationsource') r ON r.id = c.parent_id;
 COMMENT ON VIEW citation_sources IS
   'One row per CITATION SOURCE (external evidence), root and child alike, with its root resolved — a root resolves to itself. slug/root_citation_source_slug are the authored cite handles on slug-addressed (periodical) rows, null elsewhere. year/month/day is a precision ladder that dates the WORK on a root and the cited ITEM on a child. Not to be confused with ingest_sources (who asserted the fact).';
 
@@ -531,8 +560,10 @@ COMMENT ON VIEW citation_sources IS
 -- source and its root are carried, because a consumer almost always wants to group by
 -- the root while displaying the child.
 --
--- `quote` is the verbatim source text the citing claim rests on — empty string, never
--- NULL, when none was recorded. It is here because the evidence question a consumer
+-- `quote` is the verbatim source text the citing claim rests on, NULL when none was
+-- recorded. The physical column is NOT NULL and defaults to '', which `blanks_null`
+-- folds — flippatch's print-citation campaign had to undo that by hand, and its comment
+-- records what it cost: without the fold, the majority shape never matched. It is here because the evidence question a consumer
 -- actually asks is "what did the source SAY", and answering it from `locator` alone is
 -- impossible: a locator narrows the work, the quote is the work's own words. Flippatch's
 -- citation campaigns were reading `fc.provenance_citationinstance` directly to get it,
@@ -561,7 +592,7 @@ CREATE OR REPLACE VIEW citation_instances AS
     s.root_citation_source_slug       AS root_citation_source_slug,
     s.citation_source_type            AS citation_source_type,
     ci.created_at                     AS created_at
-  FROM fc.provenance_citationinstance ci
+  FROM blanks_null('fc.provenance_citationinstance') ci
   JOIN citation_sources s ON s.citation_source_id = ci.citation_source_id;
 COMMENT ON VIEW citation_instances IS
   'One row per citation instance — a specific act of citing, with its locator (page, timestamp) and the verbatim quote it rests on, plus both the immediate and the ROOT citation source, including the root stable key/slug to filter on.';
@@ -697,15 +728,20 @@ CREATE OR REPLACE MACRO url_path(u) AS
 COMMENT ON MACRO url_path IS
   'A URL''s path, verbatim — case and percent-encoding preserved, query and fragment dropped. Empty string when there is no // authority to anchor on, mirroring url_host.';
 
--- _shared_cdn_host — the shared multi-tenant CDN hosts, by label-boundary suffix.
--- MIRRORS apps/citation/shared_hosts.py (SHARED_HOSTS): on these hosts the path names
--- the tenant, so a bare (path_prefix = '') row carries no honest attribution. Keep the
--- VALUES list in lockstep with the backend table — drift here silently misattributes.
+-- _shared_cdn_host — is this host one of the declared shared multi-tenant hosts, by
+-- label-boundary suffix. On these the path names the tenant, so a bare (path_prefix =
+-- '') row carries no honest attribution.
+-- The RULE is here and the LIST is in `shared_hosts`, generated from SHARED_HOSTS. That
+-- split is the lesson from the one drift this file has had: the list gained facebook.com
+-- and the retyped copy did not, which left this layer calling a shared host ordinary —
+-- and an ordinary host keeps its bare row eligible, so citation_root_for_url() went on
+-- attributing every tenant's page to whoever registered the host while the app resolved
+-- it to nothing. Matching mirrors hosts.label_suffixes and stays hand-written; only the
+-- declaration travels.
 CREATE OR REPLACE MACRO _shared_cdn_host(h) AS (
   EXISTS (
-    SELECT 1
-    FROM (VALUES ('wsimg.com'), ('cdn.shopify.com'), ('storage.googleapis.com')) s(shared)
-    WHERE host_norm(h) = s.shared OR ends_with(host_norm(h), '.' || s.shared)
+    SELECT 1 FROM shared_hosts s
+    WHERE host_norm(h) = s.host OR ends_with(host_norm(h), '.' || s.host)
   )
 );
 

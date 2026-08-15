@@ -20,6 +20,7 @@
 #   scripts/analysis/analysis ui  <analysis.sql>
 #   scripts/analysis/analysis snapshot <analysis.sql> <view> [<view>...]
 #   scripts/analysis/analysis query <analysis.sql> "<sql>" [--format json|csv|table] [--check <prefix>]
+#   scripts/analysis/analysis columns [<analysis.sql>] <view> | --all
 #
 # <prefix> names the analysis file's own summary/checks pair: `export` ->
 # export_summary, export_checks. Both must exist. But the gate is not limited to
@@ -44,6 +45,15 @@
 # Both read the session itself, so neither can drift the way a prose table did.
 # Both args are optional and order-free — anything ending in .sql is the analysis
 # file (default: the foundation), anything else is a view or macro name or a term.
+# `columns` is measurement where `describe` is reference: per column, how many rows,
+# how many NULL and how many empty string. Named, it prints every column of one view.
+# `--all` sweeps every public view and shows only the columns worth a look — any holding
+# '' (absence spelled the wrong way; the layer's rule is that absent is NULL) and any
+# entirely NULL (a facet the catalog does not hold yet, or a decode that broke). Run it
+# after editing a view that reads a physical table. It is a command rather than a check
+# because the same measurement as a gate needs an exemption list — 38 of 68 views carry a
+# bare `fc.` reference, and `path_prefix` is legitimately '' — and that list is the
+# maintenance burden, not the coverage. ~7s for a full sweep, seconds for one view.
 # `browse` materializes every public relation (view or table) into
 # <analysis>.browse.duckdb, a static, disposable database that desktop clients such
 # as TablePlus can open directly.
@@ -53,6 +63,67 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 
 need() { command -v duckdb >/dev/null 2>&1 || { echo "duckdb not on PATH" >&2; exit 127; }; }
+
+# The catalog is IMPORTED into DuckDB's own storage, not read out of SQLite in place,
+# and `ensure_snapshot` is what keeps that invisible: it re-imports only when
+# backend/db.sqlite3 has actually changed, which in practice means after a prod import
+# or `make ingest-patches`. The import is under a second for the whole database; the
+# staleness test is one stat. Nobody has to ask for a rebuild.
+#
+# Importing rather than ATTACHing the SQLite file is a CORRECTNESS decision first.
+# DuckDB's sqlite scanner collapses two branches of one query that aggregate over
+# different attached tables when the pushed-down projection and filter match — and
+# `WHERE status IS DISTINCT FROM 'deleted'` makes them match across every simple view
+# here. It silently gave `foundation_summary` one vocabulary's count for another's, and
+# left `_anchor_scan` reporting one view's liveness for three others. Both defects
+# vanish against native storage; see EDITING.md. Speed is the second reason and much
+# the smaller one (the self-test roughly halves).
+source_db="$root/backend/db.sqlite3"
+snapshot="$root/backend/db.analytics.duckdb"
+
+# mtime+size, BSD and GNU stat. Size is in there because mtime alone has one-second
+# granularity, and an ingest that rewrites the file inside the same second as the last
+# import would otherwise read as unchanged.
+source_stamp() {
+  stat -f '%m %z' "$source_db" 2>/dev/null || stat -c '%Y %s' "$source_db"
+}
+
+ensure_snapshot() {
+  need
+  [ -f "$source_db" ] || {
+    echo "no catalog database at $source_db — run 'make bootstrap' first" >&2; exit 2; }
+  want=$(source_stamp)
+  if [ -f "$snapshot" ]; then
+    # A snapshot written by an older DuckDB fails to open. That is a rebuild, not an
+    # error, so the read is allowed to fail and falls through to the import below.
+    have=$(duckdb "$snapshot" -noheader -list \
+             "SELECT source_mtime || ' ' || source_size FROM _import_stamp" 2>/dev/null) || have=
+    [ "$have" = "$want" ] && return 0
+  fi
+  printf 'importing catalog into DuckDB (source changed)… ' >&2
+  # Table by table rather than COPY FROM DATABASE, which refuses on the partial indexes
+  # Django creates. Indexes are not copied at all: DuckDB does not use them.
+  copy_stmts=$(duckdb :memory: -noheader -list "
+    INSTALL sqlite; LOAD sqlite;
+    ATTACH '$source_db' AS src (TYPE sqlite, READ_ONLY);
+    SELECT 'CREATE TABLE out.\"' || table_name || '\" AS SELECT * FROM src.\"' || table_name || '\";'
+    FROM duckdb_tables() WHERE database_name = 'src' ORDER BY table_name;")
+  # Build beside the target and rename, so a concurrent reader never sees a half-written
+  # snapshot and a failed import leaves the previous one intact.
+  tmp="$snapshot.tmp.$$"
+  rm -f "$tmp" "$tmp.wal"
+  duckdb :memory: "
+    INSTALL sqlite; LOAD sqlite;
+    ATTACH '$source_db' AS src (TYPE sqlite, READ_ONLY);
+    ATTACH '$tmp' AS out;
+    $copy_stmts
+    CREATE TABLE out._import_stamp AS
+      SELECT ${want%% *}::BIGINT AS source_mtime, ${want##* }::BIGINT AS source_size,
+             now() AS imported_at;" >/dev/null
+  mv "$tmp" "$snapshot"
+  rm -f "$tmp.wal"
+  echo "done" >&2
+}
 
 
 usage() {
@@ -72,6 +143,7 @@ resolve_and_cd() {
   [ -f "$1" ] || { echo "no such file: $1" >&2; exit 2; }
   analysis_file=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")
   cd "$root"
+  ensure_snapshot
 }
 
 # Public = a view in the session's own catalog (`memory`), not the read-only `fc`
@@ -423,6 +495,63 @@ EOF
     [ -n "$check" ] && gate "$check" stderr
     # Pure data on stdout; DuckDB's own diagnostics already go to stderr.
     duckdb -init "$analysis_file" -"$fmt" :memory: "$query"
+    ;;
+
+  columns)
+    # Both args order-free, like describe: *.sql is the file, anything else a view.
+    sql=scripts/analysis/catalog.sql; view=; all=
+    for a in "$@"; do
+      case "$a" in
+        --all) all=1 ;;
+        *.sql) sql=$a ;;
+        *)     view=$a ;;
+      esac
+    done
+    [ -n "$view" ] || [ -n "$all" ] || { echo "columns needs a <view> or --all" >&2; exit 2; }
+    resolve_and_cd "$sql"
+
+    # The relation list is derived HERE, in the shell, and that is the whole reason this
+    # is a command and not a check. A SQL view cannot iterate relations — query_table()
+    # takes literals only — so the same measurement written as a check needs one
+    # hand-written UNION branch per relation plus a meta-check to keep that list honest.
+    # See EDITING.md.
+    # TABLES as well as views, on `browse`'s reasoning: an analysis materializes an
+    # expensive intermediate as a table so downstream views don't recompute it, and those
+    # are the big relations where a stray '' is least likely to be caught by eye. Sweeping
+    # only views would under-report exactly there, and silently.
+    views=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+      "SELECT view_name AS rel FROM duckdb_views() $pub_where
+         ${view:+AND view_name = '$view'}
+       UNION ALL
+       SELECT table_name FROM duckdb_tables() $pub_table_where
+         ${view:+AND table_name = '$view'}
+       ORDER BY rel;")
+    [ -n "$views" ] || { echo "no such public view or table: $view" >&2; exit 2; }
+
+    branches=
+    for v in $views; do
+      branches=${branches:+"$branches UNION ALL "}"SELECT '$v' AS view_name, * FROM _colstats('$v')"
+    done
+
+    # Unscoped, the sweep is the interesting reading and the rows are the product: an
+    # all-NULL column is a facet the catalog does not hold yet, which is a worklist entry
+    # rather than a defect. Filtered when sweeping so the output stays readable; a named
+    # view prints every column, because there you asked about that view specifically.
+    filter=; [ -n "$all" ] && [ -z "$view" ] && filter="WHERE n_blank > 0 OR n_null = n_rows"
+    duckdb -box :memory: -f /dev/stdin <<SQL
+.read $analysis_file
+-- n_blank cannot see a blank INSIDE a list element: ['a',''] casts to [a, ], never ''.
+-- Zero such values today; the gap is latent, and list-typed facets are exactly where a
+-- reader would assume coverage.
+CREATE OR REPLACE MACRO _colstats(vn) AS TABLE
+  WITH n AS (UNPIVOT (SELECT count(*) FILTER (COLUMNS(*) IS NULL) FROM query_table(vn))
+               ON COLUMNS(*) INTO NAME col VALUE n_null),
+       b AS (UNPIVOT (SELECT count(*) FILTER (COLUMNS(*)::VARCHAR = '') FROM query_table(vn))
+               ON COLUMNS(*) INTO NAME col VALUE n_blank)
+  SELECT n.col, (SELECT count(*) FROM query_table(vn)) AS n_rows, n.n_null, b.n_blank
+  FROM n JOIN b USING (col);
+SELECT * FROM ($branches) $filter ORDER BY n_blank DESC, view_name, col;
+SQL
     ;;
 
   snapshot)
