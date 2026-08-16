@@ -156,10 +156,13 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
     WHERE NOT list_contains(
       [regexp_matches(x, '^[\p{Lu}\p{N}]') for x in str_split(span, ' ')], false)
   ),
-  -- One row per (span, record that span could name), carrying whether this prose already
-  -- links that record. Computed per candidate but JUDGED per span, below.
+  -- One row per (span, record that span could name), carrying the two ways a span can
+  -- already be accounted for. Computed per candidate but JUDGED per span, below.
   matched AS (
     SELECT c.entity_type, c.entity_id, c.public_id, c.field, c.span, p.target_link,
+           -- The span is the source's OWN name. Prose naming its own subject is not a
+           -- missing link, and the reader is already on the record.
+           (c.entity_type = p.target_type AND c.entity_id = p.target_id) AS is_self,
            -- Linked ANYWHERE in this record's prose, not just at this span: one link
            -- accounts for every mention of the same record.
            EXISTS (
@@ -169,8 +172,6 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
            ) AS linked
     FROM candidates c
     JOIN pool p ON p.match_key = name_norm(c.span)
-    -- A record naming itself is audit_self_link's business, not this one.
-    WHERE NOT (c.entity_type = p.target_type AND c.entity_id = p.target_id)
   )
   SELECT 'warning' AS severity,
          entity_type,
@@ -188,11 +189,17 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
                 END) AS message
   FROM matched
   GROUP BY entity_type, entity_id, public_id, field, span
-  -- The span is accounted for if ANY record it names is linked, so the whole group goes.
-  -- Dropping only the linked CANDIDATE — the obvious per-row anti-join — leaves the others
-  -- behind and warns about prose that did link the thing it mentioned: "Austin Powers"
-  -- names both a Title and a model, and linking the Title still tripped the model.
-  HAVING NOT bool_or(linked);
+  -- A span is ACCOUNTED FOR if any record it names is the source itself or is already
+  -- linked, and then the whole group goes. Both conditions have to be judged here rather
+  -- than filtered per candidate: dropping just the self or linked row leaves its
+  -- same-named siblings behind and warns about prose that was never wrong.
+  --
+  -- Self is the larger half. Franchise "Apollo 13", manufacturer "Bally Wulff" and model
+  -- "Time 2000" all share a name with some other record, so filtering self per candidate
+  -- told a record to link its own namesake — and for 42 of those the suggested link was a
+  -- model alone in its Title, which wrong-grain-link then calls an ERROR. The audit was
+  -- contradicting itself.
+  HAVING NOT bool_or(is_self OR linked);
 COMMENT ON VIEW audit_unlinked_mention IS
   'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Matches canonical names and aliases alike; a span naming several records renders as "N candidates". A name inside a quotation is legitimately unlinked, which is why this is not an error.';
 
@@ -314,10 +321,17 @@ COMMENT ON VIEW audit_parenthetical_fact IS
 -- reads as linked. record_references carries `target_status` for exactly this question
 -- and this is its only reader.
 --
--- HARD-deleted targets are out of scope and fall out on their own: a GenericForeignKey
--- has no on_delete, so the row survives its target, entity_subjects resolves nothing,
--- target_status is NULL and is_live() reads NULL as live. A cite edge is excluded by the
--- same NULL target_entity_type test that keeps it out of every other link rule.
+-- BOTH kinds of dead target, which is why the predicate has two halves. A soft-deleted
+-- one carries status 'deleted'. A HARD-deleted one carries no status at all — a
+-- GenericForeignKey has no on_delete, so the edge outlives its target, entity_subjects
+-- resolves nothing and is_live() reads that NULL as live — so it is caught by its
+-- unresolvable public id instead. catalog_checks says in as many words that a dangling
+-- row is a condition a broken-link rule should report; this is the rule that does.
+-- (Zero exist today. The half that finds them is here because nothing else would: a
+-- record whose only link dangles reads as linked to linkless-description.)
+--
+-- A cite edge is excluded by the same NULL target_entity_type test that keeps it out of
+-- every other link rule, and that test also stops the second half from firing on one.
 CREATE OR REPLACE VIEW audit_broken_link AS
   SELECT 'error'            AS severity,
          source_entity_type AS entity_type,
@@ -331,7 +345,8 @@ CREATE OR REPLACE VIEW audit_broken_link AS
            || COALESCE(' ("' || target_name || '")', '')
            || ', which has been deleted' AS message
   FROM record_references
-  WHERE target_entity_type IS NOT NULL AND NOT is_live(target_status);
+  WHERE target_entity_type IS NOT NULL
+    AND (NOT is_live(target_status) OR target_public_id IS NULL);
 COMMENT ON VIEW audit_broken_link IS
   'ERROR — one row per wikilink pointing at a soft-deleted record. Either the link should go, or the record should not have been deleted.';
 
