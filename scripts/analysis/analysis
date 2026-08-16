@@ -170,7 +170,7 @@ pub_macro_where="WHERE database_name = 'memory' AND schema_name = 'main'
 # analysis's word for it: a layer it `.read`s gets picked up without the analysis
 # mentioning it, and an analysis cannot quietly opt out of a module's checks.
 public_views_ending() {
-  duckdb -init "$analysis_file" -noheader -list :memory: \
+  duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
     "SELECT view_name FROM duckdb_views() $pub_where
        AND ends_with(view_name, '$1') ORDER BY view_name;"
 }
@@ -184,6 +184,8 @@ public_views_ending() {
 # $1 = prefix. $2 = where the passing ✓ lines go: `stdout` for `run`, whose job
 # is to report, or `stderr` for `query`, whose stdout must stay pure data.
 # FAILURES always go to stderr regardless.
+# gate <prefix> stdout|stderr|silent — `silent` reports failures and says nothing on
+# success, for a command whose output is meant to be consumed rather than read.
 gate() {
   gate_prefix=$1; gate_ok=$2
   checks=$(public_views_ending _checks)
@@ -206,14 +208,14 @@ ${gate_prefix}_checks
   # and the analysis both break, seeing one of them is a misleading half-picture.
   bad=0
   for v in $checks; do
-    n=$(duckdb -init "$analysis_file" -noheader -list :memory: "SELECT count(*) FROM $v;")
+    n=$(duckdb -noheader -list :memory: -c ".read '$analysis_file'" "SELECT count(*) FROM $v;")
     if [ "$n" -ne 0 ]; then
       printf '\n✗ %s returned %s row(s):\n' "$v" "$n" >&2
-      duckdb -init "$analysis_file" :memory: "FROM $v;" >&2
+      duckdb :memory: -c ".read '$analysis_file'" "FROM $v;" >&2
       bad=$((bad + 1))
     elif [ "$gate_ok" = stdout ]; then
       printf '\n✓ %s clean\n' "$v"
-    else
+    elif [ "$gate_ok" = stderr ]; then
       printf '\n✓ %s clean\n' "$v" >&2
     fi
   done
@@ -235,15 +237,15 @@ case "$cmd" in
     # The catalog watermark first, then any companion layer's — a run should
     # certify ALL of its inputs, and a source corpus can be staler than the DB.
     printf '\n— context —\n'
-    duckdb -init "$analysis_file" -"$fmt" :memory: "FROM analysis_context;"
+    duckdb -"$fmt" :memory: -c ".read '$analysis_file'" "FROM analysis_context;"
     for v in $(public_views_ending _context); do
       [ "$v" = analysis_context ] && continue
       printf '\n— %s —\n' "$v"
-      duckdb -init "$analysis_file" -"$fmt" :memory: "FROM $v;"
+      duckdb -"$fmt" :memory: -c ".read '$analysis_file'" "FROM $v;"
     done
 
     printf '\n— %s_summary —\n' "$prefix"
-    duckdb -init "$analysis_file" -"$fmt" :memory: "FROM ${prefix}_summary;"
+    duckdb -"$fmt" :memory: -c ".read '$analysis_file'" "FROM ${prefix}_summary;"
 
     # Gate: a row in ANY public *_checks view fails the run.
     gate "$prefix" stdout
@@ -304,24 +306,24 @@ case "$cmd" in
       # one. Suppressed entirely when describing the foundation, which has none.
       if [ -n "$own_v" ]; then
         printf '— %s —\n' "$(basename "$analysis_file")"
-        duckdb -init "$analysis_file" -noheader -list :memory: \
+        duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
           "SELECT view_name || coalesce(chr(10) || '    ' || comment, '')
            $pub $own_v ORDER BY view_oid;"
-        duckdb -init "$analysis_file" -noheader -list :memory: \
+        duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
           "SELECT sig || coalesce(chr(10) || '    ' || comment, '')
            FROM ($pub_macro) WHERE $own_m ORDER BY oid;"
         printf '\n— foundation —\n'
       fi
       # Index. Rendered as name + indented prose rather than a box table: the
       # comments are sentences, and a box would blow past any terminal width.
-      duckdb -init "$analysis_file" -noheader -list :memory: \
+      duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
         "SELECT view_name || chr(10) || '    ' ||
                 coalesce(comment, '(undocumented — add a COMMENT ON VIEW)')
          $pub $found_v ORDER BY view_oid;"
       # Macros last and labelled, because they are CALLED rather than selected from.
       echo
       echo "— macros —"
-      duckdb -init "$analysis_file" -noheader -list :memory: \
+      duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
         "SELECT sig || chr(10) || '    ' ||
                 coalesce(comment, '(undocumented — add a COMMENT ON MACRO)')
          FROM ($pub_macro) WHERE $found_m ORDER BY oid;"
@@ -329,11 +331,11 @@ case "$cmd" in
       # Doubled for SQL. A search term is freer-form than a view name, and an apostrophe
       # in one would otherwise be a syntax error rather than simply matching nothing.
       sql_view=$(printf '%s' "$view" | sed "s/'/''/g")
-      n=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+      n=$(duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
         "SELECT count(*) $pub AND view_name = '$sql_view';")
       if [ "$n" -eq 0 ]; then
         # Not a view — try a macro before giving up, so one name lookup covers both.
-        m=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+        m=$(duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
           "SELECT count(*) FROM ($pub_macro) WHERE n = '$sql_view';")
         if [ "$m" -eq 0 ]; then
           # Naming nothing exactly is a SEARCH, not a mistake. The question behind such
@@ -352,7 +354,7 @@ case "$cmd" in
           # nullif is what drops the indented line entirely for an analysis's own
           # undocumented object, whose placeholder is the empty string.
           search() {
-            duckdb -init "$analysis_file" -noheader -list :memory: \
+            duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
               "SELECT txt FROM (
                  SELECT view_name || coalesce(chr(10) || '    ' ||
                           nullif(coalesce(comment, $nag_v), ''), '') AS txt,
@@ -384,17 +386,17 @@ case "$cmd" in
         fi
         # Same nullif as the search: an own undocumented macro prints its signature
         # alone, where the view branch below suppresses the row and lets DESCRIBE speak.
-        duckdb -init "$analysis_file" -noheader -list :memory: \
+        duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
           "SELECT sig || coalesce(chr(10) || '    ' ||
                     nullif(coalesce(comment, $nag_m), ''), '')
            FROM ($pub_macro) WHERE n = '$sql_view';"
         exit 0
       fi
       # The WHERE keeps an undocumented analysis view from printing a blank line.
-      duckdb -init "$analysis_file" -noheader -list :memory: \
+      duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
         "SELECT coalesce(comment, $nag_v)
          $pub AND view_name = '$sql_view' AND coalesce(comment, $nag_v) <> '';"
-      duckdb -init "$analysis_file" :memory: "DESCRIBE $view;"
+      duckdb :memory: -c ".read '$analysis_file'" "DESCRIBE $view;"
     fi
     ;;
 
@@ -414,7 +416,7 @@ case "$cmd" in
     trap 'exit 1' HUP INT TERM
     rm -f "$tmp"
 
-    relations=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+    relations=$(duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
       "SELECT relation_name
        FROM (
          SELECT view_name AS relation_name, view_oid AS relation_oid
@@ -445,7 +447,7 @@ EOF
     # re-attached explicitly. Not folded into the loop above: comments are multi-line, so
     # there is no line-oriented read of them. Views become tables here, so COMMENT ON
     # TABLE is right for both. The count rides along on one query to avoid a fourth run.
-    comments=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+    comments=$(duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
       "SELECT count(*) || '|' || coalesce(string_agg(
                 'COMMENT ON TABLE browse.\"' || replace(relation_name, '\"', '\"\"')
                 || '\" IS ''' || replace(comment, '''', '''''') || ''';',
@@ -461,7 +463,7 @@ EOF
     documented=${comments%%|*}
     comment_stmts=${comments#*|}
 
-    duckdb -init "$analysis_file" :memory: "$stmts $comment_stmts"
+    duckdb :memory: -c ".read '$analysis_file'" "$stmts $comment_stmts"
     mv -f "$tmp" "$out"
     trap - EXIT HUP INT TERM
     noun=relations
@@ -492,16 +494,16 @@ EOF
     # patch gets emitted from an analysis whose invariants are failing, and the
     # emitted YAML looks perfectly well-formed either way. Gate output goes to
     # stderr so stdout stays pure data.
-    [ -n "$check" ] && gate "$check" stderr
+    [ -n "$check" ] && gate "$check" silent
     # Pure data on stdout; DuckDB's own diagnostics already go to stderr.
     # `lines` emits each row verbatim with no header, box or quoting — for a query whose
-    # single column IS the rendered output. The other three all mangle prose: csv quotes
-    # any value holding a comma, json escapes it, table pads it to the widest row and
-    # wraps. Meant for one column; with several, -list joins them on '|'.
+    # single column IS the rendered output. The other three formats all mangle prose:
+    # csv quotes any value holding a comma, json escapes it, table pads it out to the
+    # widest row and wraps. Meant for one column; with several, -list joins them on '|'.
     if [ "$fmt" = lines ]; then
-      duckdb -init "$analysis_file" -noheader -list :memory: "$query"
+      duckdb -noheader -list :memory: -c ".read '$analysis_file'" "$query"
     else
-      duckdb -init "$analysis_file" -"$fmt" :memory: "$query"
+      duckdb -"$fmt" :memory: -c ".read '$analysis_file'" "$query"
     fi
     ;;
 
@@ -527,7 +529,7 @@ EOF
     # expensive intermediate as a table so downstream views don't recompute it, and those
     # are the big relations where a stray '' is least likely to be caught by eye. Sweeping
     # only views would under-report exactly there, and silently.
-    views=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+    views=$(duckdb -noheader -list :memory: -c ".read '$analysis_file'" \
       "SELECT view_name AS rel FROM duckdb_views() $pub_where
          ${view:+AND view_name = '$view'}
        UNION ALL
@@ -572,7 +574,7 @@ SQL
     for v in "$@"; do
       stmts="$stmts CREATE TABLE snap.$v AS FROM $v;"
     done
-    duckdb -init "$analysis_file" :memory: "$stmts"
+    duckdb :memory: -c ".read '$analysis_file'" "$stmts"
     printf 'wrote %s (%s)\n' "$out" "$*"
     ;;
 

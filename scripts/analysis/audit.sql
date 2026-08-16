@@ -192,9 +192,21 @@ COMMENT ON VIEW audit_unlinked_mention IS
 -- A Title carries no year of its own, so a stated year is checked against the years of its
 -- models and flagged only when it matches none — a multi-model Title spanning 1978-1982
 -- accepts either.
+-- A MACRO rather than a CTE, which is what it looks like it wants to be: the named-group
+-- form of regexp_extract requires a CONSTANT pattern, and a column reference is not one.
+-- A macro expands to the literal before binding, so it satisfies that and still leaves
+-- the pattern written once.
+CREATE OR REPLACE MACRO paren_pattern() AS
+  '\[\[(model|title):id:(\d+)\]\][^(\[]{0,8}\((\d{4})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)';
+COMMENT ON MACRO paren_pattern IS
+  'The house parenthetical, _[[link]]_ (year, [[manufacturer]]), as a regex with four capture groups: link type, link id, year, manufacturer id. Read by audit_parenthetical_fact twice — once to find matches, once to parse them.';
+
 CREATE OR REPLACE VIEW audit_parenthetical_fact AS
-  -- Matched once, then the groups are read off the matched substring — so the pattern is
-  -- written twice rather than once per group, and the four values cannot fall out of step.
+  -- Matched once, then the groups are read off the matched substring, because
+  -- regexp_extract_all returns whole matches and no groups. Both calls take the pattern
+  -- from `paren_pattern()` rather than spelling it twice: two copies that drift find a
+  -- different set of parentheticals than they parse, and the mismatch is silent —
+  -- unparsed groups come back empty, TRY_CAST nulls them and the rows just vanish.
   --
   -- NULLIF on the maker is load-bearing. The NAMED-GROUP form of regexp_extract returns
   -- '' for a group that did not participate, while the group-index form returns NULL —
@@ -202,8 +214,7 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
   -- everything below test IS NULL and mean it.
   WITH hits AS (
     SELECT entity_type, entity_id, public_id, field,
-           UNNEST(regexp_extract_all(
-             text, '\[\[(model|title):id:(\d+)\]\][^(\[]{0,8}\((\d{4})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)')) AS hit
+           UNNEST(regexp_extract_all(text, paren_pattern())) AS hit
     FROM entity_prose WHERE text IS NOT NULL
   ),
   parsed AS (
@@ -217,8 +228,7 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
            TRY_CAST(NULLIF(g.stated_maker, '') AS BIGINT) AS stated_maker
     FROM (
       SELECT entity_type, entity_id, public_id, field,
-             regexp_extract(
-               hit, '\[\[(model|title):id:(\d+)\]\][^(\[]{0,8}\((\d{4})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)',
+             regexp_extract(hit, paren_pattern(),
                ['link_type', 'link_id', 'stated_year', 'stated_maker']) AS g
       FROM hits)
   ),
@@ -281,6 +291,37 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
   WHERE year_wrong OR maker_wrong;
 COMMENT ON VIEW audit_parenthetical_fact IS
   'ERROR — one row per _[[link]]_ (year, [[manufacturer]]) parenthetical whose year or maker disagrees with the catalog. Either the prose is wrong or the record is; both want fixing.';
+
+-- ─── broken-link ───────────────────────────────────────────────────────────
+-- Prose wikilinking a record that has since been soft-deleted. The reader follows it to
+-- nothing.
+--
+-- Nothing else reports these. wrong-grain-link and parenthetical-fact join the live
+-- entity views, so a dead target drops out of the join rather than being flagged; and
+-- linkless-description counts the edge as a link, so a record whose only link is dead
+-- reads as linked. record_references carries `target_status` for exactly this question
+-- and this is its only reader.
+--
+-- HARD-deleted targets are out of scope and fall out on their own: a GenericForeignKey
+-- has no on_delete, so the row survives its target, entity_subjects resolves nothing,
+-- target_status is NULL and is_live() reads NULL as live. A cite edge is excluded by the
+-- same NULL target_entity_type test that keeps it out of every other link rule.
+CREATE OR REPLACE VIEW audit_broken_link AS
+  SELECT 'error'            AS severity,
+         source_entity_type AS entity_type,
+         source_id          AS entity_id,
+         source_public_id   AS public_id,
+         -- Concatenated from pieces that cannot be NULL rather than format()ed: a
+         -- deleted record is exactly the kind that might be missing a name, and one NULL
+         -- argument would blank the whole message.
+         'links [[' || target_entity_type || ':'
+           || COALESCE(target_public_id, target_id::VARCHAR) || ']]'
+           || COALESCE(' ("' || target_name || '")', '')
+           || ', which has been deleted' AS message
+  FROM record_references
+  WHERE target_entity_type IS NOT NULL AND NOT is_live(target_status);
+COMMENT ON VIEW audit_broken_link IS
+  'ERROR — one row per wikilink pointing at a soft-deleted record. Either the link should go, or the record should not have been deleted.';
 
 -- ─── duplicate-name ────────────────────────────────────────────────────────
 -- Two live records of one entity type answering to the same string — as canonical names,
@@ -345,7 +386,8 @@ CREATE OR REPLACE VIEW audit_findings AS
   UNION ALL SELECT 'linkless-description',      severity, entity_type, entity_id, public_id, message FROM audit_linkless_description
   UNION ALL SELECT 'unlinked-mention',          severity, entity_type, entity_id, public_id, message FROM audit_unlinked_mention
   UNION ALL SELECT 'parenthetical-fact',        severity, entity_type, entity_id, public_id, message FROM audit_parenthetical_fact
-  UNION ALL SELECT 'duplicate-name',            severity, entity_type, entity_id, public_id, message FROM audit_duplicate_name;
+  UNION ALL SELECT 'duplicate-name',            severity, entity_type, entity_id, public_id, message FROM audit_duplicate_name
+  UNION ALL SELECT 'broken-link',               severity, entity_type, entity_id, public_id, message FROM audit_broken_link;
 COMMENT ON VIEW audit_findings IS
   'One row per catalog defect across every rule — rule, severity, the record it is about and a human-readable message. Catalog content, not a health gate.';
 
@@ -390,7 +432,10 @@ COMMENT ON MACRO TABLE audit_since IS
 -- branches, each guarding something only execution reveals — deliberately nothing that
 -- polices this file's own naming or wiring, which is what made the previous version of
 -- this layer cost more than it caught.
+-- `f` is read three times below, and the CTE is what keeps that from being three full
+-- evaluations of every rule — the same idiom audit_report uses.
 CREATE OR REPLACE VIEW audit_checks AS
+  WITH f AS (FROM audit_findings)
   -- A required value that evaluated to NULL. The one that has actually bitten, twice:
   -- format() propagates NULL, so a single NULL argument blanks the entire message and
   -- the finding prints as an empty line — it reads as a broken audit rather than as a
@@ -401,7 +446,7 @@ CREATE OR REPLACE VIEW audit_checks AS
   -- NULL there costs nothing.
   SELECT 'finding_null_required' AS check_name,
          rule || ' -> ' || col AS detail
-  FROM audit_findings f,
+  FROM f,
        LATERAL (VALUES ('severity', f.severity), ('entity_type', f.entity_type),
                        ('entity_id', f.entity_id::VARCHAR), ('message', f.message))
               AS v(col, val)
@@ -412,7 +457,7 @@ CREATE OR REPLACE VIEW audit_checks AS
   -- in wrong-grain-link — and a CASE that loses its ELSE returns something no consumer
   -- knows how to rank or colour.
   SELECT 'unknown_severity', rule || ' -> ' || severity
-  FROM audit_findings WHERE severity NOT IN ('error', 'warning')
+  FROM f WHERE severity NOT IN ('error', 'warning')
 
   UNION ALL
   -- A finding about a record that is not live. NOT tautological: unlinked-mention and
@@ -422,7 +467,7 @@ CREATE OR REPLACE VIEW audit_checks AS
   -- filter the rules own rather than inherit.
   SELECT 'finding_subject_not_live',
          rule || ' -> ' || entity_type || ':' || entity_id::VARCHAR
-  FROM audit_findings f
+  FROM f
   WHERE NOT EXISTS (
     SELECT 1 FROM entity_subjects s
     WHERE s.subject_type = f.entity_type AND s.subject_id = f.entity_id
@@ -441,6 +486,7 @@ CREATE OR REPLACE VIEW audit_summary AS
   UNION ALL SELECT 'unlinked-mention',         count(*) FROM audit_unlinked_mention
   UNION ALL SELECT 'parenthetical-fact',       count(*) FROM audit_parenthetical_fact
   UNION ALL SELECT 'duplicate-name',           count(*) FROM audit_duplicate_name
+  UNION ALL SELECT 'broken-link',              count(*) FROM audit_broken_link
   UNION ALL SELECT 'TOTAL errors', count(*) FILTER (severity = 'error') FROM audit_findings
   UNION ALL SELECT 'TOTAL warnings', count(*) FILTER (severity = 'warning') FROM audit_findings
   UNION ALL SELECT 'records affected',
