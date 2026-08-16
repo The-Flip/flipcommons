@@ -1,0 +1,46 @@
+#!/bin/sh
+# Entry point for the catalog audit — lints the live catalog for data gaps and defects.
+set -eu
+
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+runner=$dir/analysis
+plan=$dir/audit.sql
+
+usage() {
+  cat <<'EOF'
+Lint the live catalog for data gaps and defects.
+
+  audit <earliest-patch>   report findings on records this and later patches touched
+  audit                    per-rule finding counts across the whole catalog
+
+Examples:
+  audit 0240
+  audit 0240-game-format-descriptions
+
+Findings never fail the run: the catalog carries a standing backlog that has nothing to
+do with any one patch, so this reports and exits 0. See README.md.
+EOF
+}
+
+case "${1:-}" in -h | --help)
+  usage
+  exit 0
+  ;;
+esac
+[ $# -le 1 ] || {
+  usage >&2
+  exit 2
+}
+
+[ $# -eq 1 ] || exec "$runner" query "$plan" "FROM audit_summary;" --format table
+
+# Cut at the first non-digit so a full patch stem works, then strip leading zeros —
+# patch_number is an integer and a leading zero is not how SQL spells one.
+n=$(printf '%s' "${1%%[!0-9]*}" | sed 's/^0*\([0-9]\)/\1/')
+[ -n "$n" ] || {
+  echo "expected a patch number, got '$1'" >&2
+  usage >&2
+  exit 2
+}
+
+exec "$runner" query "$plan" "FROM audit_report($n);" --format lines

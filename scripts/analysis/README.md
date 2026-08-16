@@ -66,6 +66,8 @@ Before maintaining a manual mapping, check the alias views. They map source word
 | `theme_aliases`, `gameplay_feature_aliases`  | a source's wording → the controlled term                                     |
 | `model_abbreviations`, `title_abbreviations` | community shorthand (LTBR, ACDC Prem VE) — shorthand, not alternate names    |
 
+For a question that spans entity types, `entity_aliases` is the same content in one relation, keyed `(entity_type, entity_id)` to match `entity_subjects` — generated from the engine's alias registry, so a new `AliasModel` joins it with no SQL edit. It is not live-filtered and carries no parent name; join `entity_subjects` for liveness, public id and the canonical name. Reach for a per-type view when the question is about one type, since those decode the parent slug.
+
 Match canonical names and aliases as one pool — most records have no alias row, so searching aliases alone resolves almost nothing. Alias views contain one row per alias of a live parent, keyed by parent ID and its stable key. `location_aliases` uses `location_path` because a location slug is unique only within its parent; abbreviation views name their value column `abbreviation` because shorthand is not an alternate name. Values are stored as entered, so choose normalization locally and count distinct target records before accepting a match.
 
 Found a phrasing the catalog lacks? Add it with a [data patch](../../docs/DataPatches.md), not a lookup table in your analysis.
@@ -117,6 +119,23 @@ Two mechanisms cross the foundation's edge, both documented where they are defin
 
 - **What a slug means** — `domain_vocab` parses [DomainModel.md](../../docs/DomainModel.md) at query time, so definitions are never copied into this layer. `LEFT JOIN domain_vocab d ON d.dim = 'gameformat' AND d.slug = g.slug`.
 - **Which work a URL belongs to** — `citation_root_for_url(u)`. Not equality or `LIKE`: registered hosts nest, so the rule is a longest label-boundary suffix — and on a shared multi-tenant CDN host (`img1.wsimg.com`) the registered row is scoped to a tenant path prefix, so the URL's path participates too. `citation_root_for_host(h)` remains for a bare host with no URL, and deliberately returns NULL for a shared host, where host-only attribution is unanswerable. `shared_hosts` is which hosts those are — generated from the backend's own declaration, so it can't fall behind the app's answer.
+
+## Catalog audit
+
+[`audit.sql`](audit.sql) is an analysis file that lints the live catalog for data defects — prose linking itself, a link at the wrong grain, a parenthetical year the record contradicts, a name mentioned but never linked, prose with no links at all, two records answering to the same name.
+
+```bash
+scripts/analysis/audit 0240   # the report: findings on records patch 0240 and later touched
+scripts/analysis/audit        # per-rule finding counts across the whole catalog
+
+# or query the views directly
+scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_findings WHERE severity = 'error';"
+scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_since(240);"
+```
+
+One view per rule, named `audit_<rule>`, each emitting `severity, entity_type, entity_id, public_id, message`; `audit_findings` unions them. Adding a rule is a view plus one line in that union. Findings are catalog content and deliberately not a `*_checks` view — a standing backlog of defects must not fail every gated analysis.
+
+`audit_since(n)` is the patch-scoped lens, one row per defect with the patches that touched that record aggregated into a column. Scope is a **filter, not an attribution**: the rules read current catalog state and know nothing about patches, so a row means a patch in range touched that record, never that the patch caused the finding — most findings are older than the patch that surfaces them. It has a blind spot in the other direction too, since a patch can create findings on records it never wrote to (rename a record and prose elsewhere now names it unlinked); the unscoped `audit_findings` is what catches those.
 
 ## Analysis files
 

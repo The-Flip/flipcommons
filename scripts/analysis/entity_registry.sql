@@ -6,35 +6,35 @@
 -- 'person'), a content type row spells the same thing
 -- 'catalog.machinemodel', and no string rule turns one into the other.
 --
--- SQL rather than a data file because `entity_subjects` needs generated
--- table names, which no runtime read of JSON could supply.
+-- SQL rather than a data file because the polymorphic unions below need
+-- generated table names, which no runtime read of JSON could supply.
 
 CREATE OR REPLACE VIEW entity_registry AS
   SELECT * FROM (VALUES
-    ('cabinet'                 , 'cabinets'                 , 'catalog.cabinet'                , 'catalog_cabinet'                , 'slug'),
-    ('corporate-entity'        , 'corporate-entities'       , 'catalog.corporateentity'        , 'catalog_corporateentity'        , 'slug'),
-    ('credit-role'             , 'credit-roles'             , 'catalog.creditrole'             , 'catalog_creditrole'             , 'slug'),
-    ('display-subtype'         , 'display-subtypes'         , 'catalog.displaysubtype'         , 'catalog_displaysubtype'         , 'slug'),
-    ('display-type'            , 'display-types'            , 'catalog.displaytype'            , 'catalog_displaytype'            , 'slug'),
-    ('franchise'               , 'franchises'               , 'catalog.franchise'              , 'catalog_franchise'              , 'slug'),
-    ('game-format'             , 'game-formats'             , 'catalog.gameformat'             , 'catalog_gameformat'             , 'slug'),
-    ('gameplay-feature'        , 'gameplay-features'        , 'catalog.gameplayfeature'        , 'catalog_gameplayfeature'        , 'slug'),
-    ('location'                , 'locations'                , 'catalog.location'               , 'catalog_location'               , 'location_path'),
-    ('manufacturer'            , 'manufacturers'            , 'catalog.manufacturer'           , 'catalog_manufacturer'           , 'slug'),
-    ('model'                   , 'models'                   , 'catalog.machinemodel'           , 'catalog_machinemodel'           , 'slug'),
-    ('person'                  , 'people'                   , 'catalog.person'                 , 'catalog_person'                 , 'slug'),
-    ('production-status'       , 'production-statuses'      , 'catalog.productionstatus'       , 'catalog_productionstatus'       , 'slug'),
-    ('reward-type'             , 'reward-types'             , 'catalog.rewardtype'             , 'catalog_rewardtype'             , 'slug'),
-    ('series'                  , 'series'                   , 'catalog.series'                 , 'catalog_series'                 , 'slug'),
-    ('system'                  , 'systems'                  , 'catalog.system'                 , 'catalog_system'                 , 'slug'),
-    ('tag'                     , 'tags'                     , 'catalog.tag'                    , 'catalog_tag'                    , 'slug'),
-    ('technology-generation'   , 'technology-generations'   , 'catalog.technologygeneration'   , 'catalog_technologygeneration'   , 'slug'),
-    ('technology-subgeneration', 'technology-subgenerations', 'catalog.technologysubgeneration', 'catalog_technologysubgeneration', 'slug'),
-    ('theme'                   , 'themes'                   , 'catalog.theme'                  , 'catalog_theme'                  , 'slug'),
-    ('title'                   , 'titles'                   , 'catalog.title'                  , 'catalog_title'                  , 'slug')
-  ) AS t(entity_type, entity_type_plural, django_label, db_table, public_id_field);
+    ('cabinet'                 , 'cabinets'                 , 'catalog.cabinet'                , 'catalog_cabinet'                , 'slug'         , true ),
+    ('corporate-entity'        , 'corporate-entities'       , 'catalog.corporateentity'        , 'catalog_corporateentity'        , 'slug'         , true ),
+    ('credit-role'             , 'credit-roles'             , 'catalog.creditrole'             , 'catalog_creditrole'             , 'slug'         , true ),
+    ('display-subtype'         , 'display-subtypes'         , 'catalog.displaysubtype'         , 'catalog_displaysubtype'         , 'slug'         , true ),
+    ('display-type'            , 'display-types'            , 'catalog.displaytype'            , 'catalog_displaytype'            , 'slug'         , true ),
+    ('franchise'               , 'franchises'               , 'catalog.franchise'              , 'catalog_franchise'              , 'slug'         , true ),
+    ('game-format'             , 'game-formats'             , 'catalog.gameformat'             , 'catalog_gameformat'             , 'slug'         , true ),
+    ('gameplay-feature'        , 'gameplay-features'        , 'catalog.gameplayfeature'        , 'catalog_gameplayfeature'        , 'slug'         , true ),
+    ('location'                , 'locations'                , 'catalog.location'               , 'catalog_location'               , 'location_path', false),
+    ('manufacturer'            , 'manufacturers'            , 'catalog.manufacturer'           , 'catalog_manufacturer'           , 'slug'         , true ),
+    ('model'                   , 'models'                   , 'catalog.machinemodel'           , 'catalog_machinemodel'           , 'slug'         , true ),
+    ('person'                  , 'people'                   , 'catalog.person'                 , 'catalog_person'                 , 'slug'         , true ),
+    ('production-status'       , 'production-statuses'      , 'catalog.productionstatus'       , 'catalog_productionstatus'       , 'slug'         , true ),
+    ('reward-type'             , 'reward-types'             , 'catalog.rewardtype'             , 'catalog_rewardtype'             , 'slug'         , true ),
+    ('series'                  , 'series'                   , 'catalog.series'                 , 'catalog_series'                 , 'slug'         , true ),
+    ('system'                  , 'systems'                  , 'catalog.system'                 , 'catalog_system'                 , 'slug'         , true ),
+    ('tag'                     , 'tags'                     , 'catalog.tag'                    , 'catalog_tag'                    , 'slug'         , true ),
+    ('technology-generation'   , 'technology-generations'   , 'catalog.technologygeneration'   , 'catalog_technologygeneration'   , 'slug'         , true ),
+    ('technology-subgeneration', 'technology-subgenerations', 'catalog.technologysubgeneration', 'catalog_technologysubgeneration', 'slug'         , true ),
+    ('theme'                   , 'themes'                   , 'catalog.theme'                  , 'catalog_theme'                  , 'slug'         , true ),
+    ('title'                   , 'titles'                   , 'catalog.title'                  , 'catalog_title'                  , 'slug'         , true )
+  ) AS t(entity_type, entity_type_plural, django_label, db_table, public_id_field, is_wikilinkable);
 COMMENT ON VIEW entity_registry IS
-  'One row per catalog entity type — the entity_type this layer speaks and its plural, and the content-type label, table name and public id field the physical schema speaks. Join it to fc.django_content_type to decode a polymorphic reference; entity_type_of(table) spells a single one.';
+  'One row per catalog entity type — the entity_type this layer speaks and its plural, and the content-type label, table name and public id field the physical schema speaks. is_wikilinkable says whether prose may link it at all (Location cannot). Join it to fc.django_content_type to decode a polymorphic reference; entity_type_of(table) spells a single one.';
 
 -- entity_subjects — the polymorphic-reference resolver. `subject_public_id`
 -- is NOT a slug: it is whatever the model declares as `public_id_field`,
@@ -77,3 +77,58 @@ CREATE OR REPLACE VIEW entity_subjects AS
   );
 COMMENT ON VIEW entity_subjects IS
   'One row per catalog entity of ANY type, keyed (subject_type, subject_id) the way a polymorphic reference names it — public id, name and status for resolving a claim, changeset or patch entry subject without branching on its type. NOT live-filtered; predicate on subject_status.';
+
+-- entity_prose — the authored-prose corpus, one row per (entity, markdown
+-- field). Which fields those are comes from MarkdownField introspection, so
+-- this tracks the save path rather than restating it.
+--
+-- LIVE-FILTERED, unlike entity_subjects: a soft-deleted record's prose is not
+-- catalog content, and no consumer resolving a reference reads it. Reading
+-- through live() also folds '' to NULL, so an unset field is NULL whichever
+-- spelling Django stored.
+CREATE OR REPLACE VIEW entity_prose AS
+  SELECT * FROM (
+              SELECT 'cabinet'                  AS entity_type, id, slug AS public_id, 'description' AS field, description AS text FROM live('fc.catalog_cabinet')
+    UNION ALL SELECT 'corporate-entity'        , id, slug, 'description', description FROM live('fc.catalog_corporateentity')
+    UNION ALL SELECT 'credit-role'             , id, slug, 'description', description FROM live('fc.catalog_creditrole')
+    UNION ALL SELECT 'display-subtype'         , id, slug, 'description', description FROM live('fc.catalog_displaysubtype')
+    UNION ALL SELECT 'display-type'            , id, slug, 'description', description FROM live('fc.catalog_displaytype')
+    UNION ALL SELECT 'franchise'               , id, slug, 'description', description FROM live('fc.catalog_franchise')
+    UNION ALL SELECT 'game-format'             , id, slug, 'description', description FROM live('fc.catalog_gameformat')
+    UNION ALL SELECT 'gameplay-feature'        , id, slug, 'description', description FROM live('fc.catalog_gameplayfeature')
+    UNION ALL SELECT 'location'                , id, location_path, 'description', description FROM live('fc.catalog_location')
+    UNION ALL SELECT 'manufacturer'            , id, slug, 'description', description FROM live('fc.catalog_manufacturer')
+    UNION ALL SELECT 'model'                   , id, slug, 'description', description FROM live('fc.catalog_machinemodel')
+    UNION ALL SELECT 'person'                  , id, slug, 'description', description FROM live('fc.catalog_person')
+    UNION ALL SELECT 'production-status'       , id, slug, 'description', description FROM live('fc.catalog_productionstatus')
+    UNION ALL SELECT 'reward-type'             , id, slug, 'description', description FROM live('fc.catalog_rewardtype')
+    UNION ALL SELECT 'series'                  , id, slug, 'description', description FROM live('fc.catalog_series')
+    UNION ALL SELECT 'system'                  , id, slug, 'description', description FROM live('fc.catalog_system')
+    UNION ALL SELECT 'tag'                     , id, slug, 'description', description FROM live('fc.catalog_tag')
+    UNION ALL SELECT 'technology-generation'   , id, slug, 'description', description FROM live('fc.catalog_technologygeneration')
+    UNION ALL SELECT 'technology-subgeneration', id, slug, 'description', description FROM live('fc.catalog_technologysubgeneration')
+    UNION ALL SELECT 'theme'                   , id, slug, 'description', description FROM live('fc.catalog_theme')
+    UNION ALL SELECT 'title'                   , id, slug, 'description', description FROM live('fc.catalog_title')
+  ) AS t(entity_type, entity_id, public_id, field, text);
+COMMENT ON VIEW entity_prose IS
+  'One row per LIVE entity per markdown field, of ANY entity type — the authored-prose corpus. For questions that SPAN entity types; a question about one type reads that entity view, which carries description already. text IS NULL where the field is unset, and every MarkdownField is a row, so predicate on `field` rather than assuming description.';
+
+-- entity_aliases — every alternate name, of any entity type, in one relation.
+-- Driven from the engine's alias registry, which already resolved each alias
+-- model's parent FK, so a new AliasModel joins the view with no SQL edit.
+--
+-- NOT LIVE-FILTERED and no parent name, for the same reason entity_subjects
+-- carries a status instead of a filter: the join that supplies liveness also
+-- supplies the name and public id, so doing it here would mean doing it twice.
+CREATE OR REPLACE VIEW entity_aliases AS
+  SELECT * FROM (
+              SELECT 'corporate-entity' AS entity_type, corporate_entity_id AS entity_id, value AS alias FROM fc.catalog_corporateentityalias
+    UNION ALL SELECT 'gameplay-feature', feature_id         , value FROM fc.catalog_gameplayfeaturealias
+    UNION ALL SELECT 'location'        , location_id        , value FROM fc.catalog_locationalias
+    UNION ALL SELECT 'manufacturer'    , manufacturer_id    , value FROM fc.catalog_manufactureralias
+    UNION ALL SELECT 'person'          , person_id          , value FROM fc.catalog_personalias
+    UNION ALL SELECT 'reward-type'     , reward_type_id     , value FROM fc.catalog_rewardtypealias
+    UNION ALL SELECT 'theme'           , theme_id           , value FROM fc.catalog_themealias
+  ) AS t(entity_type, entity_id, alias);
+COMMENT ON VIEW entity_aliases IS
+  'One row per alias of ANY entity type, keyed (entity_type, entity_id) to match entity_subjects — the alternate names prose might use. NOT live-filtered and it carries no parent name: join entity_subjects for liveness, public id and the canonical name. The per-type views (theme_aliases, person_aliases, …) stay the way to ask about ONE type, since they decode the parent slug.';

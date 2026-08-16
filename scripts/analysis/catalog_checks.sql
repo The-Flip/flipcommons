@@ -320,6 +320,9 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'domain_vocab'        FROM domain_vocab
     UNION ALL SELECT 'entity_registry'     FROM entity_registry
     UNION ALL SELECT 'entity_subjects'     FROM entity_subjects
+    UNION ALL SELECT 'entity_prose'        FROM entity_prose
+    UNION ALL SELECT 'entity_aliases'      FROM entity_aliases
+    UNION ALL SELECT 'record_references'   FROM record_references
     UNION ALL SELECT 'claims'              FROM claims
     UNION ALL SELECT 'model_claims'        FROM model_claims
     UNION ALL SELECT 'claim_identity_parts' FROM claim_identity_parts
@@ -1314,6 +1317,31 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- Same (check_name, detail) shape, so these read as more branches of this UNION.
   UNION ALL
   SELECT check_name, detail FROM _provenance_checks
+
+  -- ─── The wikilink graph ────────────────────────────────────────────────────
+  -- entity_prose has no check here: which entities owe a branch is MarkdownField
+  -- membership, which SQL cannot see, and any SQL approximation would re-hardcode the
+  -- field name the introspection exists to avoid. test_export_entity_registry asserts
+  -- it against get_markdown_fields directly, which is the stronger guard.
+  UNION ALL
+  -- The source end of an edge always resolves. It is an inner join, so a row that
+  -- cannot name its own source means the join stopped being one.
+  SELECT 'reference_source_unresolved',
+         source_entity_type || ':' || source_id::VARCHAR
+  FROM record_references WHERE source_public_id IS NULL
+
+  UNION ALL
+  -- A target that entity_subjects HOLDS must decode. Membership is the guard: a
+  -- GenericForeignKey has no on_delete, so an edge can outlive its target, and that
+  -- dangling row is a catalog condition a broken-link rule should report — not a
+  -- foundation failure that would take down every checked analysis with it.
+  SELECT 'reference_target_undecoded',
+         target_entity_type || ':' || target_id::VARCHAR
+  FROM record_references r
+  WHERE r.target_entity_type IS NOT NULL AND r.target_public_id IS NULL
+    AND EXISTS (SELECT 1 FROM entity_subjects s
+                WHERE s.subject_type = r.target_entity_type
+                  AND s.subject_id = r.target_id)
 
   -- ─── Data patch layer ──────────────────────────────────────────────────────
   -- The patch-lens invariants, from data_patches_checks.sql, folded in on the same

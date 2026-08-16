@@ -19,7 +19,7 @@
 #   scripts/analysis/analysis browse <analysis.sql>
 #   scripts/analysis/analysis ui  <analysis.sql>
 #   scripts/analysis/analysis snapshot <analysis.sql> <view> [<view>...]
-#   scripts/analysis/analysis query <analysis.sql> "<sql>" [--format json|csv|table] [--check <prefix>]
+#   scripts/analysis/analysis query <analysis.sql> "<sql>" [--format json|csv|table|lines] [--check <prefix>]
 #   scripts/analysis/analysis columns [<analysis.sql>] <view> | --all
 #
 # <prefix> names the analysis file's own summary/checks pair: `export` ->
@@ -477,8 +477,8 @@ EOF
       case "$1" in
         --format)
           case "${2:-}" in
-            json|csv|table) fmt=$2; shift 2 ;;
-            *) echo "--format must be json, csv or table" >&2; exit 2 ;;
+            json|csv|table|lines) fmt=$2; shift 2 ;;
+            *) echo "--format must be json, csv, table or lines" >&2; exit 2 ;;
           esac ;;
         --check)
           [ -n "${2:-}" ] || { echo "--check needs a <prefix>" >&2; exit 2; }
@@ -494,7 +494,15 @@ EOF
     # stderr so stdout stays pure data.
     [ -n "$check" ] && gate "$check" stderr
     # Pure data on stdout; DuckDB's own diagnostics already go to stderr.
-    duckdb -init "$analysis_file" -"$fmt" :memory: "$query"
+    # `lines` emits each row verbatim with no header, box or quoting — for a query whose
+    # single column IS the rendered output. The other three all mangle prose: csv quotes
+    # any value holding a comma, json escapes it, table pads it to the widest row and
+    # wraps. Meant for one column; with several, -list joins them on '|'.
+    if [ "$fmt" = lines ]; then
+      duckdb -init "$analysis_file" -noheader -list :memory: "$query"
+    else
+      duckdb -init "$analysis_file" -"$fmt" :memory: "$query"
+    fi
     ;;
 
   columns)
