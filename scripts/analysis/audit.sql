@@ -155,32 +155,44 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
     -- Every word starts with a capital or a digit. One lowercase word rejects the span.
     WHERE NOT list_contains(
       [regexp_matches(x, '^[\p{Lu}\p{N}]') for x in str_split(span, ' ')], false)
+  ),
+  -- One row per (span, record that span could name), carrying whether this prose already
+  -- links that record. Computed per candidate but JUDGED per span, below.
+  matched AS (
+    SELECT c.entity_type, c.entity_id, c.public_id, c.field, c.span, p.target_link,
+           -- Linked ANYWHERE in this record's prose, not just at this span: one link
+           -- accounts for every mention of the same record.
+           EXISTS (
+             SELECT 1 FROM record_references r
+             WHERE r.source_entity_type = c.entity_type AND r.source_id = c.entity_id
+               AND r.target_entity_type = p.target_type AND r.target_id = p.target_id
+           ) AS linked
+    FROM candidates c
+    JOIN pool p ON p.match_key = name_norm(c.span)
+    -- A record naming itself is audit_self_link's business, not this one.
+    WHERE NOT (c.entity_type = p.target_type AND c.entity_id = p.target_id)
   )
   SELECT 'warning' AS severity,
-         c.entity_type,
-         c.entity_id,
-         c.public_id,
+         entity_type,
+         entity_id,
+         public_id,
          -- ONE aggregate over the composed link, never two over its halves: independent
          -- aggregates may be satisfied from different rows, and "Star Wars" resolves to a
          -- franchise, two models and three titles, so the halves could render a link that
          -- does not exist. min() also holds still between runs, which a diffable report needs.
-         format('{} names "{}" without linking it ({})', c.field, c.span,
-                CASE WHEN count(DISTINCT p.target_link) = 1
-                     THEN '[[' || min(p.target_link) || ']]'
+         format('{} names "{}" without linking it ({})', field, span,
+                CASE WHEN count(DISTINCT target_link) = 1
+                     THEN '[[' || min(target_link) || ']]'
                      ELSE format('{} candidates, e.g. [[{}]]',
-                                 count(DISTINCT p.target_link), min(p.target_link))
+                                 count(DISTINCT target_link), min(target_link))
                 END) AS message
-  FROM candidates c
-  JOIN pool p ON p.match_key = name_norm(c.span)
-  -- A record naming itself is audit_self_link's business, not this one.
-  WHERE NOT (c.entity_type = p.target_type AND c.entity_id = p.target_id)
-    -- Linked ANYWHERE in this record's prose, not just at this span: one link accounts
-    -- for every mention of the same record.
-    AND NOT EXISTS (
-      SELECT 1 FROM record_references r
-      WHERE r.source_entity_type = c.entity_type AND r.source_id = c.entity_id
-        AND r.target_entity_type = p.target_type AND r.target_id = p.target_id)
-  GROUP BY c.entity_type, c.entity_id, c.public_id, c.field, c.span;
+  FROM matched
+  GROUP BY entity_type, entity_id, public_id, field, span
+  -- The span is accounted for if ANY record it names is linked, so the whole group goes.
+  -- Dropping only the linked CANDIDATE — the obvious per-row anti-join — leaves the others
+  -- behind and warns about prose that did link the thing it mentioned: "Austin Powers"
+  -- names both a Title and a model, and linking the Title still tripped the model.
+  HAVING NOT bool_or(linked);
 COMMENT ON VIEW audit_unlinked_mention IS
   'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Matches canonical names and aliases alike; a span naming several records renders as "N candidates". A name inside a quotation is legitimately unlinked, which is why this is not an error.';
 
@@ -366,8 +378,13 @@ CREATE OR REPLACE VIEW audit_duplicate_name AS
          k.entity_type,
          k.entity_id,
          k.public_id,
+         -- ORDERED, like every other aggregate that reaches a message: identity is
+         -- (rule, record, message), so an unordered list renders the same defect
+         -- differently between runs and breaks the diffable-output contract. No collision
+         -- involves three records today, which is exactly why this would rot unnoticed.
          format('{} "{}" also identifies {}', k.kind, k.text,
-                (SELECT string_agg(DISTINCT o.entity_type || '.' || o.public_id, ', ')
+                (SELECT string_agg(DISTINCT o.entity_type || '.' || o.public_id, ', '
+                                   ORDER BY o.entity_type || '.' || o.public_id)
                  FROM keys o
                  WHERE o.entity_type = k.entity_type AND o.k = k.k
                    AND o.entity_id <> k.entity_id)) AS message
