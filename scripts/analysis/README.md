@@ -133,7 +133,9 @@ scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_findings 
 scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_since(240);"
 ```
 
-One view per rule, named `audit_<rule>`, each emitting `severity, entity_type, entity_id, public_id, message`; `audit_findings` unions them. Adding a rule is a view plus one line in that union. Findings are catalog content and deliberately not a `*_checks` view — a standing backlog of defects must not fail every gated analysis.
+One view per rule, named `audit_<rule>`, each emitting `severity, entity_type, entity_id, public_id, message`; `audit_findings` unions them. Adding a rule is a view plus one line in that union, and one in `audit_summary`.
+
+Findings are catalog content and are deliberately **not** what `audit_checks` gates on — a standing backlog of defects must never fail a gated analysis. `audit_checks` holds the layer's own invariants instead (a required value gone NULL, an unknown severity, a finding about a record that is not live), and `scripts/analysis/audit` runs it with `--check` before printing, so a broken detector reports as broken rather than as a clean catalog.
 
 `audit_since(n)` is the patch-scoped lens, one row per defect with the patches that touched that record aggregated into a column. Scope is a **filter, not an attribution**: the rules read current catalog state and know nothing about patches, so a row means a patch in range touched that record, never that the patch caused the finding — most findings are older than the patch that surfaces them. It has a blind spot in the other direction too, since a patch can create findings on records it never wrote to (rename a record and prose elsewhere now names it unlinked); the unscoped `audit_findings` is what catches those.
 

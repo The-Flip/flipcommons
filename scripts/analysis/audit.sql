@@ -15,11 +15,12 @@
 -- Severity is per FINDING, not per rule: wrong-grain-link is an error when the linked
 -- model is alone in its Title and a warning otherwise, so it is a CASE in the rule.
 --
--- Findings are catalog defects, NOT a health gate. There is deliberately no
--- `audit_checks` view: `analysis run` fails on any `*_checks` rows, so a catalog with
--- one unlinked mention would exit nonzero forever and the gate would stop meaning
--- anything. `analysis run` therefore REJECTS this file — it requires a summary/checks
--- pair — and that is the intended answer, not an omission. Use `query`.
+-- Findings are catalog defects and are NOT the health gate; `audit_checks` holds the
+-- LAYER's own invariants and is. They are kept strictly apart because `analysis run` and
+-- `--check` fail on a row from any `*_checks` view: fold a standing backlog of catalog
+-- defects into that and it exits nonzero forever, at which point the gate has stopped
+-- meaning anything. A healthy audit over an unhealthy catalog gates clean and prints its
+-- findings, which is exactly what `scripts/analysis/audit` does.
 .read scripts/analysis/catalog.sql
 
 -- ─── self-link ─────────────────────────────────────────────────────────────
@@ -181,7 +182,7 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
         AND r.target_entity_type = p.target_type AND r.target_id = p.target_id)
   GROUP BY c.entity_type, c.entity_id, c.public_id, c.field, c.span;
 COMMENT ON VIEW audit_unlinked_mention IS
-  'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Canonical names only, no aliases. A name inside a quotation is legitimately unlinked, which is why this is not an error.';
+  'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Matches canonical names and aliases alike; a span naming several records renders as "N candidates". A name inside a quotation is legitimately unlinked, which is why this is not an error.';
 
 -- ─── parenthetical-fact ────────────────────────────────────────────────────
 -- The house pattern _[[model:x]]_ (1997, [[manufacturer:williams]]) embeds two claims the
@@ -382,6 +383,52 @@ CREATE OR REPLACE MACRO audit_since(n) AS TABLE
   GROUP BY ALL;
 COMMENT ON MACRO TABLE audit_since IS
   'audit_since(240) — one row per DEFECT on a record that patch 240 or later wrote to, with those patch numbers aggregated into `patches`. The patch-scoped lens; scope is a filter, never a claim that the patch caused the finding.';
+
+-- ─── checks ────────────────────────────────────────────────────────────────
+-- Invariants of the LAYER, not of the catalog. A row here means the audit is broken; a
+-- catalog defect belongs in audit_findings and must never reach this view. Three
+-- branches, each guarding something only execution reveals — deliberately nothing that
+-- polices this file's own naming or wiring, which is what made the previous version of
+-- this layer cost more than it caught.
+CREATE OR REPLACE VIEW audit_checks AS
+  -- A required value that evaluated to NULL. The one that has actually bitten, twice:
+  -- format() propagates NULL, so a single NULL argument blanks the entire message and
+  -- the finding prints as an empty line — it reads as a broken audit rather than as a
+  -- defect. It needs its own branch because NULL slips every other test: `NULL NOT IN
+  -- (…)` is unknown rather than true, so unknown_severity would let it past.
+  --
+  -- public_id is deliberately absent: audit_report already COALESCEs it to the id, so a
+  -- NULL there costs nothing.
+  SELECT 'finding_null_required' AS check_name,
+         rule || ' -> ' || col AS detail
+  FROM audit_findings f,
+       LATERAL (VALUES ('severity', f.severity), ('entity_type', f.entity_type),
+                       ('entity_id', f.entity_id::VARCHAR), ('message', f.message))
+              AS v(col, val)
+  WHERE v.val IS NULL
+
+  UNION ALL
+  -- A severity outside the closed vocabulary. Severity is computed per finding — a CASE
+  -- in wrong-grain-link — and a CASE that loses its ELSE returns something no consumer
+  -- knows how to rank or colour.
+  SELECT 'unknown_severity', rule || ' -> ' || severity
+  FROM audit_findings WHERE severity NOT IN ('error', 'warning')
+
+  UNION ALL
+  -- A finding about a record that is not live. NOT tautological: unlinked-mention and
+  -- duplicate-name read entity_subjects and entity_aliases, which are deliberately not
+  -- live-filtered, and apply is_live themselves. Drop one of those predicates and the
+  -- audit starts reporting deleted records as defects. This is the check guarding a
+  -- filter the rules own rather than inherit.
+  SELECT 'finding_subject_not_live',
+         rule || ' -> ' || entity_type || ':' || entity_id::VARCHAR
+  FROM audit_findings f
+  WHERE NOT EXISTS (
+    SELECT 1 FROM entity_subjects s
+    WHERE s.subject_type = f.entity_type AND s.subject_id = f.entity_id
+      AND is_live(s.subject_status));
+COMMENT ON VIEW audit_checks IS
+  'The audit layer''s own invariants — a row means the AUDIT is broken, never that the catalog is. Empty is healthy. Catalog defects live in audit_findings and are deliberately not gated.';
 
 -- Counted per rule VIEW rather than grouped from audit_findings, so a rule finding nothing
 -- keeps its row. A rule dropping to zero is the failure worth seeing — these detectors read

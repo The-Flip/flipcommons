@@ -32,7 +32,11 @@ esac
   exit 2
 }
 
-[ $# -eq 1 ] || exec "$runner" query "$plan" "FROM audit_summary;" --format table
+# --check gates on audit_checks — the LAYER's invariants — before emitting a row, so a
+# broken detector is reported as broken instead of as a clean catalog. It does not gate on
+# findings: audit.sql keeps those out of *_checks precisely so a standing backlog cannot
+# make this exit nonzero forever.
+[ $# -eq 1 ] || exec "$runner" query "$plan" "FROM audit_summary;" --format table --check audit
 
 # Cut at the first non-digit so a full patch stem works, then strip leading zeros —
 # patch_number is an integer and a leading zero is not how SQL spells one.
@@ -43,4 +47,4 @@ n=$(printf '%s' "${1%%[!0-9]*}" | sed 's/^0*\([0-9]\)/\1/')
   exit 2
 }
 
-exec "$runner" query "$plan" "FROM audit_report($n);" --format lines
+exec "$runner" query "$plan" "FROM audit_report($n);" --format lines --check audit
