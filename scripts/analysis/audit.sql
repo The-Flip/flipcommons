@@ -243,6 +243,19 @@ CREATE OR REPLACE MACRO paren_pattern() AS
 COMMENT ON MACRO paren_pattern IS
   'The house parenthetical, _[[link]]_ (year, [[manufacturer]]), as a regex with four capture groups: link type, link id, year, manufacturer id.';
 
+-- How well ONE model answers the stated facts: a point for the year, a point for the
+-- maker, and no point for a maker the parenthetical never stated. Both scored on the same
+-- model, so a Title is judged by its best-fitting model rather than by its models
+-- collectively — the correlation `pair_wrong` exists to enforce.
+--
+-- A macro because the linked record and each namesake must be scored by identical rules.
+-- Two scores computed two ways are not comparable, and comparing them is the whole test.
+CREATE OR REPLACE MACRO paren_fit(year, maker, stated_year, stated_maker) AS
+  (year IS NOT DISTINCT FROM stated_year)::INTEGER
+  + (stated_maker IS NOT NULL AND maker IS NOT DISTINCT FROM stated_maker)::INTEGER;
+COMMENT ON MACRO paren_fit IS
+  'How many of a parenthetical''s stated facts one model carries — 0, 1 or 2. The shared scorer for "does a same-named record fit this parenthetical better than the linked one".';
+
 CREATE OR REPLACE VIEW audit_parenthetical_fact AS
   -- Two passes because regexp_extract_all returns whole matches and no groups: find, then
   -- read the groups off each match. Both take the pattern from the macro, since two copies
@@ -283,7 +296,10 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
            -- year is that model's and nothing otherwise — never a fact the dimension tests
            -- have not already reached.
            CASE WHEN m.year IS NOT DISTINCT FROM p.stated_year AND m.manufacturer_id IS NOT NULL
-                THEN [m.manufacturer_id] ELSE []::BIGINT[] END AS makers_at_stated_year
+                THEN [m.manufacturer_id] ELSE []::BIGINT[] END AS makers_at_stated_year,
+           -- The Title the link lands in, whichever grain it was written at, so the
+           -- namesake search below can exclude the record already linked.
+           m.title_id AS linked_title_id
     FROM parsed p JOIN models m ON m.id = p.link_id
     WHERE p.link_type = 'model'
     UNION ALL
@@ -298,7 +314,8 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
            -- that year" rather than "who made any of them".
            (SELECT COALESCE(list(m.manufacturer_id), []) FROM models m
              WHERE m.title_id = t.id AND m.year = p.stated_year
-               AND m.manufacturer_id IS NOT NULL)
+               AND m.manufacturer_id IS NOT NULL),
+           t.id
     FROM parsed p JOIN titles t ON t.id = p.link_id
     WHERE p.link_type = 'title'
   ),
@@ -332,6 +349,60 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
              AND len(j.makers_at_stated_year) > 0
              AND NOT list_contains(j.makers_at_stated_year, j.stated_maker) AS pair_wrong
     FROM judged j
+  ),
+  -- Filtered before the namesake search below, which is the expensive part: it joins every
+  -- Title by normalized name, and only a parenthetical already known to disagree is worth
+  -- asking about.
+  reported AS (
+    SELECT * FROM correlated WHERE year_wrong OR maker_wrong OR pair_wrong
+  ),
+  -- WHICH record the parenthetical describes is itself in doubt whenever a same-named
+  -- record fits the stated facts better than the linked one. "Star Trek (1979)" pointing at
+  -- the 1991 Data East game is not a wrong year — the prose is right, the catalog is right,
+  -- and the LINK is wrong. Told the year disagrees, an author corrects the one thing that
+  -- was already true.
+  --
+  -- Strictly-more-facts, never a bare OR on year-or-maker: a namesake sharing the stated
+  -- maker proves nothing when the linked record shares it too, so an off-by-one year on a
+  -- game with a same-named sibling by the same maker would be blamed on the link.
+  classified AS (
+    SELECT r.*,
+           (SELECT COALESCE(max(paren_fit(m.year, m.manufacturer_id,
+                                          r.stated_year, r.stated_maker)), 0)
+            FROM models m
+            WHERE CASE WHEN r.link_type = 'model' THEN m.id = r.link_id
+                                                  ELSE m.title_id = r.link_id END) AS linked_fit,
+           -- Grouped by Title before the max, so a Title scores as its best single model
+           -- and not as the union of what its models happen to carry.
+           (SELECT COALESCE(max(x.fit), 0) FROM (
+              SELECT max(paren_fit(m.year, m.manufacturer_id,
+                                   r.stated_year, r.stated_maker)) AS fit
+              FROM titles t JOIN models m ON m.title_id = t.id
+              WHERE name_key(t.name) = name_key(r.target_name)
+                AND t.id <> r.linked_title_id
+              GROUP BY t.id) x) AS namesake_fit
+    FROM reported r
+  ),
+  described AS (
+    SELECT c.*,
+           -- Re-derived rather than carried out of `classified`: the fit is an aggregate
+           -- over models and this is a list of Titles, so one query cannot be both grains.
+           (SELECT string_agg(DISTINCT '[[title:' || t.slug || ']]', ', '
+                              ORDER BY '[[title:' || t.slug || ']]')
+            FROM titles t
+            WHERE name_key(t.name) = name_key(c.target_name)
+              AND t.id <> c.linked_title_id
+              AND (SELECT COALESCE(max(paren_fit(m.year, m.manufacturer_id,
+                                                 c.stated_year, c.stated_maker)), 0)
+                   FROM models m WHERE m.title_id = t.id) = c.namesake_fit) AS namesake_links,
+           (SELECT count(*)
+            FROM titles t
+            WHERE name_key(t.name) = name_key(c.target_name)
+              AND t.id <> c.linked_title_id
+              AND (SELECT COALESCE(max(paren_fit(m.year, m.manufacturer_id,
+                                                 c.stated_year, c.stated_maker)), 0)
+                   FROM models m WHERE m.title_id = t.id) = c.namesake_fit) AS namesake_n
+    FROM classified c
   )
   -- DISTINCT because the unit is the defect, not the occurrence: one description stating
   -- the same wrong parenthetical twice is one thing to fix. Two different ones differ in
@@ -344,9 +415,14 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
          -- Every piece is non-NULL by construction: format() propagates NULL, so one NULL
          -- argument blanks the whole message and the finding reads as broken rather than
          -- as a defect. An unresolvable maker falls back to its raw id.
-         format('{} says {} ({}) but the catalog says {}', field, target_name,
-                stated_year || COALESCE(', ' || COALESCE(stated_maker_name,
-                                                         'manufacturer ' || stated_maker), ''),
+         CASE WHEN namesake_fit > linked_fit
+              THEN format('{} says {} ({}) but links a same-named record the catalog dates {} — {} {} the stated facts',
+                          field, target_name, stated,
+                          COALESCE(NULLIF(array_to_string(list_sort(list_distinct(years)), '/'), ''),
+                                   'no year'),
+                          COALESCE(namesake_links, 'another record of that name'),
+                          CASE WHEN namesake_n = 1 THEN 'fits' ELSE 'fit' END)
+              ELSE format('{} says {} ({}) but the catalog says {}', field, target_name, stated,
                 concat_ws(' and ',
                   CASE WHEN year_wrong
                        -- Sorted, so the same defect renders identically between runs.
@@ -357,9 +433,11 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
                   -- denial of something true. What is wrong is the pairing.
                   CASE WHEN pair_wrong
                        THEN stated_year || ' was ' || COALESCE(makers_that_year, 'unknown') END))
-         AS message
-  FROM correlated
-  WHERE year_wrong OR maker_wrong OR pair_wrong;
+         END AS message
+  FROM (SELECT *, stated_year || COALESCE(', ' || COALESCE(stated_maker_name,
+                                                           'manufacturer ' || stated_maker), '')
+                  AS stated
+        FROM described);
 COMMENT ON VIEW audit_parenthetical_fact IS
   'ERROR — one row per _[[link]]_ (year, [[manufacturer]]) parenthetical whose year or maker disagrees with the catalog, or which pairs a year and a maker the catalog holds but never together (a Title with a 1997 Williams model and a 2015 Chicago Gaming one states neither "1997, Chicago Gaming" nor "2015, Williams"). Either the prose is wrong or the record is; both want fixing.';
 
