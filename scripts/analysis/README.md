@@ -12,7 +12,7 @@ This is how to use our DuckDB analytics layer to explore the Flipcommons localho
 
 ```bash
 # Do a query
-scripts/analysis/analysis query scripts/analysis/catalog.sql "FROM models WHERE year = 1977 ORDER BY name;" # takes `--format json|csv|table` default `table`
+scripts/analysis/analysis query scripts/analysis/catalog.sql "FROM models WHERE year = 1977 ORDER BY name;" # takes `--format json|csv|table|lines` default `table`
 
 # Describe every public view and macro
 scripts/analysis/analysis describe
@@ -34,7 +34,7 @@ grep -B12 'CREATE OR REPLACE VIEW model_edges AS' scripts/analysis/catalog.sql  
 
 In `catalog.sql`, two headings say where to start: `MODELS — the spine; start here` and `MODEL-TO-MODEL RELATIONSHIPS — start with model_edges`.
 
-`query` and `describe` put only data on stdout; diagnostics — including DuckDB's grey `-- Loading resources` notice — go to stderr.
+`query` and `describe` put only data on stdout; diagnostics go to stderr. `query --check` is silent when the gate passes, so its output can be consumed directly.
 
 Use a CTE for intermediate steps that still fit comfortably in one query. When you need named intermediate views, manual reference data, durable checks or repeated execution, use an [analysis file](#analysis-files).
 
