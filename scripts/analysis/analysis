@@ -177,49 +177,94 @@ public_views_ending() {
 
 # The gate: require the analysis's own <prefix>_checks, then fail on a row in ANY
 # public *_checks view. Shared by `run` and by `query --check`, so a generator
-# reading a view out of an analysis gets the SAME verdict a run does. One
-# discovery, one definition of clean — a second copy is how the two would drift
-# apart, and a generator trusting a weaker gate would emit from a failing one.
+# reading a view out of an analysis gets the SAME verdict a run does.
 #
-# $1 = prefix. $2 = where the passing ✓ lines go: `stdout` for `run`, whose job
-# is to report, or `stderr` for `query`, whose stdout must stay pure data.
-# FAILURES always go to stderr regardless.
-# gate <prefix> stdout|stderr|silent — `silent` reports failures and says nothing on
-# success, for a command whose output is meant to be consumed rather than read.
-gate() {
-  gate_prefix=$1; gate_ok=$2
-  checks=$(public_views_ending _checks)
+# Four parts, because the two consumers need one verdict in two shapes: `run` RENDERS the
+# per-view counts as a ✓/✗ readout, while `query` folds them into a statement that THROWS,
+# which is what lets the gate share a process with the query it guards. Both shapes are
+# built on gate_counts_sql, so there is a single definition of what is measured and only
+# the presentation differs — a second spelling is how a generator would come to trust a
+# weaker gate than a run does.
+#
+# Creating an analysis's views costs far more than measuring them, so no part of this may
+# pay that cost per checks view.
 
-  # The analysis's own pair is still required. Without this the failure mode is
-  # one that defines <prefix>_summary and drops <prefix>_checks — the exact
-  # omission README warns is easiest to make when copying — passing green,
-  # because discovery would find only the foundation's or a module's checks
-  # and report them clean.
+# Discovery, plus the required-pair test. Sets $gate_checks rather than echoing it: a
+# missing pair has to end the run, and an `exit` inside a command substitution ends only
+# the subshell it runs in.
+#
+# The analysis's own pair is required. Without this the failure mode is one that defines
+# <prefix>_summary and drops <prefix>_checks — the exact omission README warns is easiest
+# to make when copying — passing green, because discovery would find only the foundation's
+# or a module's checks and report them clean.
+gate_checks=
+gate_discover() {
+  gate_checks=$(public_views_ending _checks)
   case "
-$checks
+$gate_checks
 " in
     *"
-${gate_prefix}_checks
+$1_checks
 "*) ;;
-    *) printf '✗ analysis defines no %s_checks view\n' "$gate_prefix" >&2; exit 2 ;;
+    *) printf '✗ analysis defines no %s_checks view\n' "$1" >&2; exit 2 ;;
   esac
+}
 
-  # Every view is reported, not just the first failure: when a shared module
-  # and the analysis both break, seeing one of them is a misleading half-picture.
+# One row per checks view with its row count, as ONE query over all of them.
+gate_counts_sql() {
+  counts_sql=
+  for v in $gate_checks; do
+    counts_sql=${counts_sql:+"$counts_sql UNION ALL "}"SELECT '$v' AS view_name, count(*) AS n FROM $v"
+  done
+  printf '%s' "$counts_sql"
+}
+
+# The gate as a statement that says nothing on success and throws on failure, so it can
+# ride in the same process as the query it guards: DuckDB abandons the remaining -c once
+# one of them errors, which is what keeps a failing gate from letting any data reach
+# stdout.
+#
+# CREATE TABLE rather than SELECT because an empty result is not silent — `-box` prints a
+# header box, `-json` prints `[]`, `-csv` prints the column name — and any of those would
+# land on the pure-data stdout `query` promises. DDL prints nothing at all. The WHERE is
+# what leaves error() unreachable on a clean sweep: no surviving row, no evaluation.
+#
+# The message is a pointer rather than the detail, because gate_report prints the detail
+# right after it and DuckDB has no way to render the offending rows.
+gate_throw_sql() {
+  printf "CREATE TEMP TABLE _gate AS
+            SELECT error('a *_checks view returned rows — the analysis is not clean')
+            FROM (SELECT count(*) FILTER (n > 0) AS dirty FROM (%s))
+            WHERE dirty > 0;" "$(gate_counts_sql)"
+}
+
+# The readout: one ✓ or ✗ per checks view, and the rows behind every ✗. Every view is
+# reported, not just the first failure — when a shared module and the analysis both break,
+# seeing one of them is a misleading half-picture.
+#
+# $1 = where the passing ✓ lines go: `stdout` for `run`, whose job is to report, or
+# `silent` for a caller whose stdout must stay pure data. FAILURES always go to stderr.
+# Returns nonzero when any view is dirty; the caller decides what that means.
+gate_report() {
   bad=0
-  for v in $checks; do
-    n=$(duckdb -noheader -list :memory: -c ".read \"$analysis_file\"" "SELECT count(*) FROM $v;")
+  counts=$(duckdb -noheader -list :memory: -c ".read \"$analysis_file\"" \
+    "SELECT view_name || ' ' || n FROM ($(gate_counts_sql)) ORDER BY view_name;")
+  # A here-doc rather than a pipe, so $bad survives the loop.
+  while read -r v n; do
+    [ -n "$v" ] || continue
     if [ "$n" -ne 0 ]; then
       printf '\n✗ %s returned %s row(s):\n' "$v" "$n" >&2
+      # Per failing view, and only on the failure path, where another process costs
+      # nothing a human reading the rows will notice.
       duckdb :memory: -c ".read \"$analysis_file\"" "FROM $v;" >&2
       bad=$((bad + 1))
-    elif [ "$gate_ok" = stdout ]; then
+    elif [ "$1" = stdout ]; then
       printf '\n✓ %s clean\n' "$v"
-    elif [ "$gate_ok" = stderr ]; then
-      printf '\n✓ %s clean\n' "$v" >&2
     fi
-  done
-  [ "$bad" -eq 0 ] || exit 1
+  done <<EOF
+$counts
+EOF
+  [ "$bad" -eq 0 ]
 }
 
 [ $# -ge 1 ] || usage
@@ -248,7 +293,8 @@ case "$cmd" in
     duckdb -"$fmt" :memory: -c ".read \"$analysis_file\"" "FROM ${prefix}_summary;"
 
     # Gate: a row in ANY public *_checks view fails the run.
-    gate "$prefix" stdout
+    gate_discover "$prefix"
+    gate_report stdout || exit 1
     ;;
 
   describe)
@@ -492,21 +538,34 @@ EOF
       esac
     done
     resolve_and_cd "$sql"
-    # --check runs the same gate `run` does, BEFORE emitting a row. This is the
-    # mode a generator wants: reading a view out of an ungated analysis is how a
-    # patch gets emitted from an analysis whose invariants are failing, and the
-    # emitted YAML looks perfectly well-formed either way. Gate output goes to
-    # stderr so stdout stays pure data.
-    [ -n "$check" ] && gate "$check" silent
+    # --check runs the same gate `run` does, in the SAME process as the query and ahead of
+    # it. This is the mode a generator wants: reading a view out of an ungated analysis is
+    # how a patch gets emitted from an analysis whose invariants are failing, and the
+    # emitted YAML looks perfectly well-formed either way. Gate output goes to stderr so
+    # stdout stays pure data.
+    gate_stmt=
+    [ -n "$check" ] && { gate_discover "$check"; gate_stmt=$(gate_throw_sql); }
+
     # Pure data on stdout; DuckDB's own diagnostics already go to stderr.
     # `lines` emits each row verbatim with no header, box or quoting — for a query whose
     # single column IS the rendered output. The other three formats all mangle prose:
     # csv quotes any value holding a comma, json escapes it, table pads it out to the
     # widest row and wraps. Meant for one column; with several, -list joins them on '|'.
-    if [ "$fmt" = lines ]; then
-      duckdb -noheader -list :memory: -c ".read \"$analysis_file\"" "$query"
-    else
-      duckdb -"$fmt" :memory: -c ".read \"$analysis_file\"" "$query"
+    #
+    # Assembled with `set --` because a conditional `-c` cannot be spliced in by expansion:
+    # the quotes inside a ${x:+…} are not re-read as quoting, so a multi-word statement
+    # would arrive as several arguments.
+    if [ "$fmt" = lines ]; then set -- -noheader -list; else set -- -"$fmt"; fi
+    set -- "$@" :memory: -c ".read \"$analysis_file\""
+    [ -n "$gate_stmt" ] && set -- "$@" -c "$gate_stmt"
+    set -- "$@" -c "$query"
+
+    if ! duckdb "$@"; then
+      # A thrown gate and a broken query both land here, and the counts tell them apart:
+      # a dirty view gets its ✗ and its rows, while a clean sweep means the query itself
+      # was the problem and DuckDB has already said so on stderr.
+      [ -n "$check" ] && { gate_report silent || true; }
+      exit 1
     fi
     ;;
 
