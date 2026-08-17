@@ -441,9 +441,14 @@ COMMENT ON VIEW audit_summary IS
 -- One row per line, for `--format lines`. Rendered in SQL so the wording lives beside the
 -- data it counts and cannot drift from it, and so every caller prints the same thing.
 --
--- Header, findings, footer. The counts appear twice on purpose: output read by a tool is
--- truncated at the tail, so a total BEFORE the findings separates "I saw 40 of 240" from
--- "there were 40", and a header with no footer under it means the output was cut.
+-- Header, findings, footer. The header is two lines because scope and result read alike as
+-- bare counts: every number on the first line is what was examined, every number on the
+-- second is what was found, so neither can be mistaken for the other.
+--
+-- The result line appears twice on purpose: output read by a tool is truncated at the tail,
+-- so a total BEFORE the findings separates "I saw 40 of 240" from "there were 40", and a
+-- header with no footer under it means the output was cut. Only that line repeats — a
+-- second copy of the scope line would prove nothing about whether findings were lost.
 CREATE OR REPLACE MACRO plural(n, one, many) AS
   n::VARCHAR || ' ' || CASE WHEN n = 1 THEN one ELSE many END;
 COMMENT ON MACRO plural IS
@@ -454,13 +459,28 @@ CREATE OR REPLACE MACRO audit_report(since) AS TABLE (
   -- From the patch LEDGER, not from the findings: a patch that applied cleanly and one
   -- that never applied both contribute nothing to `f`, and a stale database would
   -- otherwise read as a clean one.
-  applied AS (SELECT count(DISTINCT patch_number) AS n
-              FROM patch_entries WHERE patch_number >= since),
-  -- The newest patch in scope, so a clean run still names the span it examined.
-  span AS (
-    SELECT lpad(since::VARCHAR, 4, '0') AS lo,
-           lpad(COALESCE((SELECT max(patch_number) FROM patch_entries
-                          WHERE patch_number >= since), since)::VARCHAR, 4, '0') AS hi
+  --
+  -- The record count is the denominator the result line is read against, so it carries the
+  -- liveness filter the rules apply to their own subjects. Without it a soft-deleted record
+  -- would enlarge the set audited while being structurally unable to contribute a finding.
+  --
+  -- The span comes from the data rather than from `since`, which names a patch that need
+  -- not exist. Both ends, so a clean run still names what it examined.
+  scope AS (
+    SELECT n_patches, n_records,
+           -- Falls back to the bound only when nothing matched, which is the run that has
+           -- no span to name. Outside the aggregate: `since` is a parameter, and an
+           -- aggregating SELECT will not read it beside min() and max().
+           lpad(COALESCE(lo_n, since)::VARCHAR, 4, '0') AS lo,
+           lpad(COALESCE(hi_n, since)::VARCHAR, 4, '0') AS hi
+    FROM (
+      SELECT count(DISTINCT patch_number)                     AS n_patches,
+             count(DISTINCT subject_type || ':' || subject_id)
+               FILTER (is_live(subject_status))               AS n_records,
+             min(patch_number)                                AS lo_n,
+             max(patch_number)                                AS hi_n
+      FROM patch_entries WHERE patch_number >= since
+    )
   ),
   tally AS (
     SELECT plural(count(*) FILTER (severity = 'error'), 'error', 'errors') AS errs,
@@ -469,15 +489,16 @@ CREATE OR REPLACE MACRO audit_report(since) AS TABLE (
     FROM f
   ),
   summary AS (
-    SELECT a.n AS n_applied,
-           CASE WHEN a.n = 0
+    SELECT s.n_patches,
+           CASE WHEN s.n_patches = 0
                 THEN 'NOTHING WAS AUDITED — no patch >= ' || s.lo
                      || ' is in this database; run make ingest-patches'
-                ELSE t.errs || ' and ' || t.warns || ' in ' || t.recs
-                     || ' across ' || plural(a.n, 'patch', 'patches')
-                     || ' from ' || s.lo || '-' || s.hi
-           END AS text
-    FROM tally t, span s, applied a
+                ELSE 'Audited ' || plural(s.n_records, 'record', 'records')
+                     || ' touched by ' || plural(s.n_patches, 'patch', 'patches')
+                     || ', ' || s.lo || '-' || s.hi || '.'
+           END AS scope_line,
+           t.errs || ' and ' || t.warns || ' in ' || t.recs AS result_line
+    FROM tally t, scope s
   ),
   rendered AS (
     SELECT CASE severity WHEN 'error' THEN 0 ELSE 1 END AS rank,
@@ -489,17 +510,17 @@ CREATE OR REPLACE MACRO audit_report(since) AS TABLE (
     FROM f
   )
   SELECT line FROM (
+    SELECT 0 AS section, NULL::INTEGER AS k1, '' AS k2, scope_line AS line FROM summary
     -- Header and footer carry the same sentence; the endings tell them apart, so neither
     -- needs a label.
-    SELECT 0 AS section, NULL::INTEGER AS k1, '' AS k2,
-           text || CASE WHEN n_applied = 0 THEN '' ELSE ', errors first:' END AS line
-    FROM summary
-    UNION ALL SELECT 1, NULL, '', '' FROM summary WHERE n_applied > 0
+    UNION ALL SELECT 1, NULL, '', result_line || ', errors first:'
+      FROM summary WHERE n_patches > 0
+    UNION ALL SELECT 2, NULL, '', '' FROM summary WHERE n_patches > 0
     -- Rank leads rather than the line, which would sort on the emoji: ⚠ is U+26A0 and
     -- ❌ is U+274C, so warnings would come first.
-    UNION ALL SELECT 2, rank, line, line FROM rendered
-    UNION ALL SELECT 3, NULL, '', '' FROM summary WHERE n_applied > 0
-    UNION ALL SELECT 4, NULL, '', text || '.' FROM summary WHERE n_applied > 0
+    UNION ALL SELECT 3, rank, line, line FROM rendered
+    UNION ALL SELECT 4, NULL, '', '' FROM summary WHERE n_patches > 0
+    UNION ALL SELECT 5, NULL, '', result_line || '.' FROM summary WHERE n_patches > 0
   ) ORDER BY section, k1, k2
 );
 COMMENT ON MACRO TABLE audit_report IS
