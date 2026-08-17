@@ -7,7 +7,7 @@ const { authMock, pageState } = vi.hoisted(() => ({
   pageState: { url: new URL('http://localhost/locations') },
 }));
 
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
 vi.mock('$app/paths', () => ({ resolve: (p: string) => p, asset: (p: string) => p }));
 vi.mock('$app/state', () => ({
   page: {
@@ -20,6 +20,7 @@ vi.mock('$app/state', () => ({
 vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));
 
 import Layout from './+layout.svelte';
+import SubrouteHarness from './location-subroute.test-harness.svelte';
 
 type Manufacturer = {
   name: string;
@@ -250,6 +251,24 @@ describe('locations layout — meta tags', () => {
     expect(document.head.querySelector('meta[name="description"]')).toHaveAttribute(
       'content',
       'Browse pinball manufacturers by country, region, and city.',
+    );
+  });
+});
+
+describe('locations layout — entity context for sub-routes', () => {
+  it('publishes the location name and detail href to a sub-route page', () => {
+    render(SubrouteHarness, {
+      data: { profile: COUNTRY },
+      pageData: { changesets: [] },
+    } as unknown as Parameters<typeof render>[1]);
+
+    // EditHistory reads both from the entity context; without it the whole
+    // sub-route 500s on the server before any of this renders.
+    expect(screen.getByRole('heading', { name: 'Edit History' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/locations/usa');
+    expect(screen.getByRole('link', { name: 'United States' })).toHaveAttribute(
+      'href',
+      '/locations/usa',
     );
   });
 });
