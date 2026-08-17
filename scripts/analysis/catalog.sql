@@ -1,55 +1,30 @@
--- Catalog analysis foundation — the shared decode layer over the live DB.
+-- Catalog analysis foundation
 --
--- `.read` this from an analysis file to get a connected, decoded catalog: it ATTACHes the
--- catalog READ-ONLY and defines views over the awkward physical schema (JSON extra_data,
--- the model -> corporate_entity -> manufacturer chain, reward M2M). Run from the REPO
--- ROOT — the ATTACH path and every `.read` resolve against the current directory.
+-- README.md to do analysis; EDITING.md to change this file.
 --
---     scripts/analysis/analysis query <analysis>.sql "FROM <a_view> LIMIT 5;"
---
--- What `fc` attaches is db.analytics.duckdb, an IMPORT of backend/db.sqlite3 into
--- DuckDB's own storage — not the SQLite file itself. The runner re-imports whenever the
--- source changes, so going through it is the supported entry point; a bare `duckdb -init`
--- attaches whatever the last import produced (`analysis_context.snapshot_imported_at`).
---
--- Conventions that hold throughout and are NOT restated per view:
+-- Conventions:
 --   * `_underscore` = private helper.
---   * Views omit soft-deleted records (see RecordLifecycle.md) and
---     live means `status IS DISTINCT FROM 'deleted'`, matching the read APIs.
+--   * Views omit soft-deleted records (RecordLifecycle.md); live means
+--     `status IS DISTINCT FROM 'deleted'`, matching the read APIs.
 --   * A dim or edge target is soft-deleted independently of its subject, so a dead one
---     DE-ENRICHES TO NULL rather than being reported as current. catalog_checks flags
---     every occurrence; per-view notes name only the check.
---   * Predicate and join on ids/slugs; display the names.
+--     DE-ENRICHES TO NULL rather than being reported as current; catalog_checks flags
+--     every occurrence.
+--   * Join on ids, predicate on ids or slugs, display the names — and what LEAVES the
+--     session takes the slug.
 --
--- README.md to write an analysis; EDITING.md to change this file.
 
--- Not the SQLite file in place: DuckDB's sqlite scanner collapses two aggregates into
--- one under our liveness predicate. EDITING.md, "Why the catalog is imported rather
--- than attached".
 ATTACH IF NOT EXISTS 'backend/db.analytics.duckdb' AS fc (READ_ONLY);
 
--- ═══ NAME NORMALIZATION — macros for comparing names across records ═════════
+-- ═══ NAME NORMALIZATION — comparing names across records ════════════════════
 -- The key for comparing a catalog name against another record's — a source's game title,
--- a sibling model, an alias. Split at the one clause that is a JUDGMENT rather than a
--- mechanic, so an analysis picks deliberately:
---
---   name_norm         fold Latin diacritics, lowercase, collapse every run of
---                     non-letter/non-digit to one space, trim. Folding is what makes
---                     cross-source spellings match ('München' / 'Munchen'). The character
---                     class is Unicode-aware (\p{L}\p{N}), so a non-Latin name keys to
---                     itself instead of collapsing to the empty string and matching every
---                     other such name. Two limits: ordinal indicators survive as letters
---                     ('1ª División' -> '1ª division', so a source writing '1a' won't
---                     match), and strip_accents folds Japanese dakuten (バ and パ onto
---                     ハ), so distinct kana can share a key.
---   name_strip_paren  drop ONE trailing parenthetical. CUTS BOTH WAYS: it lets an export
---                     edition find its original ('On Beam (Italy)' -> 'On Beam') and it
---                     collapses 'KISS (Limited Edition)' onto 'KISS'. Record whether a
---                     match was exact or needed the strip, and let a reviewer weigh it.
---   name_key          the composition, for the common case.
---
--- Matching STRATEGY is deliberately absent — plural collapsing, stopwords, token subsets,
--- edit distance are tuned to a corpus and belong to the analysis that needs them.
+-- a sibling model, an alias. Split so an analysis picks the JUDGMENT deliberately:
+-- name_norm is mechanical, name_strip_paren is a judgment, name_key composes both.
+-- Matching STRATEGY — plural collapsing, stopwords, token subsets, edit distance — is
+-- tuned to a corpus and belongs to the analysis that needs it.
+
+-- Two limits: ordinal indicators survive as letters ('1ª División' -> '1ª division', so a
+-- source writing '1a' won't match), and strip_accents folds Japanese dakuten (バ and パ
+-- onto ハ), so distinct kana can share a key.
 CREATE OR REPLACE MACRO name_norm(s) AS
   trim(regexp_replace(lower(strip_accents(COALESCE(s, ''))), '[^\p{L}\p{N}]+', ' ', 'g'));
 COMMENT ON MACRO name_norm IS
@@ -64,47 +39,28 @@ CREATE OR REPLACE MACRO name_key(s) AS name_norm(name_strip_paren(s));
 COMMENT ON MACRO name_key IS
   'name_norm(name_strip_paren(s)) — the name comparison key for the common case. Use name_norm alone when a trailing parenthetical distinguishes the records.';
 
--- ═══ STAGING — the source-read contract, written once ═══════════════════════
--- staging('fc.catalog_x') is HOW THIS LAYER READS A SOURCE TABLE, and the whole of it:
--- live rows only, bookkeeping columns dropped, absence spelled one way. Three clauses, one
--- job — a source read is not finished until all three have happened, which is why they are
--- one macro under one name rather than three a view could apply two of.
--- Each clause, and why it belongs to the read rather than to a view:
---   * live rows      the liveness rule (is_live), written HERE and nowhere else.
---   * EXCLUDE        `status` is redundant on a view that IS the live rows, and
---                    created_at/updated_at are row bookkeeping that differs between any
---                    two copies of the catalog — they describe the local db state rather
---                    than catalog state.
---   * blanks_null    absent is NULL, never '' (see below).
--- Use it for the SOURCE read only — joins go through the joined entity's own view, so its
--- liveness stays stated once too. It has no opinion about columns beyond those three: a
--- view that drops more says so itself, which is what keeps an EXCLUDE list meaningful.
--- Fails loudly (Binder Error on `status`) against a table with no lifecycle, which is
--- correct: alias tables are not live-filtered and must not pretend to be.
--- blanks_null is the other half of the same idea, split out because tables with no
--- lifecycle need it too. Django spells an unset CharField(blank=True) as '' and an unset
--- nullable field as NULL, and both used to reach the views untouched — so `description
--- IS NULL` was ALWAYS FALSE on 6,828 models while `year IS NULL` was correct, with
--- nothing in either column to say which spelling applied. One spelling now reaches a
--- consumer: absent is NULL.
--- The `::VARCHAR` cast is inside the comparison and not around the value, which is what
--- makes this safe to apply to every column at once — `NULLIF(COLUMNS(*), '')` fails with
--- a conversion error on the first integer, while CASE returns the column untouched and
--- preserves its type.
--- Apply it BY NAME, never by testing whether a table has the columns for it: '' is a real
--- value in citation_citationsourcerootdomain.path_prefix, where it means "whole host"
--- rather than "no host", and folding it to NULL there would be a semantic error.
+-- ═══ STAGING — the source-read contract ═════════════════════════════════════
+-- staging('fc.catalog_x') is how analytics reads source tables.
+-- Drops soft-deleted rows and bookkeeping columns, spells absence one way.
+--
+-- Use it for the SOURCE read only — joins through the joined entity's own view.
+-- Fails loudly (Binder Error on `status`) against a table with no lifecycle.
+
+-- The `::VARCHAR` cast is inside the comparison, not around the value, so this is safe to
+-- apply to every column at once: `NULLIF(COLUMNS(*), '')` fails with a conversion error on
+-- the first integer, while CASE returns the column untouched and preserves its type.
+-- Apply BY NAME, never by testing whether a table has the columns for it: '' is a real
+-- value in citation_citationsourcerootdomain.path_prefix, where it means "whole host".
 CREATE OR REPLACE MACRO blanks_null(tbl) AS TABLE
   SELECT CASE WHEN COLUMNS(*)::VARCHAR = '' THEN NULL ELSE COLUMNS(*) END
   FROM query_table(tbl);
 COMMENT ON MACRO TABLE blanks_null IS
   'blanks_null(''fc.x'') — every column of a table with '''' folded to NULL, types preserved. The source read for a table with no lifecycle; staging() already includes it.';
 
--- One spelling per scalar, as blanks_null is one spelling per absence. A claim value is a
--- JSONField, so `"500"` and `500` are different values and both are in the data for
--- production_quantity: 73 claims assert 500, `value = '500'` finds one.
+-- A claim value is a JSONField, so `"500"` and `500` are different values and both are in
+-- the data: of the 73 claims asserting production_quantity 500, `value = '500'` finds one.
 -- The OBJECT/ARRAY guard: json_extract_string serializes a member payload back to
--- `{"exists":true,…}`, which would read as a scalar on 58,178 rows that have none.
+-- `{"exists":true,…}`, which would read as a scalar on rows that have none.
 CREATE OR REPLACE MACRO json_scalar_text(v) AS
   CASE WHEN json_type(v) NOT IN ('OBJECT', 'ARRAY')
        THEN NULLIF(json_extract_string(v, '$'), '')
@@ -125,16 +81,14 @@ COMMENT ON MACRO TABLE staging IS
 
 -- ═══ ENTITY VOCABULARY — what this layer calls each kind of thing ═══════════
 -- entity_registry (entity_type ↔ content-type label ↔ table), entity_subjects (the
--- polymorphic subject resolver) and entity_prose (the authored-prose corpus), GENERATED
--- by `manage.py export_entity_registry` (`make codegen`).
--- Neither can be written here: `machinemodel` → `model` is a declaration on the model
--- class, not a string rule, and SQL cannot iterate table names.
+-- polymorphic subject resolver) and entity_prose (the authored-prose corpus), GENERATED by
+-- `manage.py export_entity_registry` (`make codegen`) — `machinemodel` → `model` is a
+-- declaration on the model class, and SQL cannot iterate table names.
 -- FIRST, ahead of every view — the vocabulary the rest of the file speaks.
 .read scripts/analysis/entity_registry.sql
 
 -- Key on the physical table, not the public spelling: a view emitting a subject type has
--- already joined that table, while the spelling can move under it. A miss returns NULL
--- rather than a stale string, which the checks fail on.
+-- already joined that table, while the spelling can move under it.
 CREATE OR REPLACE MACRO entity_type_of(physical_table) AS
   (SELECT entity_type FROM entity_registry WHERE db_table = physical_table);
 COMMENT ON MACRO entity_type_of IS
@@ -142,22 +96,13 @@ COMMENT ON MACRO entity_type_of IS
 
 -- ═══ STAGING LAYER — the live rows of a table, and nothing else ═════════════
 -- One `_stg_x` per lifecycle table that more than one view reads. No joins, no derived
--- columns, no measures — so nothing here has an outgoing edge, and nothing that reads one
--- can be part of a cycle.
+-- columns, no measures, so nothing here has an outgoing edge and no cycle can run through
+-- it. An entity view carries measures over the models beneath it (`titles.n_models`), so
+-- reaching through one for a neighbour's slug drags its aggregate along — `models` joining
+-- `titles` would close a loop. Hence the rule: join the STAGING view to decode an
+-- identity, the ENTITY view to read a measure.
 --
--- That is the point. An ENTITY view carries two things: the entity's identity, and
--- measures over the models beneath it (`manufacturers.n_models`, `titles.n_models`,
--- `themes.n`). Identity points sideways, measures point down at `models` — so a view
--- reaching for a neighbour's SLUG through the entity view inherits its aggregate too, and
--- `models` joining `titles` would close a loop through `titles`' own model count.
---
--- Hence the split, and the rule that follows from it: **join the staging view to decode an
--- identity, the entity view to read a measure.** Every join that used to spell the
--- liveness predicate by hand was decoding an identity, so every one of them lands here.
---
--- A table read from ONE place gets no staging view — `cabinets` IS
--- `staging('fc.catalog_cabinet')` and a `_stg_cabinet` would be pure indirection. The
--- layer exists to make a shared read shared, not to put a wrapper round every table.
+-- A table read from ONE place gets none — `cabinets` IS `staging('fc.catalog_cabinet')`.
 CREATE OR REPLACE VIEW _stg_machine_model     AS SELECT * FROM staging('fc.catalog_machinemodel');
 CREATE OR REPLACE VIEW _stg_title             AS SELECT * FROM staging('fc.catalog_title');
 CREATE OR REPLACE VIEW _stg_corporate_entity  AS SELECT * FROM staging('fc.catalog_corporateentity');
@@ -171,27 +116,20 @@ CREATE OR REPLACE VIEW _stg_theme             AS SELECT * FROM staging('fc.catal
 CREATE OR REPLACE VIEW _stg_gameplay_feature  AS SELECT * FROM staging('fc.catalog_gameplayfeature');
 
 -- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
--- locations — one row per live Location, at EVERY level. THE entity: a country is simply
--- a Location with no parent (`is_country`), and there is no separate country table or
--- country view — filter this one.
---
---   location_path : the stable key ('usa/il/chicago'), and the one to join on. `slug` is
+-- locations — one row per live geographic Location.
+--   location_path : the stable key ('usa/il/chicago') and the one to join on. `slug` is
 --             unique only WITHIN a parent — there is more than one 'victoria' in the
 --             world — so a join on slug silently merges places. The path is also the
 --             hierarchy: country_slug is its first segment, and a place's descendants are
 --             the rows whose path starts with its path plus '/'.
---   location_type : an OPEN vocabulary, not a 3-level ladder — country, state,
---             province, department, community, region, prefecture, constituent_country,
---             district, city. Only `country` is structurally guaranteed (exactly the
---             parentless rows); the rest reflect how each country subdivides itself, so
---             an analysis assuming country/state/city silently drops the live places that
---             are none of those. Predicate on path depth when you mean depth.
---   code / short_name / divisions : sparse by construction. `code` is the subdivision's
---             own code (VIC, WA), empty on every country and city; `divisions` is on
---             countries alone, naming how that country subdivides; `short_name` is rarer
---             still. Read each at the level that carries it.
---   n_corporate_entities : live corporate entities based here DIRECTLY — a country does
---             not inherit its cities' counts. Roll up with a location_path prefix.
+--   location_type : an OPEN vocabulary, not a 3-level ladder — country, state, province,
+--             department, community, region, prefecture, constituent_country, district,
+--             city. Only `country` is structurally guaranteed (exactly the parentless
+--             rows), so an analysis assuming country/state/city silently drops the live
+--             places that are none of those. Predicate on path depth when you mean depth.
+--   code / short_name / divisions : sparse by construction, each carried at one level —
+--             `code` is the subdivision's own code (VIC, WA), `divisions` names how a
+--             country subdivides, `short_name` is rarer still.
 CREATE OR REPLACE VIEW locations AS
   SELECT
     l.*,
@@ -202,15 +140,8 @@ COMMENT ON VIEW locations IS
   'One row per live Location at EVERY level — THE entity; a country is just a row with is_country. Join on location_path, never slug: slug is unique only within a parent.';
 
 -- corporate_entity_locations — one row per (live corporate entity, live location) it is
--- based in. THE bridge: CorporateEntityLocation is a through model owned by
--- CorporateEntity ("existence is controlled by `location` relationship claims on
--- CorporateEntity"), which is why the count of CEs per location does NOT live on
--- `locations` — a Location knows nothing about corporate entities, and having the entity
--- view reach across a relationship it doesn't own is what made three separate views read
--- this table. Group this by location_id for that count.
--- The two sides resolve at different layers on purpose: the CE contributes only its slug,
--- so it comes from the staging layer, while the location side goes through `locations`,
--- which is where location_path gets split into country_slug and is_country.
+-- based in. The bridge is owned by CorporateEntity, so the count of CEs per location lives
+-- here rather than on `locations`: GROUP BY location_id for it.
 CREATE OR REPLACE VIEW corporate_entity_locations AS
   SELECT
     cel.corporate_entity_id,
@@ -245,19 +176,9 @@ COMMENT ON VIEW game_formats IS
   'One row per live game format — the machine-genre vocabulary';
 
 -- ─── Taxonomy dims, at entity grain ─────────────────────────────────────────
--- One view per taxonomy dim. `models` carries these as SLUG ONLY and still does — these
--- are the other half of that decision rather than a reversal of it. The slug is what you
--- predicate and group on, so it is all a model row needs; the rest of the RECORD lives
--- here, where the subject is the vocabulary itself.
---
--- `description` is the field that forced them. It is authored prose that no `models`
--- column could carry, and while these tables were reachable only by raw-joining
--- fc.catalog_<dim>, "which vocabulary terms are still undocumented" had no answer in the
--- foundation at all — the shape EDITING.md warns about, where a column missing from a
--- view gets read as a field the Django model does not have.
---
--- Uniform shape: id, slug, name, description, plus the decoded parent where the dim has
--- one. Live rows only, and every parent join live-filtered, as everywhere else here.
+-- One view per taxonomy dim, for questions about the VOCABULARY itself — `models` carries
+-- only the slug, which is all a model row needs to predicate and group on.
+-- Uniform shape: id, slug, name, description, plus the decoded parent where the dim has one.
 CREATE OR REPLACE VIEW technology_generations AS SELECT * FROM staging('fc.catalog_technologygeneration');
 COMMENT ON VIEW technology_generations IS
   'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State).';
@@ -284,9 +205,8 @@ CREATE OR REPLACE VIEW display_subtypes AS
 COMMENT ON VIEW display_subtypes IS
   'One row per live display subtype — the subdivision vocabulary, carrying its parent display type decoded to a slug.';
 
--- systems — the one dim whose name is not a mangled slug (`Bally AS-2518-35`), which is
--- why `models` keeps system_name alongside system_slug. Manufacturer is a required FK:
--- a system belongs to whoever built it.
+-- The one dim whose name the slug mangles (`Bally AS-2518-35`), so `models` carries
+-- system_name alongside system_slug.
 CREATE OR REPLACE VIEW systems AS
   SELECT
     s.*,
@@ -309,30 +229,23 @@ COMMENT ON VIEW production_statuses IS
   'One row per live production status — the commercial-production vocabulary (produced, announced, one-off).';
 
 -- ═══ MODELS — the spine; start here ═════════════════════════════════════════
--- _ce_location — the MANUFACTURER's home location per corporate entity, collapsed to ONE
--- row per CE so joining it can't fan out the one-row-per-model grain. CorporateEntity-
--- Location is 1:N, but every CE has exactly one location today: while that holds this is
--- exact, and ce_multi_location fires the day it stops. location_path is the most-specific
--- known place AND the stable key; country_slug is its root segment, the join key.
+-- _ce_location — the manufacturer's home location per corporate entity, collapsed to ONE
+-- row per CE so joining it can't fan out the one-row-per-model grain. CorporateEntityLocation
+-- is 1:N, but every CE has exactly one location today; ce_multi_location fires if that stops.
 CREATE OR REPLACE VIEW _ce_location AS
   SELECT
     corporate_entity_id,
     min(location_path)                            AS location_path,
-    -- country_slug comes from `locations`, which is the one place location_path is split.
-    -- min_by, not min: it reads country_slug off the SAME row min(location_path) picks,
-    -- so the pair stays coherent if a CE ever carries two locations (ce_multi_location
-    -- fires then, but this shouldn't quietly mix two places in the meantime).
+    -- min_by, not min: reads country_slug off the SAME row min(location_path) picks, so a
+    -- CE that ever carries two locations can't quietly report a mix of the two.
     min_by(country_slug, location_path)           AS country_slug
   FROM corporate_entity_locations
   GROUP BY corporate_entity_id;
 
 -- _title_live_n — live models per Title. Reads the staging layer because `models` consumes
 -- it, so reading `models` would be circular.
--- Read from OUTSIDE this section, unlike the helpers around it: it is the single source
--- for `models.title_size` here AND `titles.n_models` several hundred lines down, which is
--- the whole point — the two agreeing is a property of there being one definition, not a
--- coincidence to re-establish. Changing the grain or the name moves both, plus the checks
--- that compare them.
+-- The single source for `models.title_size` here AND `titles.n_models` further down, so
+-- changing the grain or the name moves both, plus the checks that compare them.
 CREATE OR REPLACE VIEW _title_live_n AS
   SELECT title_id, count(*) AS n
   FROM _stg_machine_model
@@ -346,71 +259,56 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 
 -- models — one row per LIVE MachineModel. `analysis describe models` prints
 -- the full column list; these notes cover only what ISN'T obvious.
---   title_* : the model's Title — the spine of the hierarchy (every model has one; the
---             FK is NOT NULL), decoded inline so title-mate analyses never reach for
---             catalog_title.
+--   title_* : the model's Title — the spine of the hierarchy; every model has one.
 --   title_size : LIVE models sharing this model's Title, itself included — so >= 1, and
---             `title_size = 1` is "alone in its Title". The model-keyed form of
---             `titles.n_models`.
---   namesake_count : LIVE models sharing this model's `name_key`, including itself. 1
---             means unique; > 1 is ambiguous and needs another signal. Trailing-
---             parenthetical variants count together (it uses name_key). Always >= 1 for
---             the same reason as title_size. See README.md#matching-source-records-to-models.
+--             `title_size = 1` is "alone in its Title". The model-keyed `titles.n_models`.
+--   namesake_count : LIVE models sharing this model's `name_key`, itself included. 1 means
+--             unique; > 1 is ambiguous and needs another signal. Trailing-parenthetical
+--             variants count together. README.md#matching-source-records-to-models.
 --   manufacturer_model_identifier : the MANUFACTURER's own model number (Gottlieb '654',
---             Stern 'PINBALL I-00M1 * JURAS. PARK PRO'). NOT unique, and NOT unique
---             paired with manufacturer_id either: manufacturers number independently from
---             1, AND the catalog splits finer than they numbered, so one number spans
---             several models — within a Title (Gottlieb 409 = Cleopatra + Cleopatra (EM))
---             or across Titles for a re-theme family (Williams 394 = Zodiac + Planets).
---             Some collisions are just bad data (Bally 868 = Safari 1969 + Mysterian
---             1982). GROUP BY (manufacturer_id, identifier) before treating it as an
---             identity; `model_number_collisions` is the ready-made view. NULL on most
---             live models.
---   year / month : the release date as a precision ladder — `catalog_machinemodel_month_
---             requires_year` means a NULL month is "dated to the year", never a month
---             lost from a fuller date. Nothing above the year is modelled, so a named
---             quarter or season arrives as a month or as nothing.
---   production_quantity : text, not a number — a CharField whose empty state is ''
---             (`= ''`, not `IS NULL`) and whose values nothing validates, so TRY_CAST
---             for arithmetic and keep the NULLs it produces. Blank is unknown, not zero.
+--             Stern 'PINBALL I-00M1 * JURAS. PARK PRO'). NOT unique, and NOT unique paired
+--             with manufacturer_id either: makers number independently from 1, and the
+--             catalog splits finer than they numbered, so one number spans several models
+--             — within a Title (Gottlieb 409 = Cleopatra + Cleopatra (EM)) or across them
+--             for a re-theme family (Williams 394 = Zodiac + Planets). Some collisions are
+--             just bad data (Bally 868 = Safari 1969 + Mysterian 1982). GROUP BY
+--             (manufacturer_id, identifier) before treating it as an identity, or use
+--             `model_number_collisions`. NULL on most live models.
+--   year / month : a precision ladder — a NULL month is "dated to the year", never a month
+--             lost from a fuller date (`catalog_machinemodel_month_requires_year`). Nothing
+--             above the year is modelled, so a named quarter or season arrives as a month
+--             or as nothing.
+--   production_quantity : TEXT, not a number, and nothing validates it — TRY_CAST for
+--             arithmetic and keep the NULLs it produces. Blank is unknown, not zero.
 --   manufacturer : manufacturer_name is the canonical name on the cabinet — display and
 --             group by it.
 --   location: where the MANUFACTURER was based (model -> corporate_entity -> location).
---             Its ORIGIN, NOT an export-market destination — those are
---             `model_export_markets`. location_path ('usa/il/chicago') is the most-
---             specific known place and the stable key; country_slug ('usa') is its root,
---             the field to join/group by (-> locations, is_country, for the name).
+--             Its ORIGIN, not an export-market destination — those are
+--             `model_export_markets`. location_path ('usa/il/chicago') is the most-specific
+--             known place and the stable key; country_slug ('usa') is its root, the field
+--             to join and group by (-> locations, is_country, for the name).
 --   game_format_*   : machine genre, id/slug, NULL if untyped; `game_formats` has the name.
 --   taxonomy dims   : technology_generation / technology_subgeneration, display_type /
 --             display_subtype, system, cabinet, production_status — SLUG ONLY (DomainModel
---             "Taxonomy & Classification"). The slug ('solid-state', 'dot-matrix', 'floor')
---             is both the readable label and the join key back to fc.catalog_<dim>, so
---             neither the FK id nor the display name is carried. `system` is the exception
---             and keeps system_name: a hardware designation like 'Bally AS-2518-35' that
---             the slug mangles. production_status is the ProductionStatus FK, NOT the
+--             "Taxonomy & Classification"), the slug being both the readable label and the
+--             join key back to fc.catalog_<dim>. `system` also keeps system_name, which the
+--             slug mangles. production_status is the ProductionStatus FK, NOT the
 --             soft-delete `status`. The subgeneration/subtype dims are mostly NULL today.
 --   variant_of_id / remake_of_id / export_edition_of_id : bare self-FKs to the origin
---             model. No matching _slug columns, deliberately — resolving the far end is
---             `model_lineage`'s job (join it on model_id and edge_kind, then read
---             target_slug), and one facet copied here starts a second target_* block to
---             keep in step with that one.
+--             model. Resolving the far end is `model_lineage`'s job — join it on model_id
+--             and edge_kind, then read target_slug.
 --   source free-text : ipdb_notes, ipdb_notable_features, ipdb_toys,
 --             ipdb_marketing_slogans (prose) and opdb_features (VARCHAR[], empty never
 --             NULL; 'Export edition', 'Cocktail', …) — source fields the product doesn't
---             surface, promoted so mining them needs no hand-rolled json_extract. The
---             prose ones are sparse: NULL is a fact about the source's coverage.
+--             surface. The prose ones are sparse: NULL is a fact about source coverage.
 --   NOT surfaced : the extra_data long tail (opdb.keywords — use `model_themes` —
---             opdb.common_name, opdb.description, …). Promoting one is a single
---             line here; see EDITING.md.
+--             opdb.common_name, opdb.description, …). EDITING.md to promote one.
 --   label   : "Name (Manufacturer Year)", CE name then '?' as fallbacks; year omitted if
 --             unknown.
 CREATE OR REPLACE VIEW models AS
   SELECT
-    -- Every MachineModel column, minus the ones named below. `m.*` rather than a list on
-    -- purpose: with a list, a field deliberately left out and a field nobody noticed look
-    -- identical — both are simply absent — so the layer had no way to record an omission
-    -- as a decision. EXCLUDE is that record. A new field on the model now surfaces here on
-    -- its own, and the only way it stays out is if someone writes down why, right here.
+    -- `m.*` rather than a column list, so a new field on the Django model surfaces here on
+    -- its own and the only way one stays out is an EXCLUDE entry saying why.
     m.* EXCLUDE (
       ipdb_rating,      -- third-party ratings: not ours to republish, and not wanted
       pinside_rating,
@@ -423,8 +321,6 @@ CREATE OR REPLACE VIEW models AS
     ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     cel.location_path, cel.country_slug,
     gf.slug AS game_format_slug,
-    -- Single-FK taxonomy dims — the SLUG is the join key and the label; the raw FK id
-    -- rides along from m.* and is not the column to predicate on.
     tg.slug  AS technology_generation_slug,
     tsg.slug AS technology_subgeneration_slug,
     dt.slug  AS display_type_slug,
@@ -441,23 +337,13 @@ CREATE OR REPLACE VIEW models AS
       || COALESCE(NULLIF(mf.name, ''), NULLIF(ce.name, ''), '?')
       || COALESCE(' ' || m.year::VARCHAR, '')
       || ')' AS label
-  -- Every dim join is live-filtered, so a deleted dim de-enriches to NULL. It should
-  -- never bite (the FKs are PROTECT and the soft-delete walker blocks it) and
-  -- model_dim_not_live fires if it does.
   FROM _stg_machine_model m
-  -- Title, corporate entity and manufacturer come from the STAGING layer, not from `titles`,
-  -- `corporate_entities` and `manufacturers`: all three aggregate over `models`, and only
-  -- the slug and name are wanted here.
   LEFT JOIN _stg_title t              ON t.id  = m.title_id
   LEFT JOIN _title_live_n tn           ON tn.title_id = m.title_id
   LEFT JOIN _namesake_live_n nk        ON nk.name_key = name_key(m.name)
   LEFT JOIN _stg_corporate_entity ce  ON ce.id = m.corporate_entity_id
   LEFT JOIN _stg_manufacturer mf      ON mf.id = ce.manufacturer_id
   LEFT JOIN _ce_location cel           ON cel.corporate_entity_id = m.corporate_entity_id
-  -- The dim joins go through the dim VIEWS, which are defined above and are already
-  -- live-only, so the liveness rule for each dimension is stated once — in that view —
-  -- rather than restated here. A soft-deleted dim still de-enriches to NULL, unchanged,
-  -- because the view simply does not contain the row.
   LEFT JOIN game_formats               gf  ON gf.id  = m.game_format_id
   LEFT JOIN technology_generations     tg  ON tg.id  = m.technology_generation_id
   LEFT JOIN technology_subgenerations  tsg ON tsg.id = m.technology_subgeneration_id
@@ -473,8 +359,8 @@ COMMENT ON VIEW models IS
 -- presumed_producing — the still-producing verdict the SITE publishes, which is not
 -- operating_status alone: an 'unknown' subject with a recent model reads as producing
 -- ("1990–present"), one without reads as closed. The window is a product fact
--- (UNKNOWN_RECENCY_YEARS in frontend/src/lib/utils.ts); rewriting it locally drifts from
--- what the site shows. Not stable across runs — it moves with the calendar.
+-- (UNKNOWN_RECENCY_YEARS in frontend/src/lib/utils.ts). Not stable across runs — it moves
+-- with the calendar.
 CREATE OR REPLACE MACRO presumed_producing(operating_status, year_of_last_model) AS
   operating_status = 'ongoing'
   OR (operating_status = 'unknown'
@@ -485,8 +371,8 @@ COMMENT ON MACRO presumed_producing IS
 
 -- _mfr_status — OperatingStatus.rollup over a manufacturer's live corporate entities,
 -- precedence ONGOING > UNKNOWN > ENDED. Read it through manufacturers.operating_status.
--- No CE at all rolls up to unknown, NEVER ended (empty bool_and is NULL, so the ELSE
--- catches it) — the branch is unreachable today and is the backend's stated behaviour.
+-- No CE at all rolls up to unknown, never ended: empty bool_and is NULL, so the ELSE
+-- catches it, matching the backend.
 CREATE OR REPLACE VIEW _mfr_status AS
   SELECT manufacturer_id,
          CASE WHEN bool_or(operating_status = 'ongoing') THEN 'ongoing'
@@ -498,11 +384,9 @@ CREATE OR REPLACE VIEW _mfr_status AS
 
 -- _mfr_location — a manufacturer's place rolled up over its LIVE corporate entities, at
 -- both rungs. Read it through manufacturers.location_path / country_slug.
--- Derived from the CEs and NOT from `models`, same shape as _mfr_status above and for the
--- same reason: a location is a fact about the COMPANY, and models are only the
--- denormalization path that usually reaches it. Aggregating models instead reports any
--- maker whose models are all gone or not yet seeded as location-unknown, though its CEs
--- carry an address. DISTINCT ignores NULL, so a CE with no location lowers neither count.
+-- Rolled up from the CEs, not from `models`: a location is a fact about the COMPANY, so a
+-- maker whose models are all gone or not yet seeded still reports the address its CEs
+-- carry. DISTINCT ignores NULL, so a CE with no location lowers neither count.
 CREATE OR REPLACE VIEW _mfr_location AS
   SELECT ce.manufacturer_id,
          count(DISTINCT cel.location_path)  AS n_locations,
@@ -523,21 +407,17 @@ CREATE OR REPLACE VIEW _mfr_location AS
 --
 --   year_of_first_model / year_of_last_model, and the n_* counts : exactly as on
 --                 `manufacturers`, scoped to the one entity.
---   operating_status / presumed_producing : as on `manufacturers`, but for the ONE
---                 incarnation — the stored column, not a rollup. Ask the manufacturer
---                 view unless the incarnation is the subject; that is the grain the
---                 site's verdict is published at. UNKNOWN IS THE COLUMN DEFAULT — most
---                 entities sit on it because nobody has said otherwise, so counting
---                 'ended' is sound and reading anything into the size of the 'unknown'
---                 bucket is not.
+--   operating_status / presumed_producing : the stored column for the ONE incarnation, not
+--                 a rollup — ask `manufacturers` unless the incarnation is the subject.
+--                 UNKNOWN IS THE COLUMN DEFAULT, so counting 'ended' is sound and reading
+--                 anything into the size of the 'unknown' bucket is not.
 --   location_path / country_slug : this incarnation's own place, spelled as on `models`.
 --                 The grain to use when a manufacturer spans places — `manufacturers`
 --                 collapses those to NULL, while this view keeps each CE's separate.
 --                 Both NULL when the CE carries no location, a common state.
---   ipdb_manufacturer_id : IPDB's ManufacturerId, the join key back to an IPDB scrape.
---                 It lives here and `opdb_manufacturer_id` lives on `manufacturers`
---                 because the two source databases split the manufacturer at different
---                 grains.
+--   ipdb_manufacturer_id : IPDB's ManufacturerId, the join key back to an IPDB scrape. It
+--                 lives here and `opdb_manufacturer_id` on `manufacturers` because the two
+--                 source databases split the manufacturer at different grains.
 CREATE OR REPLACE VIEW corporate_entities AS
   WITH agg AS (
     SELECT
@@ -552,12 +432,10 @@ CREATE OR REPLACE VIEW corporate_entities AS
   )
   SELECT
     ce.* EXCLUDE (
-      -- RETIRED on the Django model, whose help_text reads "DEAD FIELD — do not read or
-      -- write": a company can incorporate years before its first machine and linger years
-      -- after its last, so these answer the wrong question. The rows survive only to keep
-      -- the cited claims behind them. Exposing them here would be worse than not having
-      -- them, because they sit beside year_of_first_model/year_of_last_model under nearly
-      -- the same name and disagree with them on 22 of 35 and 16 of 30 entities.
+      -- "DEAD FIELD — do not read or write" on the Django model: a company can incorporate
+      -- years before its first machine and linger years after its last. Surfacing them
+      -- beside year_of_first_model/year_of_last_model, which they disagree with on most
+      -- entities, would be worse than not having them at all.
       year_start,
       year_end
     ),
@@ -575,62 +453,48 @@ CREATE OR REPLACE VIEW corporate_entities AS
 COMMENT ON VIEW corporate_entities IS
   'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts, location and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
--- manufacturers — one row per live manufacturer: identity, where it was based, how much
--- it made and WHEN. The span columns matter because a MODEL with no year often has its
+-- manufacturers — one row per live manufacturer: identity, where it was based, how much it
+-- made and WHEN. The span columns matter because a MODEL with no year often has its
 -- manufacturer's span as the only evidence available.
 --
--- Grain: the physical chain is model -> CorporateEntity -> Manufacturer, and a
--- manufacturer can own more than one CE. This view is at the MANUFACTURER level (the name
--- on the cabinet, what you group and display by); drop to models.corporate_entity_* for
--- the legal entity.
+-- Grain: the physical chain is model -> CorporateEntity -> Manufacturer, and a manufacturer
+-- can own more than one CE. This is the MANUFACTURER level, the name on the cabinet; drop
+-- to models.corporate_entity_* for the legal entity.
 --
 --   n_models    : live models attributed here, VARIANTS INCLUDED. 0 is normal — the
 --                 catalog carries manufacturers with no models yet.
 --   n_nonvariant_models : the same count with variants excluded — what
 --                 /api/export/manufacturers/ publishes as `model_count`.
---   n_dated     : non-variant models carrying a year — the year pair's scope and THE
---                 denominator for it: a span resting on 2 models is not the claim a span
---                 resting on 40 is, and only this column tells them apart.
+--   n_dated     : non-variant models carrying a year — THE denominator for the year pair:
+--                 a span resting on 2 models is not the claim a span resting on 40 is.
 --   year_of_first_model / year_of_last_model : min/max year over those models, published
---                 under these names by /api/export/manufacturers/. NO minimum applied: a
---                 1-model span is reported as itself at n_dated = 1, and the caller sets
---                 its own bar (`WHERE n_dated >= 3`). Gaps are invisible — active
---                 1932-1935 and again 1975-1979 reads as a 47-year span, so treat it as
---                 an outer bound, not a continuous run.
+--                 under these names by /api/export/manufacturers/. NO minimum applied, so
+--                 the caller sets its own bar (`WHERE n_dated >= 3`). Gaps are invisible —
+--                 active 1932-1935 and again 1975-1979 reads as a 47-year span, so treat
+--                 it as an outer bound, not a continuous run.
 --   operating_status / presumed_producing : the site's answer to "is this manufacturer
---                 still making pinball", at the grain the site asks it. operating_status
---                 is the rollup over its live CEs (ONGOING > UNKNOWN > ENDED), matching
---                 what /api/export/manufacturers/ publishes; presumed_producing then
---                 applies the recency macro to it. Compute both HERE rather than
---                 per-CE: rolling the status up first and applying recency to the
---                 manufacturer's own span is not the same as asking whether any one CE
---                 qualifies — an entity marked ended can still carry the manufacturer's
---                 most recent model. FALSE IS NOT 'ENDED'; it pools the known-ended with
---                 the unknown-and-not-recent, and unknown is a default nobody set.
+--                 still making pinball". operating_status is the rollup over its live CEs
+--                 (ONGOING > UNKNOWN > ENDED), matching /api/export/manufacturers/;
+--                 presumed_producing applies the recency macro to that rollup, which is not
+--                 the same as asking whether any one CE qualifies — an entity marked ended
+--                 can still carry the manufacturer's most recent model. FALSE IS NOT
+--                 'ENDED': it pools the known-ended with the unknown-and-not-recent.
 --   location_path / country_slug, with n_locations / n_countries : where the manufacturer
---                 was based, at both rungs (both spelled as on `models`). The rungs
---                 resolve INDEPENDENTLY, each NULL when its own disagrees — a maker with
---                 two Chicago-area plants is country_slug 'usa' and location_path NULL,
---                 which answers both questions honestly instead of letting one paper over
---                 the other. Most makers resolve at both, so read location_path first and
---                 fall back to country.
+--                 was based, at both rungs (both spelled as on `models`). The rungs resolve
+--                 INDEPENDENTLY, each NULL when its own disagrees — a maker with two
+--                 Chicago-area plants is country_slug 'usa' and location_path NULL. Read
+--                 location_path first and fall back to country.
 --                 A NULL HAS TWO CAUSES AND THE COUNT SEPARATES THEM: n = 0 is no known
---                 location, n > 1 is a maker genuinely spanning places. Unrecorded vs
---                 recorded-and-plural are opposite states, and the bare NULL conflates
---                 them. Drop to `corporate_entities` to enumerate a plural maker's places
---                 rather than collapse them.
---                 Rolled up over live CEs (_mfr_location), NOT over models like the
---                 counts and span beside them — so a maker with n_models = 0 still
---                 reports the address its CEs carry.
+--                 location, n > 1 is a maker genuinely spanning places. Drop to
+--                 `corporate_entities` to enumerate a plural maker's places.
+--                 Rolled up over live CEs (_mfr_location), not over models like the counts
+--                 beside them, so a maker with n_models = 0 still reports its CEs' address.
 --   website / wikidata_id : the two outbound handles for enriching from outside the
---                 catalog. Both sparse.
---                 Both absent as NULL: the Django model spells an unset website '' and
---                 an unset QID NULL, and `live` folds the difference away.
+--                 catalog. Both sparse, both absent as NULL.
 CREATE OR REPLACE VIEW manufacturers AS
-  -- Rolled up from `corporate_entities`, not recounted over `models`: a manufacturer's
-  -- models are exactly its live CEs' models, since a model reaches a manufacturer only
-  -- through one. Recounting here would be a second definition of the same five measures.
-  -- The casts hold the published types — sum() widens where count() does not.
+  -- Rolled up from `corporate_entities`, not recounted over `models`: a model reaches a
+  -- manufacturer only through a CE, so recounting would be a second definition of the same
+  -- five measures. The casts hold the published types — sum() widens where count() does not.
   WITH agg AS (
     SELECT
       manufacturer_id,
@@ -663,11 +527,9 @@ COMMENT ON VIEW manufacturers IS
   'One row per live manufacturer — identity, home location/country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Read location and country each with its n_ count (0 = unknown, >1 = plural), and the span with n_dated.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
--- model_rewards — one row per (live model, live reward type). The GRAIN, and THE reader
--- of the through table: `model_reward_names` and `reward_types` are both built from it.
--- Reward types are MULTI-VALUED — a machine can pay out several — which is why they get a
--- grain view and a usage count like themes and tags, rather than a slug column on `models`
--- the way the single-FK dims do. Flat, no DAG.
+-- model_rewards — one row per (live model, live reward type), and the only reader of the
+-- through table. Reward types are MULTI-VALUED — a machine can pay out several — so they
+-- get a grain view rather than a slug column on `models` like the single-FK dims.
 CREATE OR REPLACE VIEW model_rewards AS
   SELECT mr.machinemodel_id AS model_id, s.slug AS model_slug,
          rt.id AS reward_type_id, rt.slug AS reward_type_slug
@@ -677,10 +539,8 @@ CREATE OR REPLACE VIEW model_rewards AS
 COMMENT ON VIEW model_rewards IS
   'One row per (live model, live reward type) — the grain twin of model_reward_names; predicate and join on reward_type_slug. Flat, no DAG.';
 
--- reward_types — what a machine pays out: the VOCABULARY. `model_reward_names` says which
--- types a model has, this says what the closed set is, and `reward_type_aliases` resolves
--- a source's phrasing into it. `n` is the live-model usage count, as on the other
--- multi-valued vocabularies.
+-- reward_types — what a machine pays out: the VOCABULARY, with `n` the live-model usage
+-- count as on the other multi-valued vocabularies.
 CREATE OR REPLACE VIEW reward_types AS
   SELECT rt.*, count(mr.model_id) AS n
   FROM _stg_reward_type rt
@@ -690,8 +550,7 @@ COMMENT ON VIEW reward_types IS
   'One row per live reward type — the payout VOCABULARY with usage count n; join reward_type_aliases to resolve a source phrasing into it.';
 
 -- model_reward_names — sorted reward-type names per live model (only models that have
--- any). Keyed model_id. Built from the grain, so membership has one definition; the join
--- is for the NAME, which the grain does not carry.
+-- any), keyed model_id.
 CREATE OR REPLACE VIEW model_reward_names AS
   SELECT mr.model_id, list_sort(list(rt.name)) AS reward_names
   FROM model_rewards mr
@@ -701,23 +560,16 @@ COMMENT ON VIEW model_reward_names IS
   'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
 -- ─── Theme vocabulary ───────────────────────────────────────────────────────
--- `model_theme_names` is a per-model DISPLAY list of NAMES — right for enrichment,
--- useless for questions about the vocabulary ITSELF ("which themes are near-duplicates?",
--- "what hangs under fantasy?", "does this alias collide with a live theme?"), which need
--- the slug, the DAG and the aliases. Four views cover that shape, and the gameplay-feature
--- vocabulary below mirrors them:
---   model_<terms>       slug-keyed model↔term grain — THE reader of the through table,
---                       and what the display list is built from, so membership has one
---                       definition
+-- Four views per multi-valued vocabulary, the gameplay-feature block below mirroring them:
+--   model_<terms>       slug-keyed model↔term grain — the only reader of the through table
 --   <term>_aliases      alias GRAIN, so you can join and compare on an alias
 --   <terms>             one row per live term — identity, usage count, DAG, aliases
 --   model_<term>_names  the flattened display list, built from the grain
--- Defined in that order, which is forced: the vocabulary counts the grain and flattens the
--- aliases, so both precede it.
--- model_themes — one row per (live model, live theme). The GRAIN twin of
--- `model_theme_names`; the display name is in themes, not here. Direct attachments ONLY,
--- DAG not rolled up: a model tagged `black-magic` does NOT gain `occult`. Resolve
--- ancestors analysis-locally via themes.parents.
+-- Defined in that order: the vocabulary counts the grain and flattens the aliases.
+
+-- model_themes — one row per (live model, live theme); the display name is in themes.
+-- Direct attachments ONLY, DAG not rolled up: a model tagged `black-magic` does NOT gain
+-- `occult`. Resolve ancestors analysis-locally via themes.parents.
 CREATE OR REPLACE VIEW model_themes AS
   SELECT mt.machinemodel_id AS model_id, s.slug AS model_slug,
          t.id AS theme_id, t.slug AS theme_slug
@@ -728,9 +580,8 @@ COMMENT ON VIEW model_themes IS
   'One row per (live model, live theme) — the grain twin of model_theme_names; predicate and join on theme_slug. Direct attachments only, DAG not rolled up.';
 
 -- theme_aliases — one row per alias of a live theme. GRAIN rather than the flat list in
--- themes.aliases, because consumers JOIN and COMPARE on an alias — an alias colliding
--- with a live theme's own name is this corpus's dominant defect, and a list column would
--- make every such query unnest first.
+-- themes.aliases, because consumers join and compare on an alias — an alias colliding with
+-- a live theme's own name is this corpus's dominant defect.
 CREATE OR REPLACE VIEW theme_aliases AS
   SELECT ta.theme_id, t.slug AS theme_slug, ta.value AS alias
   FROM fc.catalog_themealias ta
@@ -739,9 +590,7 @@ COMMENT ON VIEW theme_aliases IS
   'One row per alias of a live theme — alias GRAIN, so you can join and compare on one. Values as entered, not normalized.';
 
 -- themes — one row per live theme: the vocabulary itself.
---   n        : LIVE-model usage count — the "is this theme carrying its weight?" signal.
---              0 for an unused theme (a kept row, not a dropped one: an orphan vocabulary
---              entry is exactly what a cleanup wants to see).
+--   n        : LIVE-model usage count; 0 for an unused theme, which is a kept row.
 --   parents  : slugs this theme hangs under (a DAG, so several are possible); [] for a
 --              root, which much of this corpus is.
 --   children : the inverse, off the same table so the two can't disagree.
@@ -779,8 +628,7 @@ COMMENT ON VIEW themes IS
   'One row per live theme — the theme VOCABULARY: usage count n, DAG parents/children, aliases. Reach for it when the subject is the themes rather than the models.';
 
 -- model_theme_names — sorted theme names per live model (only models that have any).
--- Enrichment only — no id, no slug, no DAG; `model_themes` is the grain it is built from
--- and `themes` is the vocabulary.
+-- Display only: no id, no slug, no DAG.
 CREATE OR REPLACE VIEW model_theme_names AS
   SELECT mt.model_id, list_sort(list(t.name)) AS theme_names
   FROM model_themes mt
@@ -789,8 +637,7 @@ CREATE OR REPLACE VIEW model_theme_names AS
 COMMENT ON VIEW model_theme_names IS
   'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, themes for questions about the vocabulary itself.';
 
--- The only reader of the tag through table — `model_tag_slugs` and `tags` both build on this,
--- so the live-subject rule is stated once.
+-- The only reader of the tag through table.
 CREATE OR REPLACE VIEW model_tags AS
   SELECT mt.machinemodel_id AS model_id, s.slug AS model_slug,
          tg.id AS tag_id, tg.slug AS tag_slug
@@ -812,11 +659,10 @@ CREATE OR REPLACE VIEW tags AS
 COMMENT ON VIEW tags IS
   'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of the model-keyed tag list. Flat, no DAG.';
 
--- model_tag_slugs — sorted list of TAG SLUGS per tagged live model (only models with
--- any). Keyed model_id like the other display lists. SLUGS, not names: unlike them, tags
--- are the classification vocabulary you PREDICATE on (`'widebody' IN tag_slugs`). NB
--- `conversion_kit` and re-themes are NOT tags and won't appear here — they're
--- ModelRelationship types.
+-- model_tag_slugs — sorted TAG SLUGS per tagged live model (only models with any), keyed
+-- model_id. Slugs, not names, because tags are the vocabulary you PREDICATE on
+-- (`'widebody' IN tag_slugs`). `conversion_kit` and re-themes are ModelRelationship types,
+-- not tags, and won't appear here.
 CREATE OR REPLACE VIEW model_tag_slugs AS
   SELECT model_id, list_sort(list(tag_slug)) AS tag_slugs
   FROM model_tags
@@ -826,16 +672,15 @@ COMMENT ON VIEW model_tag_slugs IS
 
 -- ═══ GAMEPLAY FEATURES ══════════════════════════════════════════════════════
 -- model_gameplay_features — one row per (model, directly-attached gameplay feature) with
--- its optional count. A grain view with NO display-list twin, unlike the other three
--- attribute families: 84% of these rows carry a count and two thirds carry one above 1
--- (Flippers x2; Trap Holes x25, the 5x5 bingo card), so a flat name list would drop the
--- payload — and read as a confident wrong answer where it did.
+-- its optional count. No display-list twin, unlike the other attribute families: most of
+-- these rows carry a count and most of those exceed 1 (Flippers x2; Trap Holes x25, the
+-- 5x5 bingo card), so a flat name list would drop the payload and read as a confident
+-- wrong answer.
 -- Direct attachments ONLY: the GameplayFeature DAG (2-Ball Multiball under Multiball) is
 -- NOT rolled up — resolve parents analysis-locally, as with themes. Predicate and display
 -- on feature_slug ('trap-holes', 'flippers'); feature_name is not surfaced.
---   count : the M2M's optional count; NULL for a bare membership. This is the real "how
---           many flippers" signal — the raw scalar flipper_count is near-empty and
---           deliberately not surfaced.
+--   count : the M2M's optional count, NULL for a bare membership. The real "how many
+--           flippers" signal — the raw scalar flipper_count is near-empty and not surfaced.
 CREATE OR REPLACE VIEW model_gameplay_features AS
   SELECT
     mgf.machinemodel_id AS model_id,
@@ -850,16 +695,14 @@ COMMENT ON VIEW model_gameplay_features IS
   'One row per (live model, gameplay feature) with its optional count (Flippers x2, Trap Holes x25) — the counted grain. Direct attachments only, DAG not rolled up.';
 
 -- ─── Gameplay-feature vocabulary ────────────────────────────────────────────
--- The theme trio's mirror (see the Theme vocabulary block above for the shape).
--- `model_gameplay_features` is already the grain, so only two views are new: the
--- vocabulary and its alias grain.
---
--- The difference from themes is DEPTH. This vocabulary is curated rather than imported and
--- the DAG is genuinely deep — kickback-lanes → right-kickback-lanes →
--- upper-right-kickback-lanes — with interior nodes that carry no models by design.
--- gameplay_feature_aliases — one row per alias of a live feature. GRAIN for the same
--- reason theme_aliases is, here to resolve a source's phrasing ("Autoplunger",
--- "Left-Side Kickback Lane") to the canonical feature.
+-- The theme block's mirror; `model_gameplay_features` is already the grain, so only the
+-- vocabulary and its alias grain are new.
+-- The difference from themes is DEPTH: this DAG is genuinely deep — kickback-lanes →
+-- right-kickback-lanes → upper-right-kickback-lanes — with interior nodes that carry no
+-- models by design.
+
+-- gameplay_feature_aliases — one row per alias of a live feature, for resolving a source's
+-- phrasing ("Autoplunger", "Left-Side Kickback Lane") to the canonical feature.
 CREATE OR REPLACE VIEW gameplay_feature_aliases AS
   SELECT ga.feature_id, f.slug AS feature_slug, ga.value AS alias
   FROM fc.catalog_gameplayfeaturealias ga
@@ -869,11 +712,11 @@ COMMENT ON VIEW gameplay_feature_aliases IS
 
 -- gameplay_features — one row per live gameplay feature: the vocabulary itself.
 -- Columns match themes exactly; two notes specific to this DAG:
---   n        : ALWAYS read WITH `children`. n=0 on a leaf is an orphan or a detector
---              gone dark; n=0 on a node with children is correct and expected — the
---              models hang off its descendants.
---   parents  : several are possible — an Upper Right Ball Return Gate is both upper
---              and right-side.
+--   n        : ALWAYS read WITH `children`. n = 0 on a leaf is an orphan or a detector gone
+--              dark; n = 0 on a node with children is expected — the models hang off its
+--              descendants.
+--   parents  : several are possible — an Upper Right Ball Return Gate is both upper and
+--              right-side.
 CREATE OR REPLACE VIEW gameplay_features AS
   WITH usage AS (
     SELECT feature_id, count(*) AS n FROM model_gameplay_features GROUP BY feature_id
@@ -906,36 +749,31 @@ COMMENT ON VIEW gameplay_features IS
   'One row per live gameplay feature — the feature VOCABULARY, columns matching themes. Read n WITH children: n = 0 on an interior node is by design.';
 
 -- ═══ MODEL-TO-MODEL RELATIONSHIPS — start with model_edges ══════════════════
--- `model_edges` is the DEFAULT — every edge out of a model, lineage + typed, in one
--- view. Reach for it first when exploring relationships: one `WHERE model_id = ?`
--- returns everything, so no source is missed. It's a UNION over the two mechanism-
--- specific views below, which exist because the edges have two different physical
--- shapes; drop to them when you want just ONE mechanism:
+-- `model_edges` is the DEFAULT — every edge out of a model, lineage + typed, so one
+-- `WHERE model_id = ?` returns everything and no source is missed. Drop to a component
+-- view when you want ONE mechanism:
 --
 --   model_lineage        single-valued structured self-FKs: variant_of, remake_of,
---                        export_edition_of. At most ONE of each per model; the
---                        target is always a resolved catalog model. Fixed
---                        semantics, no payload.
---   model_relationships  the multi-valued typed edge table (ModelRelationship):
---                        MANY per model, a CLOSED four-value type vocabulary
---                        (conversion, conversion_kit, copy, retheme — DB-enforced), a
---                        license_status, and a target that may be an unresolved
---                        free-text label instead of a catalog model.
+--                        export_edition_of. At most ONE of each per model; the target is
+--                        always a resolved catalog model. Fixed semantics, no payload.
+--   model_relationships  the multi-valued typed edge table (ModelRelationship): MANY per
+--                        model, a CLOSED four-value type vocabulary (conversion,
+--                        conversion_kit, copy, retheme — DB-enforced), a license_status,
+--                        and a target that may be an unresolved free-text label instead of
+--                        a catalog model.
 --
 -- All three follow ONE rule for the far end: an edge KEEPS its row and de-enriches to NULL
 -- target_* rather than being dropped. The only LEGITIMATE de-enrich is a typed free-text
 -- label (target_label, no catalog model). A resolved-but-de-enriched target (target_id set,
 -- target_slug NULL) is a soft-deleted target the app should have protected — an integrity
--- violation catalog_checks flags for both mechanisms, not a normal path.
+-- violation catalog_checks flags, not a normal path.
 -- model_edges CONCATENATES the two and does NOT reconcile overlaps: a variant_of FK and a
 -- typed edge to the same target are two rows; deciding they're one is analysis-local.
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- _model_target — the facts surfaced for the OTHER end of a relationship edge: identity
--- (incl. the manufacturer's model number), year, genre, reward types, player count,
--- manufacturer and location — what a reviewer uses to tell two models apart. A projection
--- of `models` + `model_reward_names` with columns named target_*, so both edge views pull
--- the whole block via `* EXCLUDE (id)`; add a facet here and both gain it.
+-- _model_target — the far end of an edge: identity, year, genre, reward types, player
+-- count, manufacturer and location, named target_* so both edge views pull the whole block
+-- via `* EXCLUDE (id)`. Add a facet here and both gain it.
 CREATE OR REPLACE VIEW _model_target AS
   SELECT
     m.id,
@@ -964,11 +802,9 @@ CREATE OR REPLACE VIEW _model_target AS
 --   edge_kind : 'variant_of' | 'remake_of' | 'export_edition_of'
 --   target_*  : the origin model — see _model_target
 CREATE OR REPLACE VIEW model_lineage AS
-  -- One pass over `models` rather than one per FK, and a fourth lineage FK is one more
-  -- name in the ON list. UNPIVOT drops NULL values, which is the 0..1-per-kind filter.
-  -- edge_kind comes off the COLUMN NAME with the `_id` suffix stripped, so the three
-  -- values above are only as stable as the column spellings — renaming a lineage FK
-  -- renames the edge kind with it, and lineage_kind_unknown is what says so.
+  -- UNPIVOT drops NULL values, which is the 0..1-per-kind filter. edge_kind comes off the
+  -- COLUMN NAME with `_id` stripped, so renaming a lineage FK renames the edge kind with
+  -- it; lineage_kind_unknown is what says so.
   WITH edges AS (
     UNPIVOT (SELECT id AS model_id, slug AS model_slug,
                     variant_of_id, remake_of_id, export_edition_of_id
@@ -1016,8 +852,7 @@ COMMENT ON VIEW model_relationships IS
 -- story is the export_edition_of lineage FK). The target ladder is OPTIONAL — a country
 -- (target_location_id + country columns), a free-text region label (target_label), or
 -- neither, the unknown-market row whose existence alone says "built for export". The app
--- restricts location targets to countries (COUNTRY_TARGET_FILTER), so the `countries` join
--- always enriches; a de-enriched one is an integrity violation
+-- restricts location targets to countries, so a de-enriched one is an integrity violation
 -- (export_market_target_not_country).
 CREATE OR REPLACE VIEW model_export_markets AS
   SELECT
@@ -1034,14 +869,12 @@ COMMENT ON VIEW model_export_markets IS
   'One row per export destination of a live model — the target is a LOCATION, not a model, so this is NOT part of model_edges. The target ladder is optional: a country, a free-text region, or neither.';
 
 -- model_edges — the DEFAULT relationships view: every edge out of a model, lineage and
--- typed, in one row-grain set, so one predicate returns all of a model's edges and none is
--- missed. A UNION ALL over model_lineage + model_relationships.
+-- typed, in one row-grain set. A UNION ALL over model_lineage + model_relationships.
 --   edge_source       : 'lineage_fk' (variant_of/remake_of/export_edition_of)
 --                       | 'relationship' (typed)
 --   relationship_type : variant_of | remake_of | export_edition_of | conversion |
---                       conversion_kit | copy | retheme — lineage's edge_kind (3)
---                       and the typed table's relationship_type (4, DB-enforced)
---                       unified: a CLOSED 7-value set.
+--                       conversion_kit | copy | retheme — lineage's edge_kind and the typed
+--                       table's relationship_type unified: a CLOSED 7-value set.
 --   license_status    : NULL for lineage FKs; licensed|unlicensed|unknown for typed.
 --   target_label      : NULL for lineage (always resolved); set on label-only typed.
 --   target_*          : the shared enrichment block (see _model_target).
@@ -1055,8 +888,8 @@ CREATE OR REPLACE VIEW model_edges AS
     NULL::VARCHAR AS target_label,
     * EXCLUDE (model_id, edge_kind, target_id)
   FROM model_lineage
-  -- BY NAME: both branches end in the same _model_target block, and matching them by name
-  -- rather than by position is what keeps that true if either projection is reordered.
+  -- BY NAME, so reordering either projection can't silently misalign the shared
+  -- _model_target block the two branches end in.
   UNION ALL BY NAME
   SELECT
     model_id,
@@ -1073,14 +906,14 @@ COMMENT ON VIEW model_edges IS
 -- model_edges_bidir — every edge from BOTH ends. `model_edges` is OUTBOUND ONLY: right for
 -- "what does this model point at", silently wrong for "is this pair connected" — hundreds
 -- of live models have an inbound edge and no outbound one, so a connectedness test written
--- against model_edges returns a confident false for every one of them. Use this instead:
+-- against model_edges returns a confident false for every one of them. Use
 -- `WHERE model_id = ? AND target_id = ?`, or `WHERE model_id = ?` for a model's full
 -- neighbourhood in either direction.
 --
--- The mirror does NOT re-point the edge. `relationship_type` always describes the edge AS
--- STATED, because the direction IS the fact: a variant points at its base, and the base is
--- not a variant of the variant. So read the type together with `direction` — and aggregate
--- from `model_edges`, never here, since every edge is counted twice by construction.
+-- The mirror does NOT re-point the edge: `relationship_type` always describes the edge AS
+-- STATED, because the direction IS the fact — a variant points at its base, and the base is
+-- not a variant of the variant. Read the type together with `direction`, and aggregate from
+-- `model_edges`, never here, since every edge is counted twice by construction.
 --   direction : 'out' (this model states the edge) | 'in' (the other end states it)
 --   target_*  : always the FAR end from `model_id`, re-enriched per direction.
 -- Label-only typed edges have no model at the far end, so they appear 'out' only.
@@ -1104,14 +937,13 @@ COMMENT ON VIEW model_edges_bidir IS
   'Two rows per resolved edge, one per end — the CONNECTEDNESS view, with a direction column. relationship_type is always the edge AS STATED, so read it with direction. Never aggregate here: every edge is counted twice.';
 
 -- ═══ TITLES AND MODEL NUMBERS ═══════════════════════════════════════════════
--- franchises / series — the two Title-grouping vocabularies at entity grain. `titles`
--- decodes each onto the Title row; these answer what needs a second view: which groupings
--- EXIST, and which are used by nothing. Both flat, nothing like the theme DAG, and both
--- curator-maintained — which makes `n_titles = 0` the interesting row rather than a
--- defect: a grouping someone created and never attached, invisible from `titles` alone.
--- The Title side of both stays a staging() read rather than `titles`: that view decodes the
--- franchise and series onto each Title, so composing it here would close a cycle. Which is
--- also why they are defined AHEAD of `titles` — views bind at CREATE.
+-- franchises / series — the two Title-grouping vocabularies at entity grain, for which
+-- groupings EXIST and which are used by nothing. Both flat and both curator-maintained, so
+-- `n_titles = 0` is the interesting row rather than a defect — a grouping someone created
+-- and never attached, invisible from `titles` alone.
+-- The Title side stays a staging() read: `titles` decodes franchise and series onto each
+-- Title, so composing it here would close a cycle. Hence also the position ahead of
+-- `titles` — views bind at CREATE.
 CREATE OR REPLACE VIEW franchises AS
   SELECT f.*,
          count(t.id) AS n_titles
@@ -1130,19 +962,16 @@ CREATE OR REPLACE VIEW series AS
 COMMENT ON VIEW series IS
   'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
 
--- titles — one row per live Title: the entity grain behind `models.title_*`. Reach for
--- it when the Title itself is the subject; read the decoded columns off a model row
--- when you already have one.
---
---   franchise / series : the two optional Title groupings, resolved to slug and name.
---             Both sparse by design, and they mean different things: a franchise is the
---             IP (Star Trek, spanning manufacturers and eras), a series is a curated
---             thematic lineage (Eight Ball -> Eight Ball Deluxe). Neither is ingested, so
---             an absent grouping is "not yet curated", never "does not belong".
---             `franchises` / `series` below are the entity views.
---   opdb_id / fandom_page_id : the outbound handles. opdb_id is OPDB's "group" — the
---             Title is the grain OPDB models identity at, so this and `models.opdb_id`
---             are different namespaces and must not be compared.
+-- titles — one row per live Title: the entity grain behind `models.title_*`. Reach for it
+-- when the Title itself is the subject.
+--   franchise / series : the two optional Title groupings, resolved to slug and name. Both
+--             sparse by design, and they mean different things: a franchise is the IP (Star
+--             Trek, spanning manufacturers and eras), a series is a curated thematic
+--             lineage (Eight Ball -> Eight Ball Deluxe). Neither is ingested, so an absent
+--             grouping is "not yet curated", never "does not belong".
+--   opdb_id / fandom_page_id : the outbound handles. opdb_id is OPDB's "group" — the Title
+--             is the grain OPDB models identity at, so this and `models.opdb_id` are
+--             different namespaces and must not be compared.
 --   description : SingleModelTitles.md governs how this splits against the model's own
 --             description.
 CREATE OR REPLACE VIEW titles AS
@@ -1159,16 +988,12 @@ COMMENT ON VIEW titles IS
   'One row per LIVE Title — identity, franchise/series grouping and n_models. A Title with no live models stays, at n_models = 0.';
 
 -- model_number_collisions — one row per (manufacturer, model number) that more than one
--- live model claims: `models.manufacturer_model_identifier`'s non-uniqueness made
--- queryable, so an analysis matching a source's model number can see up front whether its
--- key resolves. `n_titles` is the cheap discriminator: 1 means the collision is contained
--- in one Title and is probably a legitimate catalog split; >1 wants a look. Reported,
--- never judged.
---
+-- live model claims, so an analysis matching a source's model number can see up front
+-- whether its key resolves. `n_titles` is the cheap discriminator: 1 means the collision is
+-- contained in one Title and is probably a legitimate catalog split; > 1 wants a look.
 -- EXACT numbers only, no stem matching. A suffix convention is a fact about ONE
 -- manufacturer, not about the column — Bally's trailing letter marks a different game
--- (#634 'Fun Way' vs #634-A 'Lotta Fun'), which holds for nobody else. An analysis needing
--- loose matching should own the rule and record which manufacturer it holds for.
+-- (#634 'Fun Way' vs #634-A 'Lotta Fun'), which holds for nobody else.
 CREATE OR REPLACE VIEW model_number_collisions AS
   SELECT
     manufacturer_id,
@@ -1186,27 +1011,22 @@ CREATE OR REPLACE VIEW model_number_collisions AS
 COMMENT ON VIEW model_number_collisions IS
   'One row per (manufacturer, model number) claimed by more than one live model — exact numbers only. n_titles = 1 is usually a legitimate catalog split, not bad data.';
 
--- ═══ PEOPLE AND CREDITS ════════════════════════════════════════════════════
--- credits — one row per credit: a Person, in a CreditRole, on a subject. THE grain, and
--- the single definition of a live credit — `people` and `credit_roles` below are both
--- aggregates OF THIS VIEW, so the three cannot disagree about the population.
---
+-- ═══ PEOPLE AND CREDITS ═════════════════════════════════════════════════════
+-- credits — one row per credit: a Person, in a CreditRole, on a subject. THE grain, and the
+-- definition `people` and `credit_roles` both aggregate.
 --   THE SUBJECT IS POLYMORPHIC, and the minority half is the trap. A Credit hangs off a
---             MachineModel XOR a Series (`catalog_credit_model_xor_series`), and the
---             Series half is tiny — so a model-only grain would look complete, agree with
---             every spot check and silently miss a whole KIND of credit. Both halves are
---             spelled the way `claims` spells its subject types, so a join across needs
---             no translation — a guarantee, since both read `entity_registry`. A literal
---             here instead collapses that join to the Series half, silently. For the
---             model half use `model_credits`, not a subject_type predicate you wrote
---             yourself.
+--             MachineModel XOR a Series (`catalog_credit_model_xor_series`), and the Series
+--             half is tiny — so a model-only grain would look complete, agree with every
+--             spot check and silently miss a whole KIND of credit. Both halves are spelled
+--             the way `claims` spells its subject types, so a join across needs no
+--             translation. For the model half use `model_credits`, not a subject_type
+--             predicate you wrote yourself.
 --   subject_name : the subject's plain name. `models.label` is the disambiguated form
 --             ("Name (Manufacturer Year)"), one join from `model_credits.model_id`.
---   provenance: Credit is the compound claim `claim_identity_parts` exists for. Its
---             claim_key names two entities (`credit|person:100|role:4`), so
---             `claims.ref_id` is NULL and there is no single-column join — go `claims`
---             (subject_type/subject_id, field_name = 'credit') → `claim_identity_parts`,
---             once per part.
+--   provenance: Credit is a compound claim whose claim_key names two entities
+--             (`credit|person:100|role:4`), so `claims.ref_id` is NULL and there is no
+--             single-column join — go `claims` (subject_type/subject_id, field_name =
+--             'credit') → `claim_identity_parts`, once per part.
 CREATE OR REPLACE VIEW credits AS
   SELECT
     c.id                                        AS credit_id,
@@ -1220,12 +1040,10 @@ CREATE OR REPLACE VIEW credits AS
     c.person_id, p.slug AS person_slug, p.name AS person_name,
     c.role_id,   r.slug AS role_slug,   r.name AS role_name
   FROM fc.catalog_credit c
-  -- Staging layer for person and role: `people` and `credit_roles` count rows OF THIS VIEW.
   JOIN _stg_person p      ON p.id = c.person_id
   JOIN _stg_credit_role r ON r.id = c.role_id
-  -- Two LEFT JOINs plus "at least one resolved", not two UNIONed branches: exactly one
-  -- side of the XOR can resolve, so the WHERE keeps the row on either and drops it when
-  -- the side it names is dead.
+  -- Two LEFT JOINs plus "at least one resolved": exactly one side of the XOR can resolve,
+  -- so the WHERE keeps the row on either and drops it when the side it names is dead.
   LEFT JOIN models m         ON m.id = c.model_id
   LEFT JOIN _stg_series s   ON s.id = c.series_id
   WHERE m.id IS NOT NULL OR s.id IS NOT NULL;
@@ -1233,9 +1051,8 @@ COMMENT ON VIEW credits IS
   'One row per credit (person, role, live subject) — the credit GRAIN, and the definition people/credit_roles count. Subject is a model XOR a series, decoded into subject_type/id/slug/name; model_credits is the model half.';
 
 -- model_credits — the model-attached half of `credits`, keyed model_id to join and
--- model_slug to emit (the same move `model_claims` is on the provenance side). A handful
--- of credits hang off a Series instead and are reachable only from `credits`, so a total
--- taken here is not a total.
+-- model_slug to emit. A handful of credits hang off a Series instead and are reachable only
+-- from `credits`, so a total taken here is not a total.
 CREATE OR REPLACE VIEW model_credits AS
   SELECT c.*, c.subject_id AS model_id, c.subject_slug AS model_slug
   FROM credits c
@@ -1243,10 +1060,8 @@ CREATE OR REPLACE VIEW model_credits AS
 COMMENT ON VIEW model_credits IS
   'One row per credit on a LIVE machine model, keyed model_id to join and model_slug to emit — the model half of credits; Series-attached credits appear only there.';
 
--- credit_roles — the credit-role vocabulary (designer, artist, …) at entity grain with
--- usage. The role-keyed counterpart to `people`; `credits` is where either goes to say
--- WHICH machine.
--- count(c.credit_id), never count(*): the LEFT JOIN would count an unused role as 1.
+-- credit_roles — the credit-role vocabulary (designer, artist, …) at entity grain, with
+-- usage. count(c.credit_id), never count(*): the LEFT JOIN would count an unused role as 1.
 CREATE OR REPLACE VIEW credit_roles AS
   SELECT
     r.*,
@@ -1258,20 +1073,18 @@ COMMENT ON VIEW credit_roles IS
   'One row per live CreditRole — the credit vocabulary (designer, artist) with n_credits over live subjects. The role-keyed counterpart to people.n_roles; credits is the grain.';
 
 -- people — one row per live Person, with how much of the catalog they are credited on.
--- The entity grain behind `person_aliases`.
---
 --   n_credits : rows of `credits` — model- and series-attached together. Nearly but not
---             exactly n_credited_models, and treating either as the other drops the
---             series credits.
+--             exactly n_credited_models, and treating either as the other drops the series
+--             credits.
 --   n_credited_models : distinct LIVE MODELS, hence the subject_type filter rather than a
 --             count of subject_id: Model and Series pks are separate namespaces that
 --             overlap freely, so an undistinguished count merges a series into the model
 --             sharing its number.
 --   n_roles : distinct roles held. A person credited as designer and artist on one machine
 --             has n_credits = 2, n_credited_models = 1, n_roles = 2.
---   birth_year / death_year : claim-resolved biography, all but empty. The month and day
---             fields exist on the model and are entirely unpopulated, so the year is the
---             full precision on offer.
+--   birth_year / death_year : claim-resolved biography, all but empty. Month and day exist
+--             on the Django model and are entirely unpopulated, so the year is the full
+--             precision on offer.
 CREATE OR REPLACE VIEW people AS
   WITH agg AS (
     SELECT
@@ -1298,8 +1111,8 @@ COMMENT ON VIEW people IS
 -- (location_aliases uses location_path — Location slugs are parent-scoped). Values are
 -- stored AS ENTERED, mixed case included; whether 'Playing Cards' should match
 -- 'playing-cards' is the consuming analysis's call, and name_norm(alias) is the usual
--- starting point. location_aliases, theme_aliases and
--- gameplay_feature_aliases sit beside their vocabularies above.
+-- starting point. location_aliases, theme_aliases and gameplay_feature_aliases sit beside
+-- their vocabularies above.
 
 CREATE OR REPLACE VIEW reward_type_aliases AS
   SELECT ra.reward_type_id, rt.slug AS reward_type_slug, ra.value AS alias
@@ -1354,24 +1167,20 @@ COMMENT ON VIEW title_abbreviations IS
 -- Django materializes it on every save (core.RecordReference, synced by
 -- `sync_references`), so a link question is an indexed join and never a regex over prose.
 --
--- LIVE ON THE SOURCE, not on the target, and the column list says so: there is a
--- target_status and no source_status. The two ends ask different questions. A soft-
--- deleted record's prose is not catalog content and no consumer wants it, so it is
--- filtered here once rather than in every consumer. An edge POINTING AT a soft-deleted
--- record is the opposite — it is what a broken-link audit exists to find, and dropping
--- it would report the source as linkless instead.
+-- LIVE ON THE SOURCE, not on the target, hence a target_status and no source_status. A
+-- soft-deleted record's prose is not catalog content, so it is filtered here once. An edge
+-- POINTING AT a soft-deleted record is the opposite — it is what a broken-link audit exists
+-- to find, and dropping it would report the source as linkless instead.
 --
--- THE TRAP: an inline `[[cite:N]]` is also a row here, and its target is a
--- CitationInstance — not a catalog entity, so it resolves to no entity_subjects row.
--- `target_entity_type IS NULL` marks them (target_django_label says which non-entity
--- kind it was), so anything counting a record's outbound links MUST decide whether cites
--- count before it filters. That is why the target joins are LEFT, along with a second
--- reason: a GenericForeignKey has no on_delete, so a hard-deleted target leaves a
--- dangling edge, which belongs here as a NULL target rather than a vanished row.
---
--- The SOURCE join is INNER, and that asymmetry is the contract. `is_live()` reads a NULL
--- status as live, so a LEFT join there would admit a hard-deleted source as a row with
--- no identity — into a view whose name promises the opposite.
+-- THE TRAP: an inline `[[cite:N]]` is also a row here, and its target is a CitationInstance
+-- — not a catalog entity, so it resolves to no entity_subjects row. `target_entity_type IS
+-- NULL` marks them (target_django_label says which non-entity kind it was), so anything
+-- counting a record's outbound links MUST decide whether cites count before it filters.
+-- Hence the LEFT target joins, along with a second reason: a GenericForeignKey has no
+-- on_delete, so a hard-deleted target leaves a dangling edge, which belongs here as a NULL
+-- target rather than a vanished row.
+-- The SOURCE join is INNER because `is_live()` reads a NULL status as live, so a LEFT join
+-- would admit a hard-deleted source as a row with no identity.
 CREATE OR REPLACE VIEW record_references AS
   SELECT
     src.entity_type          AS source_entity_type,
@@ -1400,18 +1209,16 @@ COMMENT ON VIEW record_references IS
 -- ═══ DOMAIN VOCABULARY — what a slug MEANS ══════════════════════════════════
 -- The catalog's controlled vocabularies (game formats, cabinets, production statuses, …)
 -- are DEFINED in docs/DomainModel.md — what separates `one-off` from `unreleased`,
--- `shuffle` from `rolldown`. The DB carries only the slug and display name, so an analyst
--- filtering on a slug has to go there for the meaning. `domain_vocab` parses those
--- definition bullets at query time — no build step, always current — so the doc stays the
--- only place a domain fact is written.
+-- `shuffle` from `rolldown`. The DB carries only the slug and display name, so
+-- `domain_vocab` parses those definition bullets at query time, leaving the doc the only
+-- place a domain fact is written.
 --
 -- The doc shape relied on: a bullet `- \`slug\`: definition`, grouped by the nearest
 -- preceding `**EntityName**` lead-in, else by the `##`/`###` heading. The group is
 -- snake-stripped to a dim name (`Production Status` -> `productionstatus`), which is
 -- exactly the catalog table suffix, so the doc->table mapping needs no hand-maintained
--- list. Renaming a heading detaches every bullet under it — which surfaces at once as
--- undocumented_vocab for every slug in that vocabulary plus stale_vocab_dim. Loud, never
--- silent.
+-- list. Renaming a heading detaches every bullet under it, surfacing at once as
+-- undocumented_vocab for every slug in that vocabulary plus stale_vocab_dim.
 CREATE OR REPLACE VIEW _dm_lines AS
   WITH raw AS (SELECT content FROM read_text('docs/DomainModel.md'))
   SELECT generate_subscripts(str_split(content, chr(10)), 1) AS i,
@@ -1432,9 +1239,9 @@ CREATE OR REPLACE VIEW _dm_marked AS
 -- line, and a WHERE runs FIRST, stripping the heading rows the window reads — every group
 -- then comes back NULL and the view silently returns nothing.
 -- Restricted to groups naming a real fc.catalog_<dim> table, which keeps non-vocabulary
--- bullet lists out ("Fields Common to All Catalog Entities" uses this exact shape). The
--- test is mechanical, so a newly documented vocabulary needs no edit here — it needs a
--- _dim_vocab entry, and unmapped_vocab_dim says so.
+-- bullet lists out ("Fields Common to All Catalog Entities" uses this exact shape). A newly
+-- documented vocabulary needs no edit here, only a _dim_vocab entry; unmapped_vocab_dim
+-- says so.
 CREATE OR REPLACE VIEW domain_vocab AS
   SELECT lower(replace(last_value(group_raw IGNORE NULLS) OVER (ORDER BY i), ' ', '')) AS dim,
          regexp_extract(t, '^- `([a-z0-9-]+)`: ', 1)    AS slug,
@@ -1457,9 +1264,10 @@ COMMENT ON VIEW domain_vocab IS
 --       content hash, filtered to status='success' with a non-null patch_id so a
 --       failed/running/interactive ingest can't misreport it.
 --   latest_changeset : catches interactive edits — the drift a patch id can't see.
--- The schema point, the patch point and the changeset point belong in ONE row, which is
--- why the provenance facts sit here. `provenance_context` carries that layer's counts and
--- does not restate these; read the two together.
+--   snapshot_imported_at : when `fc` was last imported from db.sqlite3. Every other field
+--       here is read THROUGH that import, so it dates all of them.
+-- `provenance_context` carries that layer's counts and does not restate these; read the two
+-- together.
 CREATE OR REPLACE VIEW analysis_context AS
   SELECT
     version()                                    AS duckdb_version,
