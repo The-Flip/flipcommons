@@ -17,6 +17,34 @@
 -- nonzero forever and the gate would stop meaning anything.
 .read scripts/analysis/catalog.sql
 
+-- ─── shared: the collapsed model ───────────────────────────────────────────
+-- One row per model that its Title collapses into — the model a reader reaches by the
+-- Title's URL, because the Title page renders its detail inline instead of a model list.
+--
+-- This is the product's rule, not an approximation of it: `titles.py` collapses when the
+-- Title has exactly one active NON-VARIANT model and that model has no live variants.
+-- `title_size` cannot express it. That column counts every live model in the Title,
+-- variants included, so it answers a different question in both directions — a Title whose
+-- sole model is a variant of a model in ANOTHER Title reads as size 1 while the product
+-- shows a model list, and a Title holding one model plus its variants reads as size 3
+-- while the product still refuses to collapse.
+--
+-- Two rules read this and must agree: one reports linking a collapsed model as an error,
+-- the other resolves a mention of one to its Title. Disagreement would have the audit
+-- prescribe the link it flags.
+CREATE OR REPLACE VIEW _collapsed_models AS
+  SELECT m.id, m.slug, m.name, m.title_id, m.title_slug
+  FROM models m
+  WHERE m.variant_of_id IS NULL
+    -- Live variants only, which `models` already guarantees: a soft-deleted variant does
+    -- not stop the product collapsing, so it must not stop this either.
+    AND NOT EXISTS (SELECT 1 FROM models v WHERE v.variant_of_id = m.id)
+    AND NOT EXISTS (SELECT 1 FROM models o
+                    WHERE o.title_id = m.title_id AND o.variant_of_id IS NULL
+                      AND o.id <> m.id);
+COMMENT ON VIEW _collapsed_models IS
+  'One row per model whose Title collapses into it — the product rule from titles.py (one active non-variant model, itself without live variants), not the title_size = 1 approximation.';
+
 -- ─── self-link ─────────────────────────────────────────────────────────────
 -- A `[[cite:N]]` edge has a NULL target_entity_type, and comparing anything to NULL
 -- yields NULL rather than true, so cites drop out of the WHERE unmentioned.
@@ -32,31 +60,38 @@ COMMENT ON VIEW audit_self_link IS
   'ERROR — one row per live record whose prose wikilinks itself.';
 
 -- ─── wrong-grain-link ──────────────────────────────────────────────────────
--- A model alone in its Title is the same thing as that Title in the UI
--- (SingleModelTitles.md), so linking the model is simply wrong. With several models in
--- the Title the choice can be deliberate, hence a warning rather than an error.
+-- A collapsed model is the same thing as its Title in the UI (SingleModelTitles.md), so
+-- linking the model is simply wrong. Where the Title does not collapse, both grains reach
+-- a real page and the choice can be deliberate, hence a warning rather than an error.
 CREATE OR REPLACE VIEW audit_wrong_grain_link AS
-  SELECT CASE WHEN m.title_size = 1 THEN 'error' ELSE 'warning' END AS severity,
+  SELECT CASE WHEN c.id IS NOT NULL THEN 'error' ELSE 'warning' END AS severity,
          r.source_entity_type AS entity_type,
          r.source_id          AS entity_id,
          r.source_public_id   AS public_id,
          -- By slug: models of one Title can share a name, so a name would render two
          -- distinct findings identically. It is also how a data patch addresses a record.
-         CASE WHEN m.title_size = 1
+         CASE WHEN c.id IS NOT NULL
               THEN format('links [[model:{}]], the only model of its Title — link [[title:{}]] instead',
                           m.slug, m.title_slug)
-              ELSE format('links [[model:{}]] ("{}"), one of {} models in Title [[title:{}]] — confirm the model grain is deliberate',
-                          m.slug, m.name, m.title_size, m.title_slug)
+              -- Several models is the ordinary reason a Title does not collapse and is
+              -- worth naming. A Title holding ONE model that still does not collapse is a
+              -- variant relationship, which a count cannot describe, so the count clause
+              -- is omitted rather than printed as "one of 1 models".
+              ELSE format('links [[model:{}]] ("{}"), which Title [[title:{}]] does not collapse into{} — confirm the model grain is deliberate',
+                          m.slug, m.name, m.title_slug,
+                          CASE WHEN m.title_size > 1
+                               THEN format(' ({} models)', m.title_size) ELSE '' END)
          END AS message
   FROM record_references r
   JOIN models m ON m.id = r.target_id
+  LEFT JOIN _collapsed_models c ON c.id = m.id
   WHERE r.target_entity_type = 'model'
     -- A Title naming its own models is the one place the model grain is unambiguously
-    -- deliberate. It is also the corner the advice cannot survive: for a single-model
-    -- Title, "link the Title instead" would name the source itself.
+    -- deliberate. It is also the corner the advice cannot survive: for a collapsed model,
+    -- "link the Title instead" would name the source itself.
     AND NOT (r.source_entity_type = 'title' AND m.title_id = r.source_id);
 COMMENT ON VIEW audit_wrong_grain_link IS
-  'ERROR when prose links a model alone in its Title (link the Title instead); WARNING when the Title holds several and the grain may be deliberate.';
+  'ERROR when prose links a model its Title collapses into (link the Title instead); WARNING when the Title does not collapse, where both grains reach a real page and the choice may be deliberate.';
 
 -- ─── linkless-description ──────────────────────────────────────────────────
 -- GRAIN: record_references stores no field, so "has a link" is answered per RECORD while
@@ -101,12 +136,23 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
   pool AS (
     -- Location is URL-addressable but absent from the wikilink picker, so
     -- `is_wikilinkable` is what keeps the rule from demanding an impossible edit.
+    --
+    -- What a span NAMES and what the reader should LINK are two different records for a
+    -- collapsed model, which is its Title in the UI (SingleModelTitles.md). Suggesting the
+    -- model there would name the exact link audit_wrong_grain_link reports as an error, so
+    -- the suggestion is resolved to the Title through the predicate both rules read.
     SELECT s.subject_type AS target_type, s.subject_id AS target_id,
-           s.subject_type || ':' || s.subject_public_id AS target_link,
+           CASE WHEN c.id IS NOT NULL THEN 'title'    ELSE s.subject_type END AS suggest_type,
+           CASE WHEN c.id IS NOT NULL THEN c.title_id ELSE s.subject_id   END AS suggest_id,
+           CASE WHEN c.id IS NOT NULL THEN 'title:' || c.title_slug
+                ELSE s.subject_type || ':' || s.subject_public_id END AS suggest_link,
            name_norm(n.name) AS match_key
     FROM entity_subjects s
     JOIN entity_registry r ON r.entity_type = s.subject_type
     JOIN names n ON n.entity_type = s.subject_type AND n.entity_id = s.subject_id
+    -- Only a collapsed model joins, so every CASE above falls through for an uncollapsed
+    -- model and for each of the other twenty types alike.
+    LEFT JOIN _collapsed_models c ON s.subject_type = 'model' AND c.id = s.subject_id
     -- entity_subjects and entity_aliases are not live-filtered, so liveness is applied here.
     WHERE is_live(s.subject_status) AND n.name IS NOT NULL AND r.is_wikilinkable
   ),
@@ -136,15 +182,21 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
   -- One row per (span, record that span could name), carrying the two ways a span can
   -- already be accounted for. Computed per candidate, judged per span below.
   matched AS (
-    SELECT c.entity_type, c.entity_id, c.public_id, c.field, c.span, p.target_link,
-           -- Prose naming its own subject is not a missing link.
-           (c.entity_type = p.target_type AND c.entity_id = p.target_id) AS is_self,
+    SELECT c.entity_type, c.entity_id, c.public_id, c.field, c.span, p.suggest_link,
+           -- Prose naming its own subject is not a missing link. Both grains are tested
+           -- because they differ for a collapsed model, and a Title whose own prose names
+           -- its sole model must not be told to link itself.
+           (c.entity_type = p.target_type  AND c.entity_id = p.target_id)
+             OR (c.entity_type = p.suggest_type AND c.entity_id = p.suggest_id) AS is_self,
            -- Linked anywhere in this record's prose, not only at this span: one link
-           -- accounts for every mention of the same record.
+           -- accounts for every mention of the same record. Either grain settles it —
+           -- prose that linked the model did link the mention, and having linked it at the
+           -- wrong grain is audit_wrong_grain_link's finding to report, not this rule's.
            EXISTS (
              SELECT 1 FROM record_references r
              WHERE r.source_entity_type = c.entity_type AND r.source_id = c.entity_id
-               AND r.target_entity_type = p.target_type AND r.target_id = p.target_id
+               AND ((r.target_entity_type = p.target_type  AND r.target_id = p.target_id)
+                 OR (r.target_entity_type = p.suggest_type AND r.target_id = p.suggest_id))
            ) AS linked
     FROM candidates c
     JOIN pool p ON p.match_key = name_norm(c.span)
@@ -155,12 +207,20 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
          public_id,
          -- One aggregate over the composed link, never two over its halves: independent
          -- aggregates can be satisfied from different rows and render a link that does not
-         -- exist. min() also holds still between runs, which a diffable report needs.
+         -- exist. The ranking ends in the link itself, so it holds still between runs,
+         -- which a diffable report needs.
          format('{} names "{}" without linking it ({})', field, span,
-                CASE WHEN count(DISTINCT target_link) = 1
-                     THEN '[[' || min(target_link) || ']]'
+                CASE WHEN count(DISTINCT suggest_link) = 1
+                     THEN '[[' || min(suggest_link) || ']]'
                      ELSE format('{} candidates, e.g. [[{}]]',
-                                 count(DISTINCT target_link), min(target_link))
+                                 count(DISTINCT suggest_link),
+                                 -- A model sorts last: every surviving one belongs to a
+                                 -- Title holding several, so linking it draws a warning
+                                 -- from audit_wrong_grain_link. An example that draws
+                                 -- nothing is the one worth following.
+                                 min_by(suggest_link,
+                                        CASE WHEN suggest_link LIKE 'model:%'
+                                             THEN '1' ELSE '0' END || suggest_link))
                 END) AS message
   FROM matched
   GROUP BY entity_type, entity_id, public_id, field, span
@@ -170,7 +230,7 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
   -- its namesakes behind and warns about prose that is not wrong.
   HAVING NOT bool_or(is_self OR linked);
 COMMENT ON VIEW audit_unlinked_mention IS
-  'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Matches canonical names and aliases alike; a span naming several records renders as "N candidates". A name inside a quotation is legitimately unlinked, which is why this is not an error.';
+  'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Matches canonical names and aliases alike; a span naming several records renders as "N candidates". The link in the message is the one to WRITE, not the record the span named: a model alone in its Title resolves to the Title, so following the suggestion never authors a wrong-grain error. A name inside a quotation is legitimately unlinked, which is why this is not an error.';
 
 -- ─── parenthetical-fact ────────────────────────────────────────────────────
 -- The house pattern _[[model:x]]_ (1997, [[manufacturer:williams]]) restates two claims
@@ -213,10 +273,17 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
   -- Both link kinds resolved to one shape: the name, and the years and makers the catalog
   -- allows. Empty lists rather than [NULL], so `len(...) = 0` reads as "the catalog says
   -- nothing here, so nothing is contradicted".
+  -- `makers_at_stated_year` is the third list, and the one that keeps the year and the
+  -- maker from being judged as if they were independent facts. See `correlated` below.
   facts AS (
     SELECT p.*, m.name AS target_name,
            CASE WHEN m.year IS NULL THEN []::BIGINT[] ELSE [m.year] END AS years,
-           CASE WHEN m.manufacturer_id IS NULL THEN []::BIGINT[] ELSE [m.manufacturer_id] END AS makers
+           CASE WHEN m.manufacturer_id IS NULL THEN []::BIGINT[] ELSE [m.manufacturer_id] END AS makers,
+           -- A model holds ONE (year, maker) pair, so this is its maker when the stated
+           -- year is that model's and nothing otherwise — never a fact the dimension tests
+           -- have not already reached.
+           CASE WHEN m.year IS NOT DISTINCT FROM p.stated_year AND m.manufacturer_id IS NOT NULL
+                THEN [m.manufacturer_id] ELSE []::BIGINT[] END AS makers_at_stated_year
     FROM parsed p JOIN models m ON m.id = p.link_id
     WHERE p.link_type = 'model'
     UNION ALL
@@ -226,7 +293,12 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
            (SELECT COALESCE(list(m.year), []) FROM models m
              WHERE m.title_id = t.id AND m.year IS NOT NULL),
            (SELECT COALESCE(list(m.manufacturer_id), []) FROM models m
-             WHERE m.title_id = t.id AND m.manufacturer_id IS NOT NULL)
+             WHERE m.title_id = t.id AND m.manufacturer_id IS NOT NULL),
+           -- Correlated on the STATED year, so it answers "who made this Title's models
+           -- that year" rather than "who made any of them".
+           (SELECT COALESCE(list(m.manufacturer_id), []) FROM models m
+             WHERE m.title_id = t.id AND m.year = p.stated_year
+               AND m.manufacturer_id IS NOT NULL)
     FROM parsed p JOIN titles t ON t.id = p.link_id
     WHERE p.link_type = 'title'
   ),
@@ -238,9 +310,28 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
              AND NOT list_contains(f.makers, f.stated_maker) AS maker_wrong,
            -- Named here so the SELECT below stays a rendering step.
            (SELECT string_agg(DISTINCT m.name, '/' ORDER BY m.name) FROM manufacturers m
-             WHERE list_contains(f.makers, m.id)) AS catalog_makers
+             WHERE list_contains(f.makers, m.id)) AS catalog_makers,
+           (SELECT string_agg(DISTINCT m.name, '/' ORDER BY m.name) FROM manufacturers m
+             WHERE list_contains(f.makers_at_stated_year, m.id)) AS makers_that_year
     FROM facts f
     LEFT JOIN manufacturers mk ON mk.id = f.stated_maker
+  ),
+  -- A Title carries its models' years and makers as two lists, and testing them
+  -- independently accepts a pair no single model holds: given a 1997 Williams model and a
+  -- 2015 Chicago Gaming one, both halves of "(1997, Chicago Gaming)" are in the catalog
+  -- and the parenthetical still describes nothing that exists. Only a Title reaches this
+  -- — a model holds one pair, so its dimension tests already cover it.
+  --
+  -- Guarded on both dimension tests passing, so a parenthetical already reported for its
+  -- year or its maker is not reported a second time for the combination.
+  correlated AS (
+    SELECT j.*,
+           j.stated_maker IS NOT NULL AND NOT j.year_wrong AND NOT j.maker_wrong
+             -- Empty means no model carries BOTH the stated year and any maker at all, so
+             -- the catalog states nothing about the pair and nothing is contradicted.
+             AND len(j.makers_at_stated_year) > 0
+             AND NOT list_contains(j.makers_at_stated_year, j.stated_maker) AS pair_wrong
+    FROM judged j
   )
   -- DISTINCT because the unit is the defect, not the occurrence: one description stating
   -- the same wrong parenthetical twice is one thing to fix. Two different ones differ in
@@ -261,11 +352,16 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
                        -- Sorted, so the same defect renders identically between runs.
                        THEN 'year ' || array_to_string(list_sort(list_distinct(years)), '/') END,
                   CASE WHEN maker_wrong
-                       THEN 'maker ' || COALESCE(catalog_makers, 'unknown') END)) AS message
-  FROM judged
-  WHERE year_wrong OR maker_wrong;
+                       THEN 'maker ' || COALESCE(catalog_makers, 'unknown') END,
+                  -- Both halves are in the catalog, so naming either alone would read as a
+                  -- denial of something true. What is wrong is the pairing.
+                  CASE WHEN pair_wrong
+                       THEN stated_year || ' was ' || COALESCE(makers_that_year, 'unknown') END))
+         AS message
+  FROM correlated
+  WHERE year_wrong OR maker_wrong OR pair_wrong;
 COMMENT ON VIEW audit_parenthetical_fact IS
-  'ERROR — one row per _[[link]]_ (year, [[manufacturer]]) parenthetical whose year or maker disagrees with the catalog. Either the prose is wrong or the record is; both want fixing.';
+  'ERROR — one row per _[[link]]_ (year, [[manufacturer]]) parenthetical whose year or maker disagrees with the catalog, or which pairs a year and a maker the catalog holds but never together (a Title with a 1997 Williams model and a 2015 Chicago Gaming one states neither "1997, Chicago Gaming" nor "2015, Williams"). Either the prose is wrong or the record is; both want fixing.';
 
 -- ─── broken-link ───────────────────────────────────────────────────────────
 -- Two halves because a target can be dead in two ways. Soft-deleted carries status
