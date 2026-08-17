@@ -64,13 +64,19 @@ CREATE OR REPLACE MACRO name_key(s) AS name_norm(name_strip_paren(s));
 COMMENT ON MACRO name_key IS
   'name_norm(name_strip_paren(s)) — the name comparison key for the common case. Use name_norm alone when a trailing parenthetical distinguishes the records.';
 
--- ═══ LIVE — the one place the liveness rule is written ══════════════════════
--- live('fc.catalog_x') is the live rows of a lifecycle table, minus the three columns
--- every entity view drops for the same reason. It exists so neither the rule nor that
--- reason is retyped per view: `status` is redundant on a view that IS the live rows, and
--- created_at/updated_at are row bookkeeping that differs between any two copies of the
--- catalog, so they describe the local db state rather than catalog state.
--- Use it for the BASE read only — joins go through the joined entity's own view, so its
+-- ═══ STAGING — the source-read contract, written once ═══════════════════════
+-- staging('fc.catalog_x') is HOW THIS LAYER READS A SOURCE TABLE, and the whole of it:
+-- live rows only, bookkeeping columns dropped, absence spelled one way. Three clauses, one
+-- job — a source read is not finished until all three have happened, which is why they are
+-- one macro under one name rather than three a view could apply two of.
+-- Each clause, and why it belongs to the read rather than to a view:
+--   * live rows      the liveness rule (is_live), written HERE and nowhere else.
+--   * EXCLUDE        `status` is redundant on a view that IS the live rows, and
+--                    created_at/updated_at are row bookkeeping that differs between any
+--                    two copies of the catalog — they describe the local db state rather
+--                    than catalog state.
+--   * blanks_null    absent is NULL, never '' (see below).
+-- Use it for the SOURCE read only — joins go through the joined entity's own view, so its
 -- liveness stays stated once too. It has no opinion about columns beyond those three: a
 -- view that drops more says so itself, which is what keeps an EXCLUDE list meaningful.
 -- Fails loudly (Binder Error on `status`) against a table with no lifecycle, which is
@@ -92,7 +98,7 @@ CREATE OR REPLACE MACRO blanks_null(tbl) AS TABLE
   SELECT CASE WHEN COLUMNS(*)::VARCHAR = '' THEN NULL ELSE COLUMNS(*) END
   FROM query_table(tbl);
 COMMENT ON MACRO TABLE blanks_null IS
-  'blanks_null(''fc.x'') — every column of a table with '''' folded to NULL, types preserved. The base read for a table with no lifecycle; live() already includes it.';
+  'blanks_null(''fc.x'') — every column of a table with '''' folded to NULL, types preserved. The source read for a table with no lifecycle; staging() already includes it.';
 
 -- One spelling per scalar, as blanks_null is one spelling per absence. A claim value is a
 -- JSONField, so `"500"` and `500` are different values and both are in the data for
@@ -110,12 +116,12 @@ CREATE OR REPLACE MACRO is_live(status) AS status IS DISTINCT FROM 'deleted';
 COMMENT ON MACRO is_live IS
   'is_live(status) — the liveness rule as a scalar, for a view that carries a status column instead of being live-filtered. Never retype the predicate.';
 
-CREATE OR REPLACE MACRO live(tbl) AS TABLE
+CREATE OR REPLACE MACRO staging(tbl) AS TABLE
   SELECT * EXCLUDE (status, created_at, updated_at)
   FROM blanks_null(tbl)
   WHERE is_live(status);
-COMMENT ON MACRO TABLE live IS
-  'live(''fc.catalog_x'') — the live rows of a lifecycle table minus status/created_at/updated_at, with '''' folded to NULL. The base read for every entity view; joins use the joined entity''s view instead.';
+COMMENT ON MACRO TABLE staging IS
+  'staging(''fc.catalog_x'') — the live rows of a lifecycle table minus status/created_at/updated_at, with '''' folded to NULL. The source read for every entity view; joins use the joined entity''s view instead.';
 
 -- ═══ ENTITY VOCABULARY — what this layer calls each kind of thing ═══════════
 -- entity_registry (entity_type ↔ content-type label ↔ table), entity_subjects (the
@@ -134,8 +140,8 @@ CREATE OR REPLACE MACRO entity_type_of(physical_table) AS
 COMMENT ON MACRO entity_type_of IS
   'entity_type_of(''catalog_series'') — the subject type a view should emit for rows of that physical table, read from entity_registry rather than spelled as a literal. NULL if the table is not an entity.';
 
--- ═══ BASE LAYER — the live rows of a table, and nothing else ════════════════
--- One `_live_x` per lifecycle table that more than one view reads. No joins, no derived
+-- ═══ STAGING LAYER — the live rows of a table, and nothing else ═════════════
+-- One `_stg_x` per lifecycle table that more than one view reads. No joins, no derived
 -- columns, no measures — so nothing here has an outgoing edge, and nothing that reads one
 -- can be part of a cycle.
 --
@@ -145,24 +151,24 @@ COMMENT ON MACRO entity_type_of IS
 -- reaching for a neighbour's SLUG through the entity view inherits its aggregate too, and
 -- `models` joining `titles` would close a loop through `titles`' own model count.
 --
--- Hence the split, and the rule that follows from it: **join the base view to decode an
+-- Hence the split, and the rule that follows from it: **join the staging view to decode an
 -- identity, the entity view to read a measure.** Every join that used to spell the
 -- liveness predicate by hand was decoding an identity, so every one of them lands here.
 --
--- A table read from ONE place gets no base view — `cabinets` IS `live('fc.catalog_cabinet')`
--- and a `_live_cabinet` would be pure indirection. The layer exists to make a shared read
--- shared, not to put a wrapper round every table.
-CREATE OR REPLACE VIEW _live_machine_model     AS SELECT * FROM live('fc.catalog_machinemodel');
-CREATE OR REPLACE VIEW _live_title             AS SELECT * FROM live('fc.catalog_title');
-CREATE OR REPLACE VIEW _live_corporate_entity  AS SELECT * FROM live('fc.catalog_corporateentity');
-CREATE OR REPLACE VIEW _live_manufacturer      AS SELECT * FROM live('fc.catalog_manufacturer');
-CREATE OR REPLACE VIEW _live_reward_type       AS SELECT * FROM live('fc.catalog_rewardtype');
-CREATE OR REPLACE VIEW _live_series            AS SELECT * FROM live('fc.catalog_series');
-CREATE OR REPLACE VIEW _live_person            AS SELECT * FROM live('fc.catalog_person');
-CREATE OR REPLACE VIEW _live_credit_role       AS SELECT * FROM live('fc.catalog_creditrole');
-CREATE OR REPLACE VIEW _live_tag               AS SELECT * FROM live('fc.catalog_tag');
-CREATE OR REPLACE VIEW _live_theme             AS SELECT * FROM live('fc.catalog_theme');
-CREATE OR REPLACE VIEW _live_gameplay_feature  AS SELECT * FROM live('fc.catalog_gameplayfeature');
+-- A table read from ONE place gets no staging view — `cabinets` IS
+-- `staging('fc.catalog_cabinet')` and a `_stg_cabinet` would be pure indirection. The
+-- layer exists to make a shared read shared, not to put a wrapper round every table.
+CREATE OR REPLACE VIEW _stg_machine_model     AS SELECT * FROM staging('fc.catalog_machinemodel');
+CREATE OR REPLACE VIEW _stg_title             AS SELECT * FROM staging('fc.catalog_title');
+CREATE OR REPLACE VIEW _stg_corporate_entity  AS SELECT * FROM staging('fc.catalog_corporateentity');
+CREATE OR REPLACE VIEW _stg_manufacturer      AS SELECT * FROM staging('fc.catalog_manufacturer');
+CREATE OR REPLACE VIEW _stg_reward_type       AS SELECT * FROM staging('fc.catalog_rewardtype');
+CREATE OR REPLACE VIEW _stg_series            AS SELECT * FROM staging('fc.catalog_series');
+CREATE OR REPLACE VIEW _stg_person            AS SELECT * FROM staging('fc.catalog_person');
+CREATE OR REPLACE VIEW _stg_credit_role       AS SELECT * FROM staging('fc.catalog_creditrole');
+CREATE OR REPLACE VIEW _stg_tag               AS SELECT * FROM staging('fc.catalog_tag');
+CREATE OR REPLACE VIEW _stg_theme             AS SELECT * FROM staging('fc.catalog_theme');
+CREATE OR REPLACE VIEW _stg_gameplay_feature  AS SELECT * FROM staging('fc.catalog_gameplayfeature');
 
 -- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
 -- locations — one row per live Location, at EVERY level. THE entity: a country is simply
@@ -191,7 +197,7 @@ CREATE OR REPLACE VIEW locations AS
     l.*,
     split_part(l.location_path, '/', 1)      AS country_slug,
     l.parent_id IS NULL                      AS is_country
-  FROM live('fc.catalog_location') l;
+  FROM staging('fc.catalog_location') l;
 COMMENT ON VIEW locations IS
   'One row per live Location at EVERY level — THE entity; a country is just a row with is_country. Join on location_path, never slug: slug is unique only within a parent.';
 
@@ -203,8 +209,8 @@ COMMENT ON VIEW locations IS
 -- view reach across a relationship it doesn't own is what made three separate views read
 -- this table. Group this by location_id for that count.
 -- The two sides resolve at different layers on purpose: the CE contributes only its slug,
--- so it comes from the base layer, while the location side goes through `locations`, which
--- is where location_path gets split into country_slug and is_country.
+-- so it comes from the staging layer, while the location side goes through `locations`,
+-- which is where location_path gets split into country_slug and is_country.
 CREATE OR REPLACE VIEW corporate_entity_locations AS
   SELECT
     cel.corporate_entity_id,
@@ -215,7 +221,7 @@ CREATE OR REPLACE VIEW corporate_entity_locations AS
     l.is_country
   FROM fc.catalog_corporateentitylocation cel
   JOIN locations l ON l.id = cel.location_id
-  JOIN _live_corporate_entity ce ON ce.id = cel.corporate_entity_id;
+  JOIN _stg_corporate_entity ce ON ce.id = cel.corporate_entity_id;
 COMMENT ON VIEW corporate_entity_locations IS
   'One row per (live corporate entity, live location) — THE CE-to-Location bridge and the only reader of the through table; group by location_id for corporate entities per place.';
 
@@ -234,7 +240,7 @@ COMMENT ON VIEW location_aliases IS
   'One row per alias of a live Location at any level — alias GRAIN, keyed on location_path because Location.slug is unique only within a parent. Filter is_country for countries.';
 
 -- game_formats — the machine-genre vocabulary.
-CREATE OR REPLACE VIEW game_formats AS SELECT * FROM live('fc.catalog_gameformat');
+CREATE OR REPLACE VIEW game_formats AS SELECT * FROM staging('fc.catalog_gameformat');
 COMMENT ON VIEW game_formats IS
   'One row per live game format — the machine-genre vocabulary';
 
@@ -252,7 +258,7 @@ COMMENT ON VIEW game_formats IS
 --
 -- Uniform shape: id, slug, name, description, plus the decoded parent where the dim has
 -- one. Live rows only, and every parent join live-filtered, as everywhere else here.
-CREATE OR REPLACE VIEW technology_generations AS SELECT * FROM live('fc.catalog_technologygeneration');
+CREATE OR REPLACE VIEW technology_generations AS SELECT * FROM staging('fc.catalog_technologygeneration');
 COMMENT ON VIEW technology_generations IS
   'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State).';
 
@@ -260,12 +266,12 @@ CREATE OR REPLACE VIEW technology_subgenerations AS
   SELECT
     tsg.*,
     tg.slug AS technology_generation_slug
-  FROM live('fc.catalog_technologysubgeneration') tsg
+  FROM staging('fc.catalog_technologysubgeneration') tsg
   LEFT JOIN technology_generations tg ON tg.id = tsg.technology_generation_id;
 COMMENT ON VIEW technology_subgenerations IS
   'One row per live technology subgeneration — the subdivision vocabulary, carrying its parent generation decoded to a slug.';
 
-CREATE OR REPLACE VIEW display_types AS SELECT * FROM live('fc.catalog_displaytype');
+CREATE OR REPLACE VIEW display_types AS SELECT * FROM staging('fc.catalog_displaytype');
 COMMENT ON VIEW display_types IS
   'One row per live display type — the display-technology vocabulary (Score Reels, DMD, LCD).';
 
@@ -273,7 +279,7 @@ CREATE OR REPLACE VIEW display_subtypes AS
   SELECT
     dst.*,
     dt.slug AS display_type_slug
-  FROM live('fc.catalog_displaysubtype') dst
+  FROM staging('fc.catalog_displaysubtype') dst
   LEFT JOIN display_types dt ON dt.id = dst.display_type_id;
 COMMENT ON VIEW display_subtypes IS
   'One row per live display subtype — the subdivision vocabulary, carrying its parent display type decoded to a slug.';
@@ -286,19 +292,19 @@ CREATE OR REPLACE VIEW systems AS
     s.*,
     mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     tsg.slug AS technology_subgeneration_slug
-  FROM live('fc.catalog_system') s
-  LEFT JOIN _live_manufacturer mf ON mf.id = s.manufacturer_id
+  FROM staging('fc.catalog_system') s
+  LEFT JOIN _stg_manufacturer mf ON mf.id = s.manufacturer_id
   LEFT JOIN technology_subgenerations tsg ON tsg.id = s.technology_subgeneration_id
 ;
 COMMENT ON VIEW systems IS
   'One row per live system — the hardware-generation vocabulary (WPC-95, SAM, SPIKE) with its manufacturer and technology subgeneration decoded.';
 
-CREATE OR REPLACE VIEW cabinets AS SELECT * FROM live('fc.catalog_cabinet');
+CREATE OR REPLACE VIEW cabinets AS SELECT * FROM staging('fc.catalog_cabinet');
 COMMENT ON VIEW cabinets IS
   'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail).';
 
 -- production_statuses is the ProductionStatus vocabulary, NOT soft-delete status
-CREATE OR REPLACE VIEW production_statuses AS SELECT * FROM live('fc.catalog_productionstatus');
+CREATE OR REPLACE VIEW production_statuses AS SELECT * FROM staging('fc.catalog_productionstatus');
 COMMENT ON VIEW production_statuses IS
   'One row per live production status — the commercial-production vocabulary (produced, announced, one-off).';
 
@@ -320,7 +326,7 @@ CREATE OR REPLACE VIEW _ce_location AS
   FROM corporate_entity_locations
   GROUP BY corporate_entity_id;
 
--- _title_live_n — live models per Title. Reads the base layer because `models` consumes
+-- _title_live_n — live models per Title. Reads the staging layer because `models` consumes
 -- it, so reading `models` would be circular.
 -- Read from OUTSIDE this section, unlike the helpers around it: it is the single source
 -- for `models.title_size` here AND `titles.n_models` several hundred lines down, which is
@@ -329,13 +335,13 @@ CREATE OR REPLACE VIEW _ce_location AS
 -- that compare them.
 CREATE OR REPLACE VIEW _title_live_n AS
   SELECT title_id, count(*) AS n
-  FROM _live_machine_model
+  FROM _stg_machine_model
   GROUP BY title_id;
 
--- _namesake_live_n — live models per name_key, base-layer read for the same reason.
+-- _namesake_live_n — live models per name_key, staging-layer read for the same reason.
 CREATE OR REPLACE VIEW _namesake_live_n AS
   SELECT name_key(name) AS name_key, count(*) AS n
-  FROM _live_machine_model
+  FROM _stg_machine_model
   GROUP BY name_key(name);
 
 -- models — one row per LIVE MachineModel. `analysis describe models` prints
@@ -438,15 +444,15 @@ CREATE OR REPLACE VIEW models AS
   -- Every dim join is live-filtered, so a deleted dim de-enriches to NULL. It should
   -- never bite (the FKs are PROTECT and the soft-delete walker blocks it) and
   -- model_dim_not_live fires if it does.
-  FROM _live_machine_model m
-  -- Title, corporate entity and manufacturer come from the BASE layer, not from `titles`,
+  FROM _stg_machine_model m
+  -- Title, corporate entity and manufacturer come from the STAGING layer, not from `titles`,
   -- `corporate_entities` and `manufacturers`: all three aggregate over `models`, and only
   -- the slug and name are wanted here.
-  LEFT JOIN _live_title t              ON t.id  = m.title_id
+  LEFT JOIN _stg_title t              ON t.id  = m.title_id
   LEFT JOIN _title_live_n tn           ON tn.title_id = m.title_id
   LEFT JOIN _namesake_live_n nk        ON nk.name_key = name_key(m.name)
-  LEFT JOIN _live_corporate_entity ce  ON ce.id = m.corporate_entity_id
-  LEFT JOIN _live_manufacturer mf      ON mf.id = ce.manufacturer_id
+  LEFT JOIN _stg_corporate_entity ce  ON ce.id = m.corporate_entity_id
+  LEFT JOIN _stg_manufacturer mf      ON mf.id = ce.manufacturer_id
   LEFT JOIN _ce_location cel           ON cel.corporate_entity_id = m.corporate_entity_id
   -- The dim joins go through the dim VIEWS, which are defined above and are already
   -- live-only, so the liveness rule for each dimension is stated once — in that view —
@@ -486,7 +492,7 @@ CREATE OR REPLACE VIEW _mfr_status AS
          CASE WHEN bool_or(operating_status = 'ongoing') THEN 'ongoing'
               WHEN bool_and(operating_status = 'ended')  THEN 'ended'
               ELSE 'unknown' END AS operating_status
-  FROM _live_corporate_entity
+  FROM _stg_corporate_entity
   WHERE manufacturer_id IS NOT NULL
   GROUP BY manufacturer_id;
 
@@ -505,7 +511,7 @@ CREATE OR REPLACE VIEW _mfr_location AS
          count(DISTINCT cel.country_slug)   AS n_countries,
          CASE WHEN count(DISTINCT cel.country_slug) = 1
               THEN min(cel.country_slug) END  AS country_slug
-  FROM _live_corporate_entity ce
+  FROM _stg_corporate_entity ce
   LEFT JOIN _ce_location cel ON cel.corporate_entity_id = ce.id
   WHERE ce.manufacturer_id IS NOT NULL
   GROUP BY ce.manufacturer_id;
@@ -562,8 +568,8 @@ CREATE OR REPLACE VIEW corporate_entities AS
     COALESCE(a.n_nonvariant_models, 0) AS n_nonvariant_models,
     COALESCE(a.n_dated, 0)             AS n_dated,
     a.year_of_first_model, a.year_of_last_model
-  FROM _live_corporate_entity ce
-  LEFT JOIN _live_manufacturer mf ON mf.id = ce.manufacturer_id
+  FROM _stg_corporate_entity ce
+  LEFT JOIN _stg_manufacturer mf ON mf.id = ce.manufacturer_id
   LEFT JOIN _ce_location cel ON cel.corporate_entity_id = ce.id
   LEFT JOIN agg a            ON a.corporate_entity_id = ce.id;
 COMMENT ON VIEW corporate_entities IS
@@ -649,7 +655,7 @@ CREATE OR REPLACE VIEW manufacturers AS
     l.location_path,
     COALESCE(l.n_countries, 0) AS n_countries,
     l.country_slug
-  FROM _live_manufacturer mf
+  FROM _stg_manufacturer mf
   LEFT JOIN agg a           ON a.manufacturer_id = mf.id
   LEFT JOIN _mfr_status s   ON s.manufacturer_id = mf.id
   LEFT JOIN _mfr_location l ON l.manufacturer_id = mf.id;
@@ -666,7 +672,7 @@ CREATE OR REPLACE VIEW model_rewards AS
   SELECT mr.machinemodel_id AS model_id, s.slug AS model_slug,
          rt.id AS reward_type_id, rt.slug AS reward_type_slug
   FROM fc.catalog_machinemodel_reward_types mr
-  JOIN _live_reward_type rt ON rt.id = mr.rewardtype_id
+  JOIN _stg_reward_type rt ON rt.id = mr.rewardtype_id
   JOIN models s ON s.id = mr.machinemodel_id;
 COMMENT ON VIEW model_rewards IS
   'One row per (live model, live reward type) — the grain twin of model_reward_names; predicate and join on reward_type_slug. Flat, no DAG.';
@@ -677,7 +683,7 @@ COMMENT ON VIEW model_rewards IS
 -- multi-valued vocabularies.
 CREATE OR REPLACE VIEW reward_types AS
   SELECT rt.*, count(mr.model_id) AS n
-  FROM _live_reward_type rt
+  FROM _stg_reward_type rt
   LEFT JOIN model_rewards mr ON mr.reward_type_id = rt.id
   GROUP BY ALL;
 COMMENT ON VIEW reward_types IS
@@ -689,7 +695,7 @@ COMMENT ON VIEW reward_types IS
 CREATE OR REPLACE VIEW model_reward_names AS
   SELECT mr.model_id, list_sort(list(rt.name)) AS reward_names
   FROM model_rewards mr
-  JOIN _live_reward_type rt ON rt.id = mr.reward_type_id
+  JOIN _stg_reward_type rt ON rt.id = mr.reward_type_id
   GROUP BY mr.model_id;
 COMMENT ON VIEW model_reward_names IS
   'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
@@ -716,7 +722,7 @@ CREATE OR REPLACE VIEW model_themes AS
   SELECT mt.machinemodel_id AS model_id, s.slug AS model_slug,
          t.id AS theme_id, t.slug AS theme_slug
   FROM fc.catalog_machinemodel_themes mt
-  JOIN _live_theme t ON t.id = mt.theme_id
+  JOIN _stg_theme t ON t.id = mt.theme_id
   JOIN models s ON s.id = mt.machinemodel_id;
 COMMENT ON VIEW model_themes IS
   'One row per (live model, live theme) — the grain twin of model_theme_names; predicate and join on theme_slug. Direct attachments only, DAG not rolled up.';
@@ -728,7 +734,7 @@ COMMENT ON VIEW model_themes IS
 CREATE OR REPLACE VIEW theme_aliases AS
   SELECT ta.theme_id, t.slug AS theme_slug, ta.value AS alias
   FROM fc.catalog_themealias ta
-  JOIN _live_theme t ON t.id = ta.theme_id;
+  JOIN _stg_theme t ON t.id = ta.theme_id;
 COMMENT ON VIEW theme_aliases IS
   'One row per alias of a live theme — alias GRAIN, so you can join and compare on one. Values as entered, not normalized.';
 
@@ -748,12 +754,12 @@ CREATE OR REPLACE VIEW themes AS
   ), parents AS (
     SELECT tp.from_theme_id AS theme_id, list_sort(list(p.slug)) AS parents
     FROM fc.catalog_theme_parents tp
-    JOIN _live_theme p ON p.id = tp.to_theme_id
+    JOIN _stg_theme p ON p.id = tp.to_theme_id
     GROUP BY tp.from_theme_id
   ), children AS (
     SELECT tp.to_theme_id AS theme_id, list_sort(list(c.slug)) AS children
     FROM fc.catalog_theme_parents tp
-    JOIN _live_theme c ON c.id = tp.from_theme_id
+    JOIN _stg_theme c ON c.id = tp.from_theme_id
     GROUP BY tp.to_theme_id
   ), aliases AS (
     SELECT theme_id, list_sort(list(alias)) AS aliases FROM theme_aliases GROUP BY theme_id
@@ -764,7 +770,7 @@ CREATE OR REPLACE VIEW themes AS
     COALESCE(p.parents,  []::VARCHAR[]) AS parents,
     COALESCE(c.children, []::VARCHAR[]) AS children,
     COALESCE(a.aliases,  []::VARCHAR[]) AS aliases
-  FROM _live_theme t
+  FROM _stg_theme t
   LEFT JOIN usage    u ON u.theme_id = t.id
   LEFT JOIN parents  p ON p.theme_id = t.id
   LEFT JOIN children c ON c.theme_id = t.id
@@ -778,7 +784,7 @@ COMMENT ON VIEW themes IS
 CREATE OR REPLACE VIEW model_theme_names AS
   SELECT mt.model_id, list_sort(list(t.name)) AS theme_names
   FROM model_themes mt
-  JOIN _live_theme t ON t.id = mt.theme_id
+  JOIN _stg_theme t ON t.id = mt.theme_id
   GROUP BY mt.model_id;
 COMMENT ON VIEW model_theme_names IS
   'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, themes for questions about the vocabulary itself.';
@@ -789,7 +795,7 @@ CREATE OR REPLACE VIEW model_tags AS
   SELECT mt.machinemodel_id AS model_id, s.slug AS model_slug,
          tg.id AS tag_id, tg.slug AS tag_slug
   FROM fc.catalog_machinemodel_tags mt
-  JOIN _live_tag tg ON tg.id = mt.tag_id
+  JOIN _stg_tag tg ON tg.id = mt.tag_id
   JOIN models s ON s.id = mt.machinemodel_id;
 COMMENT ON VIEW model_tags IS
   'One row per (live model, live tag) — the grain twin of model_tag_slugs; predicate and join on tag_slug. Flat, no DAG.';
@@ -800,7 +806,7 @@ CREATE OR REPLACE VIEW tags AS
   SELECT
     tg.*,
     count(mt.model_id) AS n
-  FROM _live_tag tg
+  FROM _stg_tag tg
   LEFT JOIN model_tags mt ON mt.tag_id = tg.id
   GROUP BY ALL;
 COMMENT ON VIEW tags IS
@@ -838,7 +844,7 @@ CREATE OR REPLACE VIEW model_gameplay_features AS
     gf.slug             AS feature_slug,
     mgf.count           AS count
   FROM fc.catalog_machinemodelgameplayfeature mgf
-  JOIN _live_gameplay_feature gf ON gf.id = mgf.gameplayfeature_id
+  JOIN _stg_gameplay_feature gf ON gf.id = mgf.gameplayfeature_id
   JOIN models s ON s.id = mgf.machinemodel_id;
 COMMENT ON VIEW model_gameplay_features IS
   'One row per (live model, gameplay feature) with its optional count (Flippers x2, Trap Holes x25) — the counted grain. Direct attachments only, DAG not rolled up.';
@@ -857,7 +863,7 @@ COMMENT ON VIEW model_gameplay_features IS
 CREATE OR REPLACE VIEW gameplay_feature_aliases AS
   SELECT ga.feature_id, f.slug AS feature_slug, ga.value AS alias
   FROM fc.catalog_gameplayfeaturealias ga
-  JOIN _live_gameplay_feature f ON f.id = ga.feature_id;
+  JOIN _stg_gameplay_feature f ON f.id = ga.feature_id;
 COMMENT ON VIEW gameplay_feature_aliases IS
   'One row per alias of a live gameplay feature — alias GRAIN, for resolving a source phrasing ("Autoplunger") to the canonical feature. Not normalized.';
 
@@ -874,12 +880,12 @@ CREATE OR REPLACE VIEW gameplay_features AS
   ), parents AS (
     SELECT fp.from_gameplayfeature_id AS feature_id, list_sort(list(p.slug)) AS parents
     FROM fc.catalog_gameplayfeature_parents fp
-    JOIN _live_gameplay_feature p ON p.id = fp.to_gameplayfeature_id
+    JOIN _stg_gameplay_feature p ON p.id = fp.to_gameplayfeature_id
     GROUP BY fp.from_gameplayfeature_id
   ), children AS (
     SELECT fp.to_gameplayfeature_id AS feature_id, list_sort(list(c.slug)) AS children
     FROM fc.catalog_gameplayfeature_parents fp
-    JOIN _live_gameplay_feature c ON c.id = fp.from_gameplayfeature_id
+    JOIN _stg_gameplay_feature c ON c.id = fp.from_gameplayfeature_id
     GROUP BY fp.to_gameplayfeature_id
   ), aliases AS (
     SELECT feature_id, list_sort(list(alias)) AS aliases
@@ -891,7 +897,7 @@ CREATE OR REPLACE VIEW gameplay_features AS
     COALESCE(p.parents,  []::VARCHAR[]) AS parents,
     COALESCE(c.children, []::VARCHAR[]) AS children,
     COALESCE(a.aliases,  []::VARCHAR[]) AS aliases
-  FROM _live_gameplay_feature f
+  FROM _stg_gameplay_feature f
   LEFT JOIN usage    u ON u.feature_id = f.id
   LEFT JOIN parents  p ON p.feature_id = f.id
   LEFT JOIN children c ON c.feature_id = f.id
@@ -1103,14 +1109,14 @@ COMMENT ON VIEW model_edges_bidir IS
 -- EXIST, and which are used by nothing. Both flat, nothing like the theme DAG, and both
 -- curator-maintained — which makes `n_titles = 0` the interesting row rather than a
 -- defect: a grouping someone created and never attached, invisible from `titles` alone.
--- The Title side of both stays a live() read rather than `titles`: that view decodes the
+-- The Title side of both stays a staging() read rather than `titles`: that view decodes the
 -- franchise and series onto each Title, so composing it here would close a cycle. Which is
 -- also why they are defined AHEAD of `titles` — views bind at CREATE.
 CREATE OR REPLACE VIEW franchises AS
   SELECT f.*,
          count(t.id) AS n_titles
-  FROM live('fc.catalog_franchise') f
-  LEFT JOIN _live_title t ON t.franchise_id = f.id
+  FROM staging('fc.catalog_franchise') f
+  LEFT JOIN _stg_title t ON t.franchise_id = f.id
   GROUP BY ALL;
 COMMENT ON VIEW franchises IS
   'One row per live Franchise — the IP grouping (Star Trek), spanning manufacturers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
@@ -1118,8 +1124,8 @@ COMMENT ON VIEW franchises IS
 CREATE OR REPLACE VIEW series AS
   SELECT s.*,
          count(t.id) AS n_titles
-  FROM _live_series s
-  LEFT JOIN _live_title t ON t.series_id = s.id
+  FROM _stg_series s
+  LEFT JOIN _stg_title t ON t.series_id = s.id
   GROUP BY ALL;
 COMMENT ON VIEW series IS
   'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
@@ -1145,7 +1151,7 @@ CREATE OR REPLACE VIEW titles AS
     f.slug  AS franchise_slug, f.name  AS franchise_name,
     se.slug AS series_slug,    se.name AS series_name,
     COALESCE(tn.n, 0) AS n_models
-  FROM _live_title t
+  FROM _stg_title t
   LEFT JOIN _title_live_n tn ON tn.title_id = t.id
   LEFT JOIN franchises f     ON f.id  = t.franchise_id
   LEFT JOIN series se        ON se.id = t.series_id;
@@ -1214,14 +1220,14 @@ CREATE OR REPLACE VIEW credits AS
     c.person_id, p.slug AS person_slug, p.name AS person_name,
     c.role_id,   r.slug AS role_slug,   r.name AS role_name
   FROM fc.catalog_credit c
-  -- Base layer for person and role: `people` and `credit_roles` count rows OF THIS VIEW.
-  JOIN _live_person p      ON p.id = c.person_id
-  JOIN _live_credit_role r ON r.id = c.role_id
+  -- Staging layer for person and role: `people` and `credit_roles` count rows OF THIS VIEW.
+  JOIN _stg_person p      ON p.id = c.person_id
+  JOIN _stg_credit_role r ON r.id = c.role_id
   -- Two LEFT JOINs plus "at least one resolved", not two UNIONed branches: exactly one
   -- side of the XOR can resolve, so the WHERE keeps the row on either and drops it when
   -- the side it names is dead.
   LEFT JOIN models m         ON m.id = c.model_id
-  LEFT JOIN _live_series s   ON s.id = c.series_id
+  LEFT JOIN _stg_series s   ON s.id = c.series_id
   WHERE m.id IS NOT NULL OR s.id IS NOT NULL;
 COMMENT ON VIEW credits IS
   'One row per credit (person, role, live subject) — the credit GRAIN, and the definition people/credit_roles count. Subject is a model XOR a series, decoded into subject_type/id/slug/name; model_credits is the model half.';
@@ -1245,7 +1251,7 @@ CREATE OR REPLACE VIEW credit_roles AS
   SELECT
     r.*,
     count(c.credit_id) AS n_credits
-  FROM _live_credit_role r
+  FROM _stg_credit_role r
   LEFT JOIN credits c ON c.role_id = r.id
   GROUP BY ALL;
 COMMENT ON VIEW credit_roles IS
@@ -1282,7 +1288,7 @@ CREATE OR REPLACE VIEW people AS
     COALESCE(a.n_credits, 0)         AS n_credits,
     COALESCE(a.n_credited_models, 0) AS n_credited_models,
     COALESCE(a.n_roles, 0)           AS n_roles
-  FROM _live_person p
+  FROM _stg_person p
   LEFT JOIN agg a ON a.person_id = p.id;
 COMMENT ON VIEW people IS
   'One row per live Person — identity, birth/death year and credit counts over live subjects. Counts only: `credits` is the grain that says WHICH models.';
@@ -1298,7 +1304,7 @@ COMMENT ON VIEW people IS
 CREATE OR REPLACE VIEW reward_type_aliases AS
   SELECT ra.reward_type_id, rt.slug AS reward_type_slug, ra.value AS alias
   FROM fc.catalog_rewardtypealias ra
-  JOIN _live_reward_type rt ON rt.id = ra.reward_type_id;
+  JOIN _stg_reward_type rt ON rt.id = ra.reward_type_id;
 COMMENT ON VIEW reward_type_aliases IS
   'One row per alias of a live reward type — alias GRAIN, for resolving a payout phrasing to the modelled type.';
 

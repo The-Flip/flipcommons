@@ -224,7 +224,7 @@ CREATE OR REPLACE VIEW _entity_view AS
 
 -- ─── Fixtures — behaviour against input we control ──────────────────────────
 -- Every other assertion in this file is a query over the real catalog, so its strength
--- depends on what the data happens to hold. That is how a `live()` smoke check keyed to a
+-- depends on what the data happens to hold. That is how a `staging()` smoke check keyed to a
 -- vocabulary with no deleted rows passed while proving nothing. These tables supply the
 -- cases instead of hoping for them.
 -- The schema is taken from the real table with LIMIT 0, so a fixture cannot drift from
@@ -680,30 +680,30 @@ CREATE OR REPLACE VIEW foundation_checks AS
            || ' n=' || count(*)::VARCHAR
   FROM model_lineage GROUP BY model_id, edge_kind HAVING count(*) > 1
 
-  -- ── live() and blanks_null(), proven against fixture input ──
+  -- ── staging() and blanks_null(), proven against fixture input ──
   -- Data-independent: these assert the three halves of the contract on rows that exist
   -- because we put them there, so none of it rides on the catalog happening to contain a
   -- soft-deleted cabinet or a blank description.
   UNION ALL
-  SELECT 'fixture_live_liveness',
+  SELECT 'fixture_staging_liveness',
          'expected ids 1,2 — got ' || coalesce((SELECT string_agg(id::VARCHAR, ',' ORDER BY id)
-                                                FROM live('_fx_lifecycle')), '<none>')
-  WHERE (SELECT string_agg(id::VARCHAR, ',' ORDER BY id) FROM live('_fx_lifecycle'))
+                                                FROM staging('_fx_lifecycle')), '<none>')
+  WHERE (SELECT string_agg(id::VARCHAR, ',' ORDER BY id) FROM staging('_fx_lifecycle'))
         IS DISTINCT FROM '1,2'
 
   UNION ALL
-  SELECT 'fixture_live_excludes_bookkeeping', column_name
-  FROM (DESCRIBE SELECT * FROM live('_fx_lifecycle'))
+  SELECT 'fixture_staging_excludes_bookkeeping', column_name
+  FROM (DESCRIBE SELECT * FROM staging('_fx_lifecycle'))
   WHERE column_name IN ('status', 'created_at', 'updated_at')
 
-  -- blanks_null folds '' to NULL and leaves a real value alone. Asserted through live(),
+  -- blanks_null folds '' to NULL and leaves a real value alone. Asserted through staging(),
   -- which composes it, so the composition is covered too.
   UNION ALL
   SELECT 'fixture_blanks_null',
-         'id1=' || coalesce((SELECT description FROM live('_fx_lifecycle') WHERE id = 1), '<NULL>')
-      || ' id2=' || coalesce((SELECT description FROM live('_fx_lifecycle') WHERE id = 2), '<NULL>')
-  WHERE (SELECT description FROM live('_fx_lifecycle') WHERE id = 1) IS NOT NULL
-     OR (SELECT description FROM live('_fx_lifecycle') WHERE id = 2) IS DISTINCT FROM 'has'
+         'id1=' || coalesce((SELECT description FROM staging('_fx_lifecycle') WHERE id = 1), '<NULL>')
+      || ' id2=' || coalesce((SELECT description FROM staging('_fx_lifecycle') WHERE id = 2), '<NULL>')
+  WHERE (SELECT description FROM staging('_fx_lifecycle') WHERE id = 1) IS NOT NULL
+     OR (SELECT description FROM staging('_fx_lifecycle') WHERE id = 2) IS DISTINCT FROM 'has'
 
   -- One expected-vs-actual string, so a regression names what it produced.
   UNION ALL
@@ -731,8 +731,8 @@ CREATE OR REPLACE VIEW foundation_checks AS
     -- the derived set, so provenance entities fall out structurally.
     AND e.entity_table IN (SELECT table_name FROM _entity_table)
 
-  -- Every entity view over a LIFECYCLE table reaches its rows through live(), directly or
-  -- through a _live_* leaf that does. Keyed on the source table carrying `status`, so
+  -- Every entity view over a LIFECYCLE table reaches its rows through staging(), directly or
+  -- through a _stg_* leaf that does. Keyed on the source table carrying `status`, so
   -- provenance entities fall out structurally rather than by exemption.
   UNION ALL
   SELECT 'entity_view_not_live_filtered', e.view_name
@@ -740,15 +740,15 @@ CREATE OR REPLACE VIEW foundation_checks AS
   JOIN duckdb_views() v ON v.view_name = e.view_name AND v.database_name = 'memory'
   WHERE e.entity_table IN (SELECT table_name FROM _entity_table)
     -- A TEXT match, with the limit that implies: it catches a view that forgot to filter,
-    -- not one that mentions live() or a _live_* leaf without reading through it. Naming the
-    -- leaves instead of wildcarding does not change that — a bypass smuggling the token
+    -- not one that mentions staging() or a _stg_* leaf without reading through it. Naming
+    -- the leaves instead of wildcarding does not change that — a bypass smuggling the token
     -- through a no-op subquery passes either way. An exact check is not available:
-    -- query_table() takes literals only, so "compare each view against live() of its
+    -- query_table() takes literals only, so "compare each view against staging() of its
     -- source" cannot be written once over the entity set.
-    AND v.sql NOT LIKE '%live(%'
-    AND v.sql NOT LIKE '%_live_%'
+    AND v.sql NOT LIKE '%staging(%'
+    AND v.sql NOT LIKE '%_stg_%'
 
-  -- The base layer's one property: a `_live_*` view is a bare read of a single table. No
+  -- The staging layer's one property: a `_stg_*` view is a bare read of a single table. No
   -- join, no aggregate, no derived column — which is what leaves it with no outgoing edge,
   -- and what makes a cycle THROUGH it impossible rather than merely absent today. A join
   -- added here restores the hazard the layer exists to remove, and restores it silently:
@@ -756,10 +756,10 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- unrelated view next tries to compose. A text match, with the limits of one — it catches
   -- the shape going wrong, not a bare read that is somehow still wrong.
   UNION ALL
-  SELECT 'base_view_not_flat', v.view_name
+  SELECT 'staging_view_not_flat', v.view_name
   FROM duckdb_views() v
   WHERE v.database_name = 'memory'
-    AND starts_with(v.view_name, '_live_')
+    AND starts_with(v.view_name, '_stg_')
     AND (v.sql ILIKE '%join%' OR v.sql ILIKE '%group by%')
 
   -- live filter: models carries no soft-deleted row. Asserted against the PHYSICAL table
@@ -1115,7 +1115,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
      OR len(labels)    IS DISTINCT FROM n
      OR n_titles IS NULL OR n_titles > n
 
-  -- every term a model carries is in its vocabulary (guards the _live_* filter being
+  -- every term a model carries is in its vocabulary (guards the _stg_* filter being
   -- applied to the grain view and not the vocab view, or vice versa)
   UNION ALL
   SELECT DISTINCT 'theme_not_in_vocab', 'theme_id=' || theme_id::VARCHAR

@@ -161,12 +161,12 @@ series half of the credit grain dropped	credit_rows_dropped	CREATE TABLE _m AS S
 credit subject id resolves to nothing	credit_subject_not_live	CREATE TABLE _m AS SELECT * FROM credits; CREATE OR REPLACE VIEW credits AS SELECT * REPLACE (CASE WHEN credit_id = (SELECT min(credit_id) FROM _m) THEN 999999999 ELSE subject_id END AS subject_id) FROM _m;
 patch ordinal truncated to four digits	macro_patch_number_of	CREATE OR REPLACE MACRO patch_number_of(pid) AS TRY_CAST(regexp_extract(pid, '^([0-9]{4})', 1) AS INTEGER);
 public view added without a summary line	unsummarized_view	CREATE OR REPLACE VIEW zz_unsummarized AS SELECT 1 AS x;
-live stops filtering deleted rows	fixture_live_liveness	CREATE OR REPLACE MACRO live(tbl) AS TABLE SELECT * EXCLUDE (status, created_at, updated_at) FROM blanks_null(tbl);
-live stops dropping bookkeeping columns	fixture_live_excludes_bookkeeping	CREATE OR REPLACE MACRO live(tbl) AS TABLE SELECT * FROM blanks_null(tbl) WHERE status IS DISTINCT FROM 'deleted';
+staging stops filtering deleted rows	fixture_staging_liveness	CREATE OR REPLACE MACRO staging(tbl) AS TABLE SELECT * EXCLUDE (status, created_at, updated_at) FROM blanks_null(tbl);
+staging stops dropping bookkeeping columns	fixture_staging_excludes_bookkeeping	CREATE OR REPLACE MACRO staging(tbl) AS TABLE SELECT * FROM blanks_null(tbl) WHERE status IS DISTINCT FROM 'deleted';
 blanks_null stops folding empty strings	fixture_blanks_null	CREATE OR REPLACE MACRO blanks_null(tbl) AS TABLE SELECT * FROM query_table(tbl);
 json_scalar_text stops guarding object and array shapes	fixture_json_scalar_text	CREATE OR REPLACE MACRO json_scalar_text(v) AS NULLIF(json_extract_string(v, '$'), '');
-entity view republishes a bookkeeping column	entity_view_leaks_bookkeeping	CREATE OR REPLACE VIEW cabinets AS SELECT *, NULL::VARCHAR AS status FROM live('fc.catalog_cabinet');
-entity view bypasses live()	entity_view_not_live_filtered	CREATE OR REPLACE VIEW cabinets AS SELECT * EXCLUDE (status, created_at, updated_at) FROM fc.catalog_cabinet WHERE status IS DISTINCT FROM 'deleted';
-base view gains an outgoing edge	base_view_not_flat	CREATE OR REPLACE VIEW _live_title AS SELECT t.* FROM live('fc.catalog_title') t LEFT JOIN fc.catalog_franchise f ON f.id = t.franchise_id;
+entity view republishes a bookkeeping column	entity_view_leaks_bookkeeping	CREATE OR REPLACE VIEW cabinets AS SELECT *, NULL::VARCHAR AS status FROM staging('fc.catalog_cabinet');
+entity view bypasses staging()	entity_view_not_live_filtered	CREATE OR REPLACE VIEW cabinets AS SELECT * EXCLUDE (status, created_at, updated_at) FROM fc.catalog_cabinet WHERE status IS DISTINCT FROM 'deleted';
+staging view gains an outgoing edge	staging_view_not_flat	CREATE OR REPLACE VIEW _stg_title AS SELECT t.* FROM staging('fc.catalog_title') t LEFT JOIN fc.catalog_franchise f ON f.id = t.franchise_id;
 reference source unresolved	reference_source_unresolved	CREATE TABLE _m AS SELECT * FROM record_references; CREATE OR REPLACE VIEW record_references AS SELECT * REPLACE (NULL::VARCHAR AS source_public_id) FROM _m;
 reference target undecoded	reference_target_undecoded	CREATE TABLE _m AS SELECT * FROM record_references; CREATE OR REPLACE VIEW record_references AS SELECT * REPLACE (NULL::VARCHAR AS target_public_id) FROM _m;

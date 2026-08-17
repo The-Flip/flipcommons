@@ -125,10 +125,10 @@ def test_every_markdown_field_gets_a_prose_branch(output: str) -> None:
     for cls in _prose_models():
         for field in get_markdown_fields(cls):
             assert f"'{field}'" in prose_block, f"{cls.__name__}.{field}"
-        assert f"live('fc.{cls._meta.db_table}')" in prose_block, cls.__name__
+        assert f"staging('fc.{cls._meta.db_table}')" in prose_block, cls.__name__
 
 
-def test_prose_branches_read_through_live(output: str) -> None:
+def test_prose_branches_read_through_staging(output: str) -> None:
     """The liveness rule stays spelled once, in the macro — never inlined here."""
     assert "IS DISTINCT FROM 'deleted'" not in output
     prose_block = _view_block(output, "entity_prose")
@@ -136,7 +136,7 @@ def test_prose_branches_read_through_live(output: str) -> None:
 
 
 def test_an_entity_with_prose_but_no_lifecycle_fails_codegen() -> None:
-    """``live()`` selects ``status`` away, so such a branch would fail to bind."""
+    """``staging()`` selects ``status`` away, so such a branch would fail to bind."""
     with pytest.raises(CommandError, match="LifecycleStatusModel"):
         _require_lifecycle(Claim)
 
