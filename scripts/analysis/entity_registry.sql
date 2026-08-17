@@ -34,7 +34,7 @@ CREATE OR REPLACE VIEW entity_registry AS
     ('title'                   , 'titles'                   , 'catalog.title'                  , 'catalog_title'                  , 'slug'         , true )
   ) AS t(entity_type, entity_type_plural, django_label, db_table, public_id_field, is_wikilinkable);
 COMMENT ON VIEW entity_registry IS
-  'One row per catalog entity type — the entity_type this layer speaks and its plural, and the content-type label, table name and public id field the physical schema speaks. is_wikilinkable says whether prose may link it at all (Location cannot). Join it to fc.django_content_type to decode a polymorphic reference; entity_type_of(table) spells a single one.';
+  'One row per catalog entity type — the entity_type this layer speaks and its plural, and the content-type label, table name and public id field the physical schema speaks. is_wikilinkable says whether prose may link it at all (Location cannot). Join it to fc.django_content_type to decode a polymorphic reference; _entity_type_of(table) spells a single one.';
 
 -- entity_subjects — the polymorphic-reference resolver. `subject_public_id`
 -- is NOT a slug: it is whatever the model declares as `public_id_field`,
@@ -84,31 +84,31 @@ COMMENT ON VIEW entity_subjects IS
 --
 -- LIVE-FILTERED, unlike entity_subjects: a soft-deleted record's prose is not
 -- catalog content, and no consumer resolving a reference reads it. Reading
--- through staging() also folds '' to NULL, so an unset field is NULL whichever
+-- through _staging() also folds '' to NULL, so an unset field is NULL whichever
 -- spelling Django stored.
 CREATE OR REPLACE VIEW entity_prose AS
   SELECT * FROM (
-              SELECT 'cabinet'                  AS entity_type, id, slug AS public_id, 'description' AS field, description AS text FROM staging('fc.catalog_cabinet')
-    UNION ALL SELECT 'corporate-entity'        , id, slug, 'description', description FROM staging('fc.catalog_corporateentity')
-    UNION ALL SELECT 'credit-role'             , id, slug, 'description', description FROM staging('fc.catalog_creditrole')
-    UNION ALL SELECT 'display-subtype'         , id, slug, 'description', description FROM staging('fc.catalog_displaysubtype')
-    UNION ALL SELECT 'display-type'            , id, slug, 'description', description FROM staging('fc.catalog_displaytype')
-    UNION ALL SELECT 'franchise'               , id, slug, 'description', description FROM staging('fc.catalog_franchise')
-    UNION ALL SELECT 'game-format'             , id, slug, 'description', description FROM staging('fc.catalog_gameformat')
-    UNION ALL SELECT 'gameplay-feature'        , id, slug, 'description', description FROM staging('fc.catalog_gameplayfeature')
-    UNION ALL SELECT 'location'                , id, location_path, 'description', description FROM staging('fc.catalog_location')
-    UNION ALL SELECT 'manufacturer'            , id, slug, 'description', description FROM staging('fc.catalog_manufacturer')
-    UNION ALL SELECT 'model'                   , id, slug, 'description', description FROM staging('fc.catalog_machinemodel')
-    UNION ALL SELECT 'person'                  , id, slug, 'description', description FROM staging('fc.catalog_person')
-    UNION ALL SELECT 'production-status'       , id, slug, 'description', description FROM staging('fc.catalog_productionstatus')
-    UNION ALL SELECT 'reward-type'             , id, slug, 'description', description FROM staging('fc.catalog_rewardtype')
-    UNION ALL SELECT 'series'                  , id, slug, 'description', description FROM staging('fc.catalog_series')
-    UNION ALL SELECT 'system'                  , id, slug, 'description', description FROM staging('fc.catalog_system')
-    UNION ALL SELECT 'tag'                     , id, slug, 'description', description FROM staging('fc.catalog_tag')
-    UNION ALL SELECT 'technology-generation'   , id, slug, 'description', description FROM staging('fc.catalog_technologygeneration')
-    UNION ALL SELECT 'technology-subgeneration', id, slug, 'description', description FROM staging('fc.catalog_technologysubgeneration')
-    UNION ALL SELECT 'theme'                   , id, slug, 'description', description FROM staging('fc.catalog_theme')
-    UNION ALL SELECT 'title'                   , id, slug, 'description', description FROM staging('fc.catalog_title')
+              SELECT 'cabinet'                  AS entity_type, id, slug AS public_id, 'description' AS field, description AS text FROM _staging('fc.catalog_cabinet')
+    UNION ALL SELECT 'corporate-entity'        , id, slug, 'description', description FROM _staging('fc.catalog_corporateentity')
+    UNION ALL SELECT 'credit-role'             , id, slug, 'description', description FROM _staging('fc.catalog_creditrole')
+    UNION ALL SELECT 'display-subtype'         , id, slug, 'description', description FROM _staging('fc.catalog_displaysubtype')
+    UNION ALL SELECT 'display-type'            , id, slug, 'description', description FROM _staging('fc.catalog_displaytype')
+    UNION ALL SELECT 'franchise'               , id, slug, 'description', description FROM _staging('fc.catalog_franchise')
+    UNION ALL SELECT 'game-format'             , id, slug, 'description', description FROM _staging('fc.catalog_gameformat')
+    UNION ALL SELECT 'gameplay-feature'        , id, slug, 'description', description FROM _staging('fc.catalog_gameplayfeature')
+    UNION ALL SELECT 'location'                , id, location_path, 'description', description FROM _staging('fc.catalog_location')
+    UNION ALL SELECT 'manufacturer'            , id, slug, 'description', description FROM _staging('fc.catalog_manufacturer')
+    UNION ALL SELECT 'model'                   , id, slug, 'description', description FROM _staging('fc.catalog_machinemodel')
+    UNION ALL SELECT 'person'                  , id, slug, 'description', description FROM _staging('fc.catalog_person')
+    UNION ALL SELECT 'production-status'       , id, slug, 'description', description FROM _staging('fc.catalog_productionstatus')
+    UNION ALL SELECT 'reward-type'             , id, slug, 'description', description FROM _staging('fc.catalog_rewardtype')
+    UNION ALL SELECT 'series'                  , id, slug, 'description', description FROM _staging('fc.catalog_series')
+    UNION ALL SELECT 'system'                  , id, slug, 'description', description FROM _staging('fc.catalog_system')
+    UNION ALL SELECT 'tag'                     , id, slug, 'description', description FROM _staging('fc.catalog_tag')
+    UNION ALL SELECT 'technology-generation'   , id, slug, 'description', description FROM _staging('fc.catalog_technologygeneration')
+    UNION ALL SELECT 'technology-subgeneration', id, slug, 'description', description FROM _staging('fc.catalog_technologysubgeneration')
+    UNION ALL SELECT 'theme'                   , id, slug, 'description', description FROM _staging('fc.catalog_theme')
+    UNION ALL SELECT 'title'                   , id, slug, 'description', description FROM _staging('fc.catalog_title')
   ) AS t(entity_type, entity_id, public_id, field, text);
 COMMENT ON VIEW entity_prose IS
   'One row per LIVE entity per markdown field, of ANY entity type — the authored-prose corpus. For questions that SPAN entity types; a question about one type reads that entity view, which carries description already. text IS NULL where the field is unset, and every MarkdownField is a row, so predicate on `field` rather than assuming description.';

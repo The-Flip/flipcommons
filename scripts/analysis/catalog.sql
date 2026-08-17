@@ -3,7 +3,7 @@
 -- README.md to do analysis; EDITING.md to change this file.
 --
 -- Conventions:
---   * `_underscore` = private helper.
+--   * `_underscore` = private, do not use to do analysis.
 --   * Views omit soft-deleted records (RecordLifecycle.md); live means
 --     `status IS DISTINCT FROM 'deleted'`, matching the read APIs.
 --   * A dim or edge target is soft-deleted independently of its subject, so a dead one
@@ -20,60 +20,61 @@ CREATE OR REPLACE MACRO is_live(status) AS status IS DISTINCT FROM 'deleted';
 COMMENT ON MACRO is_live IS
   'is_live(status) — the liveness rule as a scalar, for a view that carries a status column instead of being live-filtered. Never retype the predicate.';
 
--- ═══ STAGING LAYER — the live rows of a table, and nothing else ═════════════
--- One `_stg_x` view per lifecycle table that more than one view reads. No joins, no derived
--- columns, no measures, so nothing here has an outgoing edge and no cycle can run through
--- it. An entity view carries measures over the models beneath it (`titles.n_models`), so
+-- ═══ STAGING LAYER — the live rows of a table ═════════════
+-- These private views drop soft-deleted rows and bookkeeping columns, spell absence one way.
+-- One `_stg_x` view per lifecycle table. No joins, no derived columns, no measures, so
+-- nothing here has an outgoing edge and no cycle can run through it.
+-- An entity view carries measures over the models beneath it (`titles.n_models`), so
 -- reaching through one for a neighbour's slug drags its aggregate along — `models` joining
 -- `titles` would close a loop. Hence the rule: join the STAGING view to decode an
 -- identity, the ENTITY view to read a measure.
--- A table read from ONE place gets none — `cabinets` IS `staging('fc.catalog_cabinet')`.
+-- A table read from ONE place gets none — `cabinets` IS `_staging('fc.catalog_cabinet')`.
 
 -- The `::VARCHAR` cast is inside the comparison, not around the value, so this is safe to
 -- apply to every column at once: `NULLIF(COLUMNS(*), '')` fails with a conversion error on
 -- the first integer, while CASE returns the column untouched and preserves its type.
 -- Apply BY NAME, never by testing whether a table has the columns for it: '' is a real
 -- value in citation_citationsourcerootdomain.path_prefix, where it means "whole host".
-CREATE OR REPLACE MACRO blanks_null(tbl) AS TABLE
+CREATE OR REPLACE MACRO _blanks_null(tbl) AS TABLE
   SELECT CASE WHEN COLUMNS(*)::VARCHAR = '' THEN NULL ELSE COLUMNS(*) END
   FROM query_table(tbl);
-COMMENT ON MACRO TABLE blanks_null IS
-  'blanks_null(''fc.x'') — every column of a table with '''' folded to NULL, types preserved. The source read for a table with no lifecycle; staging() already includes it.';
+COMMENT ON MACRO TABLE _blanks_null IS
+  '_blanks_null(''fc.x'') — every column of a table with '''' folded to NULL, types preserved. The source read for a table with no lifecycle; _staging() already includes it.';
 
 -- A claim value is a JSONField, so `"500"` and `500` are different values and both are in
 -- the data: of the 73 claims asserting production_quantity 500, `value = '500'` finds one.
 -- The OBJECT/ARRAY guard: json_extract_string serializes a member payload back to
 -- `{"exists":true,…}`, which would read as a scalar on rows that have none.
-CREATE OR REPLACE MACRO json_scalar_text(v) AS
+CREATE OR REPLACE MACRO _json_scalar_text(v) AS
   CASE WHEN json_type(v) NOT IN ('OBJECT', 'ARRAY')
        THEN NULLIF(json_extract_string(v, '$'), '')
   END;
-COMMENT ON MACRO json_scalar_text IS
-  'json_scalar_text(value) — a JSON scalar as text, with "500" and 500 folded to the same value and '''' folded to NULL. NULL for an object or array, which have no scalar to report.';
+COMMENT ON MACRO _json_scalar_text IS
+  '_json_scalar_text(value) — a JSON scalar as text, with "500" and 500 folded to the same value and '''' folded to NULL. NULL for an object or array, which have no scalar to report.';
 
--- staging('fc.catalog_x') is how analytics reads source tables.
+-- _staging('fc.catalog_x') is how analytics reads source tables.
 -- Drops soft-deleted rows and bookkeeping columns, spells absence one way.
 --
 -- Use it for the SOURCE read only — joins through the joined entity's own view.
 -- Fails loudly (Binder Error on `status`) against a table with no lifecycle.
-CREATE OR REPLACE MACRO staging(tbl) AS TABLE
+CREATE OR REPLACE MACRO _staging(tbl) AS TABLE
   SELECT * EXCLUDE (status, created_at, updated_at)
-  FROM blanks_null(tbl)
+  FROM _blanks_null(tbl)
   WHERE is_live(status);
-COMMENT ON MACRO TABLE staging IS
-  'staging(''fc.catalog_x'') — the live rows of a lifecycle table minus status/created_at/updated_at, with '''' folded to NULL. The source read for every entity view; joins use the joined entity''s view instead.';
+COMMENT ON MACRO TABLE _staging IS
+  '_staging(''fc.catalog_x'') — the live rows of a lifecycle table minus status/created_at/updated_at, with '''' folded to NULL. The source read for every entity view; joins use the joined entity''s view instead.';
 
-CREATE OR REPLACE VIEW _stg_machine_model     AS SELECT * FROM staging('fc.catalog_machinemodel');
-CREATE OR REPLACE VIEW _stg_title             AS SELECT * FROM staging('fc.catalog_title');
-CREATE OR REPLACE VIEW _stg_corporate_entity  AS SELECT * FROM staging('fc.catalog_corporateentity');
-CREATE OR REPLACE VIEW _stg_manufacturer      AS SELECT * FROM staging('fc.catalog_manufacturer');
-CREATE OR REPLACE VIEW _stg_reward_type       AS SELECT * FROM staging('fc.catalog_rewardtype');
-CREATE OR REPLACE VIEW _stg_series            AS SELECT * FROM staging('fc.catalog_series');
-CREATE OR REPLACE VIEW _stg_person            AS SELECT * FROM staging('fc.catalog_person');
-CREATE OR REPLACE VIEW _stg_credit_role       AS SELECT * FROM staging('fc.catalog_creditrole');
-CREATE OR REPLACE VIEW _stg_tag               AS SELECT * FROM staging('fc.catalog_tag');
-CREATE OR REPLACE VIEW _stg_theme             AS SELECT * FROM staging('fc.catalog_theme');
-CREATE OR REPLACE VIEW _stg_gameplay_feature  AS SELECT * FROM staging('fc.catalog_gameplayfeature');
+CREATE OR REPLACE VIEW _stg_machine_model     AS SELECT * FROM _staging('fc.catalog_machinemodel');
+CREATE OR REPLACE VIEW _stg_title             AS SELECT * FROM _staging('fc.catalog_title');
+CREATE OR REPLACE VIEW _stg_corporate_entity  AS SELECT * FROM _staging('fc.catalog_corporateentity');
+CREATE OR REPLACE VIEW _stg_manufacturer      AS SELECT * FROM _staging('fc.catalog_manufacturer');
+CREATE OR REPLACE VIEW _stg_reward_type       AS SELECT * FROM _staging('fc.catalog_rewardtype');
+CREATE OR REPLACE VIEW _stg_series            AS SELECT * FROM _staging('fc.catalog_series');
+CREATE OR REPLACE VIEW _stg_person            AS SELECT * FROM _staging('fc.catalog_person');
+CREATE OR REPLACE VIEW _stg_credit_role       AS SELECT * FROM _staging('fc.catalog_creditrole');
+CREATE OR REPLACE VIEW _stg_tag               AS SELECT * FROM _staging('fc.catalog_tag');
+CREATE OR REPLACE VIEW _stg_theme             AS SELECT * FROM _staging('fc.catalog_theme');
+CREATE OR REPLACE VIEW _stg_gameplay_feature  AS SELECT * FROM _staging('fc.catalog_gameplayfeature');
 
 -- ═══ ENTITY VOCABULARY — what this layer calls each kind of thing ═══════════
 -- entity_registry (entity_type ↔ content-type label ↔ table), entity_subjects (the
@@ -84,10 +85,10 @@ CREATE OR REPLACE VIEW _stg_gameplay_feature  AS SELECT * FROM staging('fc.catal
 
 -- Key on the physical table, not the public spelling: a view emitting a subject type has
 -- already joined that table, while the spelling can move under it.
-CREATE OR REPLACE MACRO entity_type_of(physical_table) AS
+CREATE OR REPLACE MACRO _entity_type_of(physical_table) AS
   (SELECT entity_type FROM entity_registry WHERE db_table = physical_table);
-COMMENT ON MACRO entity_type_of IS
-  'entity_type_of(''catalog_series'') — the subject type a view should emit for rows of that physical table, read from entity_registry rather than spelled as a literal. NULL if the table is not an entity.';
+COMMENT ON MACRO _entity_type_of IS
+  '_entity_type_of(''catalog_series'') — the subject type a view should emit for rows of that physical table, read from entity_registry rather than spelled as a literal. NULL if the table is not an entity.';
 
 -- ═══ NAME NORMALIZATION — comparing names across records ════════════════════
 -- The key for comparing a catalog name against another record's — a source's game title,
@@ -133,7 +134,7 @@ CREATE OR REPLACE VIEW locations AS
     l.*,
     split_part(l.location_path, '/', 1)      AS country_slug,
     l.parent_id IS NULL                      AS is_country
-  FROM staging('fc.catalog_location') l;
+  FROM _staging('fc.catalog_location') l;
 COMMENT ON VIEW locations IS
   'One row per live Location at EVERY level — THE entity; a country is just a row with is_country. Join on location_path, never slug: slug is unique only within a parent.';
 
@@ -169,7 +170,7 @@ COMMENT ON VIEW location_aliases IS
   'One row per alias of a live Location at any level — alias GRAIN, keyed on location_path because Location.slug is unique only within a parent. Filter is_country for countries.';
 
 -- game_formats — the machine-genre vocabulary.
-CREATE OR REPLACE VIEW game_formats AS SELECT * FROM staging('fc.catalog_gameformat');
+CREATE OR REPLACE VIEW game_formats AS SELECT * FROM _staging('fc.catalog_gameformat');
 COMMENT ON VIEW game_formats IS
   'One row per live game format — the machine-genre vocabulary';
 
@@ -177,7 +178,7 @@ COMMENT ON VIEW game_formats IS
 -- One view per taxonomy dim, for questions about the VOCABULARY itself — `models` carries
 -- only the slug, which is all a model row needs to predicate and group on.
 -- Uniform shape: id, slug, name, description, plus the decoded parent where the dim has one.
-CREATE OR REPLACE VIEW technology_generations AS SELECT * FROM staging('fc.catalog_technologygeneration');
+CREATE OR REPLACE VIEW technology_generations AS SELECT * FROM _staging('fc.catalog_technologygeneration');
 COMMENT ON VIEW technology_generations IS
   'One row per live technology generation — the major-era vocabulary (Electromechanical, Solid State).';
 
@@ -185,12 +186,12 @@ CREATE OR REPLACE VIEW technology_subgenerations AS
   SELECT
     tsg.*,
     tg.slug AS technology_generation_slug
-  FROM staging('fc.catalog_technologysubgeneration') tsg
+  FROM _staging('fc.catalog_technologysubgeneration') tsg
   LEFT JOIN technology_generations tg ON tg.id = tsg.technology_generation_id;
 COMMENT ON VIEW technology_subgenerations IS
   'One row per live technology subgeneration — the subdivision vocabulary, carrying its parent generation decoded to a slug.';
 
-CREATE OR REPLACE VIEW display_types AS SELECT * FROM staging('fc.catalog_displaytype');
+CREATE OR REPLACE VIEW display_types AS SELECT * FROM _staging('fc.catalog_displaytype');
 COMMENT ON VIEW display_types IS
   'One row per live display type — the display-technology vocabulary (Score Reels, DMD, LCD).';
 
@@ -198,7 +199,7 @@ CREATE OR REPLACE VIEW display_subtypes AS
   SELECT
     dst.*,
     dt.slug AS display_type_slug
-  FROM staging('fc.catalog_displaysubtype') dst
+  FROM _staging('fc.catalog_displaysubtype') dst
   LEFT JOIN display_types dt ON dt.id = dst.display_type_id;
 COMMENT ON VIEW display_subtypes IS
   'One row per live display subtype — the subdivision vocabulary, carrying its parent display type decoded to a slug.';
@@ -210,19 +211,19 @@ CREATE OR REPLACE VIEW systems AS
     s.*,
     mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     tsg.slug AS technology_subgeneration_slug
-  FROM staging('fc.catalog_system') s
+  FROM _staging('fc.catalog_system') s
   LEFT JOIN _stg_manufacturer mf ON mf.id = s.manufacturer_id
   LEFT JOIN technology_subgenerations tsg ON tsg.id = s.technology_subgeneration_id
 ;
 COMMENT ON VIEW systems IS
   'One row per live system — the hardware-generation vocabulary (WPC-95, SAM, SPIKE) with its manufacturer and technology subgeneration decoded.';
 
-CREATE OR REPLACE VIEW cabinets AS SELECT * FROM staging('fc.catalog_cabinet');
+CREATE OR REPLACE VIEW cabinets AS SELECT * FROM _staging('fc.catalog_cabinet');
 COMMENT ON VIEW cabinets IS
   'One row per live cabinet — the form-factor vocabulary (floor, countertop, cocktail).';
 
 -- production_statuses is the ProductionStatus vocabulary, NOT soft-delete status
-CREATE OR REPLACE VIEW production_statuses AS SELECT * FROM staging('fc.catalog_productionstatus');
+CREATE OR REPLACE VIEW production_statuses AS SELECT * FROM _staging('fc.catalog_productionstatus');
 COMMENT ON VIEW production_statuses IS
   'One row per live production status — the commercial-production vocabulary (produced, announced, one-off).';
 
@@ -939,13 +940,13 @@ COMMENT ON VIEW model_edges_bidir IS
 -- groupings EXIST and which are used by nothing. Both flat and both curator-maintained, so
 -- `n_titles = 0` is the interesting row rather than a defect — a grouping someone created
 -- and never attached, invisible from `titles` alone.
--- The Title side stays a staging() read: `titles` decodes franchise and series onto each
+-- The Title side stays a _staging() read: `titles` decodes franchise and series onto each
 -- Title, so composing it here would close a cycle. Hence also the position ahead of
 -- `titles` — views bind at CREATE.
 CREATE OR REPLACE VIEW franchises AS
   SELECT f.*,
          count(t.id) AS n_titles
-  FROM staging('fc.catalog_franchise') f
+  FROM _staging('fc.catalog_franchise') f
   LEFT JOIN _stg_title t ON t.franchise_id = f.id
   GROUP BY ALL;
 COMMENT ON VIEW franchises IS
@@ -1030,8 +1031,8 @@ CREATE OR REPLACE VIEW credits AS
     c.id                                        AS credit_id,
     -- Every subject_* column reads off the SAME joined row, never the raw FK columns, so
     -- they cannot end up describing two different subjects.
-    CASE WHEN m.id IS NOT NULL THEN entity_type_of('catalog_machinemodel')
-         ELSE entity_type_of('catalog_series') END AS subject_type,
+    CASE WHEN m.id IS NOT NULL THEN _entity_type_of('catalog_machinemodel')
+         ELSE _entity_type_of('catalog_series') END AS subject_type,
     COALESCE(m.id,   s.id)                      AS subject_id,
     COALESCE(m.slug, s.slug)                    AS subject_slug,
     COALESCE(m.name, s.name)                    AS subject_name,

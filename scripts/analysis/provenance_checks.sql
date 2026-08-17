@@ -29,7 +29,7 @@
 -- Check-only scaffolding, because no public view carries both halves a vocabulary check
 -- needs. `claims` holds the raw value but names only changesets that WROTE a claim, so
 -- the retraction-only ones are outside it entirely — the population `changesets` exists
--- to reach. `changesets` is that complete grain but reads through blanks_null, which
+-- to reach. `changesets` is that complete grain but reads through _blanks_null, which
 -- folds a stored '' onto the NULL that legitimately marks an ingest changeset, making
 -- the defect indistinguishable from the healthy shape.
 -- A VIEW and not a read of `fc`, so check-mutations can break it: `fc` is attached
@@ -362,7 +362,7 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   -- EACH ONE TESTS FOR ABSENCE SEPARATELY, because the two ways an enum goes wrong are
   -- different defects and only one of them is loud. `v NOT IN (…)` is NULL on a NULL v
   -- and a NULL predicate selects nothing, so an enum arriving blank passes the very
-  -- check written to police it. Three of these views read through blanks_null, which
+  -- check written to police it. Three of these views read through _blanks_null, which
   -- turns a '' in the table into exactly that NULL — and none of these columns has a
   -- CHECK constraint behind it, since `choices` is enforced by full_clean() alone.
   -- A closed enum has no absent state: the five below are NOT NULL with a default, so a

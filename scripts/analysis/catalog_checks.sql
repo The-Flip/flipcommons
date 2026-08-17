@@ -224,7 +224,7 @@ CREATE OR REPLACE VIEW _entity_view AS
 
 -- ─── Fixtures — behaviour against input we control ──────────────────────────
 -- Every other assertion in this file is a query over the real catalog, so its strength
--- depends on what the data happens to hold. That is how a `staging()` smoke check keyed to a
+-- depends on what the data happens to hold. That is how a `_staging()` smoke check keyed to a
 -- vocabulary with no deleted rows passed while proving nothing. These tables supply the
 -- cases instead of hoping for them.
 -- The schema is taken from the real table with LIMIT 0, so a fixture cannot drift from
@@ -235,7 +235,7 @@ VALUES (1, 'live-null-status', 'A', '',    0, NULL,      '2020-01-01', '2020-01-
        (2, 'live-active',      'B', 'has', 1, 'active',  '2020-01-01', '2020-01-01'),
        (3, 'soft-deleted',     'C', 'has', 2, 'deleted', '2020-01-01', '2020-01-01');
 
--- _fx_claim_value — the JSON shapes a claim value comes in, for json_scalar_text.
+-- _fx_claim_value — the JSON shapes a claim value comes in, for _json_scalar_text.
 CREATE OR REPLACE TABLE _fx_claim_value AS
   SELECT id, value FROM fc.provenance_claim LIMIT 0;
 INSERT INTO _fx_claim_value (id, value)
@@ -680,37 +680,37 @@ CREATE OR REPLACE VIEW foundation_checks AS
            || ' n=' || count(*)::VARCHAR
   FROM model_lineage GROUP BY model_id, edge_kind HAVING count(*) > 1
 
-  -- ── staging() and blanks_null(), proven against fixture input ──
+  -- ── _staging() and _blanks_null(), proven against fixture input ──
   -- Data-independent: these assert the three halves of the contract on rows that exist
   -- because we put them there, so none of it rides on the catalog happening to contain a
   -- soft-deleted cabinet or a blank description.
   UNION ALL
   SELECT 'fixture_staging_liveness',
          'expected ids 1,2 — got ' || coalesce((SELECT string_agg(id::VARCHAR, ',' ORDER BY id)
-                                                FROM staging('_fx_lifecycle')), '<none>')
-  WHERE (SELECT string_agg(id::VARCHAR, ',' ORDER BY id) FROM staging('_fx_lifecycle'))
+                                                FROM _staging('_fx_lifecycle')), '<none>')
+  WHERE (SELECT string_agg(id::VARCHAR, ',' ORDER BY id) FROM _staging('_fx_lifecycle'))
         IS DISTINCT FROM '1,2'
 
   UNION ALL
   SELECT 'fixture_staging_excludes_bookkeeping', column_name
-  FROM (DESCRIBE SELECT * FROM staging('_fx_lifecycle'))
+  FROM (DESCRIBE SELECT * FROM _staging('_fx_lifecycle'))
   WHERE column_name IN ('status', 'created_at', 'updated_at')
 
-  -- blanks_null folds '' to NULL and leaves a real value alone. Asserted through staging(),
+  -- _blanks_null folds '' to NULL and leaves a real value alone. Asserted through _staging(),
   -- which composes it, so the composition is covered too.
   UNION ALL
   SELECT 'fixture_blanks_null',
-         'id1=' || coalesce((SELECT description FROM staging('_fx_lifecycle') WHERE id = 1), '<NULL>')
-      || ' id2=' || coalesce((SELECT description FROM staging('_fx_lifecycle') WHERE id = 2), '<NULL>')
-  WHERE (SELECT description FROM staging('_fx_lifecycle') WHERE id = 1) IS NOT NULL
-     OR (SELECT description FROM staging('_fx_lifecycle') WHERE id = 2) IS DISTINCT FROM 'has'
+         'id1=' || coalesce((SELECT description FROM _staging('_fx_lifecycle') WHERE id = 1), '<NULL>')
+      || ' id2=' || coalesce((SELECT description FROM _staging('_fx_lifecycle') WHERE id = 2), '<NULL>')
+  WHERE (SELECT description FROM _staging('_fx_lifecycle') WHERE id = 1) IS NOT NULL
+     OR (SELECT description FROM _staging('_fx_lifecycle') WHERE id = 2) IS DISTINCT FROM 'has'
 
   -- One expected-vs-actual string, so a regression names what it produced.
   UNION ALL
   SELECT 'fixture_json_scalar_text',
-         (SELECT string_agg(coalesce(json_scalar_text(value), '<NULL>'), ',' ORDER BY id)
+         (SELECT string_agg(coalesce(_json_scalar_text(value), '<NULL>'), ',' ORDER BY id)
           FROM _fx_claim_value)
-  WHERE (SELECT string_agg(coalesce(json_scalar_text(value), '<NULL>'), ',' ORDER BY id)
+  WHERE (SELECT string_agg(coalesce(_json_scalar_text(value), '<NULL>'), ',' ORDER BY id)
          FROM _fx_claim_value)
         IS DISTINCT FROM '500,500,<NULL>,<NULL>,<NULL>,<NULL>'
 
@@ -731,7 +731,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
     -- the derived set, so provenance entities fall out structurally.
     AND e.entity_table IN (SELECT table_name FROM _entity_table)
 
-  -- Every entity view over a LIFECYCLE table reaches its rows through staging(), directly or
+  -- Every entity view over a LIFECYCLE table reaches its rows through _staging(), directly or
   -- through a _stg_* leaf that does. Keyed on the source table carrying `status`, so
   -- provenance entities fall out structurally rather than by exemption.
   UNION ALL
@@ -740,12 +740,12 @@ CREATE OR REPLACE VIEW foundation_checks AS
   JOIN duckdb_views() v ON v.view_name = e.view_name AND v.database_name = 'memory'
   WHERE e.entity_table IN (SELECT table_name FROM _entity_table)
     -- A TEXT match, with the limit that implies: it catches a view that forgot to filter,
-    -- not one that mentions staging() or a _stg_* leaf without reading through it. Naming
+    -- not one that mentions _staging() or a _stg_* leaf without reading through it. Naming
     -- the leaves instead of wildcarding does not change that — a bypass smuggling the token
     -- through a no-op subquery passes either way. An exact check is not available:
-    -- query_table() takes literals only, so "compare each view against staging() of its
+    -- query_table() takes literals only, so "compare each view against _staging() of its
     -- source" cannot be written once over the entity set.
-    AND v.sql NOT LIKE '%staging(%'
+    AND v.sql NOT LIKE '%_staging(%'
     AND v.sql NOT LIKE '%_stg_%'
 
   -- The staging layer's one property: a `_stg_*` view is a bare read of a single table. No

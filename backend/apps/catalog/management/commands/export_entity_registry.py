@@ -113,7 +113,7 @@ def _registry_view(rows: list[EntityRow]) -> list[str]:
         " plural, and the content-type label, table name and public id field the"
         " physical schema speaks. is_wikilinkable says whether prose may link it at all"
         " (Location cannot). Join it to fc.django_content_type to decode a polymorphic"
-        " reference; entity_type_of(table) spells a single one.';",
+        " reference; _entity_type_of(table) spells a single one.';",
     ]
     return lines
 
@@ -177,7 +177,7 @@ def _prose_view(rows: list[EntityRow]) -> list[str]:
             # S608: see _subjects_view. Interpolated parts are `_meta.db_table`,
             # `public_id_field` and MarkdownField names off the model class.
             f"    {lead}SELECT {head}, id, {pid}, {col}, {text}"  # noqa: S608
-            f" FROM staging('fc.{r.db_table}')"
+            f" FROM _staging('fc.{r.db_table}')"
         )
     lines += [
         "  ) AS t(entity_type, entity_id, public_id, field, text);",
@@ -289,7 +289,7 @@ class Command(BaseCommand):
             if is_subject:
                 _require_columns(cls, {cls.public_id_field, "name"})
                 _require_lifecycle(cls)
-            # entity_prose reads through staging(), which selects `status` away, so a
+            # entity_prose reads through _staging(), which selects `status` away, so a
             # branch for a model without a lifecycle would fail to bind.
             if prose_fields:
                 _require_lifecycle(cls)
@@ -342,7 +342,7 @@ class Command(BaseCommand):
             "--",
             "-- LIVE-FILTERED, unlike entity_subjects: a soft-deleted record's prose is not",
             "-- catalog content, and no consumer resolving a reference reads it. Reading",
-            "-- through staging() also folds '' to NULL, so an unset field is NULL whichever",
+            "-- through _staging() also folds '' to NULL, so an unset field is NULL whichever",
             "-- spelling Django stored.",
             *_prose_view(rows),
             "",

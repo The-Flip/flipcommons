@@ -246,7 +246,7 @@ CREATE OR REPLACE VIEW claims AS
     p.register                                    AS register,
     p.is_member                                   AS is_member,
     c.value                                       AS value,
-    json_scalar_text(c.value)                     AS value_text,
+    _json_scalar_text(c.value)                     AS value_text,
     CASE WHEN p.is_member
          THEN coalesce(json_extract_string(c.value, '$.exists'), 'true') <> 'false'
     END                                           AS member_exists,
@@ -369,7 +369,7 @@ CREATE OR REPLACE VIEW ingest_sources AS
     count(c.claim_id)                                          AS n_claims,
     count(*) FILTER (c.is_active)                              AS n_active_claims,
     count(*) FILTER (c.rank = 1)                               AS n_top_ranked
-  FROM blanks_null('fc.provenance_source') s
+  FROM _blanks_null('fc.provenance_source') s
   JOIN _claim_actor a ON a.actor_id = s.actor_id
   LEFT JOIN claims c  ON c.actor_id = s.actor_id
   GROUP BY ALL;
@@ -398,7 +398,7 @@ CREATE OR REPLACE VIEW ingest_runs AS
     -- the reason to read them is a run whose status is not 'success'.
     ir.errors, ir.warnings,
     ir.note             AS note
-  FROM blanks_null('fc.provenance_ingestrun') ir
+  FROM _blanks_null('fc.provenance_ingestrun') ir
   LEFT JOIN fc.provenance_source s ON s.id = ir.source_id;
 COMMENT ON VIEW ingest_runs IS
   'One row per ingest run — patch_id, ingest source, status, fingerprint and the asserted/retracted/rejected claim counts. Reach for it when the subject is a patch rather than what the patch wrote.';
@@ -460,7 +460,7 @@ CREATE OR REPLACE VIEW changesets AS
     coalesce(r.n, 0)                  AS n_retracted,
     cs.note                           AS note,
     cs.created_at                     AS created_at
-  FROM blanks_null('fc.provenance_changeset') cs
+  FROM _blanks_null('fc.provenance_changeset') cs
   LEFT JOIN actors a                   ON a.actor_id = cs.actor_id
   LEFT JOIN fc.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
   LEFT JOIN wrote w                    ON w.changeset_id = cs.id
@@ -491,7 +491,7 @@ COMMENT ON VIEW changesets IS
 -- fire. Same reasoning as _ce_location_n and _dim_status in catalog.sql.
 CREATE OR REPLACE VIEW _citation_parent_chain AS
   SELECT c.id AS citation_source_id, c.parent_id, p.parent_id AS grandparent_id
-  FROM blanks_null('fc.citation_citationsource') c
+  FROM _blanks_null('fc.citation_citationsource') c
   LEFT JOIN fc.citation_citationsource p ON p.id = c.parent_id;
 
 CREATE OR REPLACE VIEW _citation_root_domains AS
@@ -550,8 +550,8 @@ CREATE OR REPLACE VIEW citation_sources AS
     -- issue-normalizing utility queries.
     c.slug                                    AS slug,
     coalesce(r.slug, c.slug)                  AS root_citation_source_slug
-  FROM blanks_null('fc.citation_citationsource') c
-  LEFT JOIN blanks_null('fc.citation_citationsource') r ON r.id = c.parent_id;
+  FROM _blanks_null('fc.citation_citationsource') c
+  LEFT JOIN _blanks_null('fc.citation_citationsource') r ON r.id = c.parent_id;
 COMMENT ON VIEW citation_sources IS
   'One row per CITATION SOURCE (external evidence), root and child alike, with its root resolved — a root resolves to itself. slug/root_citation_source_slug are the authored cite handles on slug-addressed (periodical) rows, null elsewhere. year/month/day is a precision ladder that dates the WORK on a root and the cited ITEM on a child. Not to be confused with ingest_sources (who asserted the fact).';
 
@@ -561,7 +561,7 @@ COMMENT ON VIEW citation_sources IS
 -- the root while displaying the child.
 --
 -- `quote` is the verbatim source text the citing claim rests on, NULL when none was
--- recorded. The physical column is NOT NULL and defaults to '', which `blanks_null`
+-- recorded. The physical column is NOT NULL and defaults to '', which `_blanks_null`
 -- folds — flippatch's print-citation campaign had to undo that by hand, and its comment
 -- records what it cost: without the fold, the majority shape never matched. It is here because the evidence question a consumer
 -- actually asks is "what did the source SAY", and answering it from `locator` alone is
@@ -592,7 +592,7 @@ CREATE OR REPLACE VIEW citation_instances AS
     s.root_citation_source_slug       AS root_citation_source_slug,
     s.citation_source_type            AS citation_source_type,
     ci.created_at                     AS created_at
-  FROM blanks_null('fc.provenance_citationinstance') ci
+  FROM _blanks_null('fc.provenance_citationinstance') ci
   JOIN citation_sources s ON s.citation_source_id = ci.citation_source_id;
 COMMENT ON VIEW citation_instances IS
   'One row per citation instance — a specific act of citing, with its locator (page, timestamp) and the verbatim quote it rests on, plus both the immediate and the ROOT citation source, including the root stable key/slug to filter on.';
