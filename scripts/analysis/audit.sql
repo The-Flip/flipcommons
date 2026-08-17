@@ -5,29 +5,21 @@
 --     scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_findings;"
 --     scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_since(240);"
 --
--- An ordinary analysis file: it reads the foundation and adds nothing to it.
---
 -- One view per rule, named `audit_<rule>`, each emitting the same five columns —
 -- severity, entity_type, entity_id, public_id, message — and `audit_findings` unions
--- them. To add a rule: write the view, add one line to the union. That is the whole
--- mechanism.
+-- them. Adding a rule is that view plus a line in the union and in `audit_summary`.
 --
--- Severity is per FINDING, not per rule: wrong-grain-link is an error when the linked
--- model is alone in its Title and a warning otherwise, so it is a CASE in the rule.
+-- Severity is per FINDING, not per rule, so a rule computes it per row.
 --
--- Findings are catalog defects and are NOT the health gate; `audit_checks` holds the
--- LAYER's own invariants and is. They are kept strictly apart because `analysis run` and
--- `--check` fail on a row from any `*_checks` view: fold a standing backlog of catalog
--- defects into that and it exits nonzero forever, at which point the gate has stopped
--- meaning anything. A healthy audit over an unhealthy catalog gates clean and prints its
--- findings, which is exactly what `scripts/analysis/audit` does.
+-- Catalog defects go in `audit_findings`; the layer's own invariants go in
+-- `audit_checks`. Only the second gates. `analysis run` and `--check` fail on a row from
+-- any `*_checks` view, so a standing backlog of catalog defects put there would exit
+-- nonzero forever and the gate would stop meaning anything.
 .read scripts/analysis/catalog.sql
 
 -- ─── self-link ─────────────────────────────────────────────────────────────
--- A record whose prose wikilinks itself. The reader is already on the record.
---
--- target_entity_type is NULL on a `[[cite:N]]` edge, and comparing anything to NULL
--- yields NULL rather than true, so those drop out of the WHERE unmentioned.
+-- A `[[cite:N]]` edge has a NULL target_entity_type, and comparing anything to NULL
+-- yields NULL rather than true, so cites drop out of the WHERE unmentioned.
 CREATE OR REPLACE VIEW audit_self_link AS
   SELECT 'error'            AS severity,
          source_entity_type AS entity_type,
@@ -40,19 +32,16 @@ COMMENT ON VIEW audit_self_link IS
   'ERROR — one row per live record whose prose wikilinks itself.';
 
 -- ─── wrong-grain-link ──────────────────────────────────────────────────────
--- Prose linking [[model:X]] when the reader almost certainly wants the Title. When X is
--- the only model of its Title the two are the same thing in the UI (SingleModelTitles.md)
--- and the model link is simply wrong — an error. When the Title holds several, linking one
--- of them can be deliberate, so it is a warning asking the author to confirm the grain.
+-- A model alone in its Title is the same thing as that Title in the UI
+-- (SingleModelTitles.md), so linking the model is simply wrong. With several models in
+-- the Title the choice can be deliberate, hence a warning rather than an error.
 CREATE OR REPLACE VIEW audit_wrong_grain_link AS
   SELECT CASE WHEN m.title_size = 1 THEN 'error' ELSE 'warning' END AS severity,
          r.source_entity_type AS entity_type,
          r.source_id          AS entity_id,
          r.source_public_id   AS public_id,
-         -- Named by SLUG, not by name. Two models of one Title can share a name (two
-         -- "Party Animal" rows, six "Card King"), so a message keyed on the name renders
-         -- two distinct findings identically and one of them looks like a duplicate.
-         -- The slug is also the form a data patch addresses a record by.
+         -- By slug: models of one Title can share a name, so a name would render two
+         -- distinct findings identically. It is also how a data patch addresses a record.
          CASE WHEN m.title_size = 1
               THEN format('links [[model:{}]], the only model of its Title — link [[title:{}]] instead',
                           m.slug, m.title_slug)
@@ -62,24 +51,18 @@ CREATE OR REPLACE VIEW audit_wrong_grain_link AS
   FROM record_references r
   JOIN models m ON m.id = r.target_id
   WHERE r.target_entity_type = 'model'
-    -- A Title naming its own models is the one source for which the model grain is
-    -- unambiguously deliberate — that is what a Title description is for — so it is
-    -- exempt rather than asked to confirm. It also removes a corner the advice could not
-    -- survive: for a single-model Title linking its own model, "link the Title instead"
-    -- names the source itself.
+    -- A Title naming its own models is the one place the model grain is unambiguously
+    -- deliberate. It is also the corner the advice cannot survive: for a single-model
+    -- Title, "link the Title instead" would name the source itself.
     AND NOT (r.source_entity_type = 'title' AND m.title_id = r.source_id);
 COMMENT ON VIEW audit_wrong_grain_link IS
   'ERROR when prose links a model alone in its Title (link the Title instead); WARNING when the Title holds several and the grain may be deliberate.';
 
 -- ─── linkless-description ──────────────────────────────────────────────────
--- Authored prose with no wikilink to any catalog record.
---
--- Franchise and production status are exempt by policy — they are allowed to stand alone.
---
--- GRAIN CAVEAT: record_references stores no field, so "has a link" is answered per RECORD
--- while this rule reports per FIELD. Every entity declares exactly one MarkdownField today,
--- which makes them the same question; a second one would mask an unlinked field behind a
--- linked sibling. Fixing that means the link graph carrying a field, not a change here.
+-- GRAIN: record_references stores no field, so "has a link" is answered per RECORD while
+-- this rule reports per FIELD. They are the same question only while an entity declares a
+-- single MarkdownField; a second one would mask an unlinked field behind a linked sibling.
+-- Closing that means the link graph carrying a field, not a change here.
 CREATE OR REPLACE VIEW audit_linkless_description AS
   SELECT 'error'      AS severity,
          p.entity_type,
@@ -92,27 +75,22 @@ CREATE OR REPLACE VIEW audit_linkless_description AS
     AND NOT EXISTS (
       SELECT 1 FROM record_references r
       WHERE r.source_entity_type = p.entity_type AND r.source_id = p.entity_id
-        -- A [[cite:N]] is a reference but not a link to a catalog record, and prose
-        -- carrying only citations is exactly as linkless as prose carrying none.
+        -- A [[cite:N]] is a reference but not a link to a catalog record, so prose
+        -- carrying only citations is as linkless as prose carrying none.
         AND r.target_entity_type IS NOT NULL);
 COMMENT ON VIEW audit_linkless_description IS
   'ERROR — one row per authored prose field with no wikilink to any catalog record. Franchise and production status are exempt.';
 
 -- ─── unlinked-mention ──────────────────────────────────────────────────────
--- Prose that names a catalog record without linking it.
+-- Precision is the hard part. The catalog is full of records named with ordinary English
+-- — Pinball, It, Flipper, Target — so an unrestricted match drowns in them. Requiring a
+-- capitalized multi-word span replaces a stopword list, which is also why spans keep their
+-- case and match through name_norm rather than name_key: name_key would fold away the one
+-- signal separating the game Pinball from the word pinball. The cost is sentence-initial
+-- mentions, which a warning can afford.
 --
--- The hard part is precision, not recall. Matching every span against every record name
--- returns ~15k hits, because the catalog is full of records named with ordinary English:
--- Pinball, It, Flipper, Contact, Target, Bingo. Requiring a span to be capitalized and at
--- least two words cuts that ~50x with no stopword list — which is why spans are normalized
--- WITHOUT lowercasing and matched through name_norm rather than name_key: name_key folds
--- away the only signal separating the game Pinball from the word pinball. The cost is
--- sentence-initial mentions, which a warning can afford.
---
--- Canonical names AND aliases, as one pool — prose writes "Cars" as readily as
--- "Automobiles". A string naming two records of one type is not filtered out here: it
--- renders as "N candidates" in the message, and audit_duplicate_name reports the
--- collision itself, which is usually the real defect behind it.
+-- A span naming several records is reported as "N candidates" rather than filtered out;
+-- the collision itself is duplicate-name's business.
 CREATE OR REPLACE VIEW audit_unlinked_mention AS
   WITH names AS (
               SELECT subject_type AS entity_type, subject_id AS entity_id,
@@ -121,18 +99,18 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
     UNION ALL SELECT entity_type, entity_id, alias FROM entity_aliases
   ),
   pool AS (
-    -- What prose could be asked to link. Location is URL-addressable but absent from the
-    -- wikilink picker, so `is_wikilinkable` keeps us from demanding an impossible edit.
+    -- Location is URL-addressable but absent from the wikilink picker, so
+    -- `is_wikilinkable` is what keeps the rule from demanding an impossible edit.
     SELECT s.subject_type AS target_type, s.subject_id AS target_id,
            s.subject_type || ':' || s.subject_public_id AS target_link,
            name_norm(n.name) AS match_key
     FROM entity_subjects s
     JOIN entity_registry r ON r.entity_type = s.subject_type
     JOIN names n ON n.entity_type = s.subject_type AND n.entity_id = s.subject_id
-    -- entity_subjects keeps retired subjects so a claim about one still resolves.
+    -- entity_subjects and entity_aliases are not live-filtered, so liveness is applied here.
     WHERE is_live(s.subject_status) AND n.name IS NOT NULL AND r.is_wikilinkable
   ),
-  -- Wikilink markup stripped first, so an already-linked name contributes no span at all.
+  -- Markup stripped first, so an already-linked name contributes no span at all.
   words AS (
     SELECT entity_type, entity_id, public_id, field,
            str_split(trim(regexp_replace(
@@ -140,9 +118,8 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
              '[^\p{L}\p{N}]+', ' ', 'g')), ' ') AS w
     FROM entity_prose WHERE text IS NOT NULL
   ),
-  -- 2 to 5 words: the floor is the precision hack above, the ceiling covers the 99th
-  -- percentile of catalog name length while bounding the span count. A longer name is
-  -- found by a shorter prefix or not at all.
+  -- The floor is the precision rule above; the ceiling bounds the span count, and a name
+  -- longer than it is found by a shorter prefix or not at all.
   spans AS (
     SELECT entity_type, entity_id, public_id, field,
            UNNEST(flatten([[array_to_string(w[i : i + n - 1], ' ')
@@ -157,13 +134,12 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
       [regexp_matches(x, '^[\p{Lu}\p{N}]') for x in str_split(span, ' ')], false)
   ),
   -- One row per (span, record that span could name), carrying the two ways a span can
-  -- already be accounted for. Computed per candidate but JUDGED per span, below.
+  -- already be accounted for. Computed per candidate, judged per span below.
   matched AS (
     SELECT c.entity_type, c.entity_id, c.public_id, c.field, c.span, p.target_link,
-           -- The span is the source's OWN name. Prose naming its own subject is not a
-           -- missing link, and the reader is already on the record.
+           -- Prose naming its own subject is not a missing link.
            (c.entity_type = p.target_type AND c.entity_id = p.target_id) AS is_self,
-           -- Linked ANYWHERE in this record's prose, not just at this span: one link
+           -- Linked anywhere in this record's prose, not only at this span: one link
            -- accounts for every mention of the same record.
            EXISTS (
              SELECT 1 FROM record_references r
@@ -177,10 +153,9 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
          entity_type,
          entity_id,
          public_id,
-         -- ONE aggregate over the composed link, never two over its halves: independent
-         -- aggregates may be satisfied from different rows, and "Star Wars" resolves to a
-         -- franchise, two models and three titles, so the halves could render a link that
-         -- does not exist. min() also holds still between runs, which a diffable report needs.
+         -- One aggregate over the composed link, never two over its halves: independent
+         -- aggregates can be satisfied from different rows and render a link that does not
+         -- exist. min() also holds still between runs, which a diffable report needs.
          format('{} names "{}" without linking it ({})', field, span,
                 CASE WHEN count(DISTINCT target_link) = 1
                      THEN '[[' || min(target_link) || ']]'
@@ -189,48 +164,33 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
                 END) AS message
   FROM matched
   GROUP BY entity_type, entity_id, public_id, field, span
-  -- A span is ACCOUNTED FOR if any record it names is the source itself or is already
-  -- linked, and then the whole group goes. Both conditions have to be judged here rather
-  -- than filtered per candidate: dropping just the self or linked row leaves its
-  -- same-named siblings behind and warns about prose that was never wrong.
-  --
-  -- Self is the larger half. Franchise "Apollo 13", manufacturer "Bally Wulff" and model
-  -- "Time 2000" all share a name with some other record, so filtering self per candidate
-  -- told a record to link its own namesake — and for 42 of those the suggested link was a
-  -- model alone in its Title, which wrong-grain-link then calls an ERROR. The audit was
-  -- contradicting itself.
+  -- A span is accounted for if ANY record it names is the source itself or already
+  -- linked, so the whole group goes. Judged here rather than filtered per candidate
+  -- because records commonly share a name across types: filtering one candidate leaves
+  -- its namesakes behind and warns about prose that is not wrong.
   HAVING NOT bool_or(is_self OR linked);
 COMMENT ON VIEW audit_unlinked_mention IS
   'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Matches canonical names and aliases alike; a span naming several records renders as "N candidates". A name inside a quotation is legitimately unlinked, which is why this is not an error.';
 
 -- ─── parenthetical-fact ────────────────────────────────────────────────────
--- The house pattern _[[model:x]]_ (1997, [[manufacturer:williams]]) embeds two claims the
--- catalog already holds. Parse it and compare; a disagreement is either a description typo
--- or a catalog error, and both are worth an error.
+-- The house pattern _[[model:x]]_ (1997, [[manufacturer:williams]]) restates two claims
+-- the catalog already holds, so a disagreement means the prose or the record is wrong.
 --
--- A Title carries no year of its own, so a stated year is checked against the years of its
--- models and flagged only when it matches none — a multi-model Title spanning 1978-1982
--- accepts either.
--- A MACRO rather than a CTE, which is what it looks like it wants to be: the named-group
--- form of regexp_extract requires a CONSTANT pattern, and a column reference is not one.
--- A macro expands to the literal before binding, so it satisfies that and still leaves
--- the pattern written once.
+-- A macro rather than the CTE this looks like it wants: the named-group form of
+-- regexp_extract requires a CONSTANT pattern, and a column reference is not one.
 CREATE OR REPLACE MACRO paren_pattern() AS
   '\[\[(model|title):id:(\d+)\]\][^(\[]{0,8}\((\d{4})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)';
 COMMENT ON MACRO paren_pattern IS
-  'The house parenthetical, _[[link]]_ (year, [[manufacturer]]), as a regex with four capture groups: link type, link id, year, manufacturer id. Read by audit_parenthetical_fact twice — once to find matches, once to parse them.';
+  'The house parenthetical, _[[link]]_ (year, [[manufacturer]]), as a regex with four capture groups: link type, link id, year, manufacturer id.';
 
 CREATE OR REPLACE VIEW audit_parenthetical_fact AS
-  -- Matched once, then the groups are read off the matched substring, because
-  -- regexp_extract_all returns whole matches and no groups. Both calls take the pattern
-  -- from `paren_pattern()` rather than spelling it twice: two copies that drift find a
-  -- different set of parentheticals than they parse, and the mismatch is silent —
-  -- unparsed groups come back empty, TRY_CAST nulls them and the rows just vanish.
+  -- Two passes because regexp_extract_all returns whole matches and no groups: find, then
+  -- read the groups off each match. Both take the pattern from the macro, since two copies
+  -- that drift would find a different set of parentheticals than they parse, silently.
   --
-  -- NULLIF on the maker is load-bearing. The NAMED-GROUP form of regexp_extract returns
-  -- '' for a group that did not participate, while the group-index form returns NULL —
-  -- opposite conventions for the same absent value. Normalizing once here is what lets
-  -- everything below test IS NULL and mean it.
+  -- NULLIF is load-bearing: the named-group form of regexp_extract returns '' for a group
+  -- that did not participate where the group-index form returns NULL. Normalizing once
+  -- here lets everything below test IS NULL and mean it.
   WITH hits AS (
     SELECT entity_type, entity_id, public_id, field,
            UNNEST(regexp_extract_all(text, paren_pattern())) AS hit
@@ -240,8 +200,7 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
     SELECT entity_type, entity_id, public_id, field,
            g.link_type,
            -- TRY_CAST, not ::BIGINT: the id groups are `\d+` with no length bound, so one
-           -- malformed link in one description would otherwise throw and take the whole
-           -- audit down. An unparseable id joins to nothing and drops out instead.
+           -- malformed link would otherwise throw and take the whole audit down.
            TRY_CAST(g.link_id AS BIGINT)                  AS link_id,
            g.stated_year::BIGINT                          AS stated_year,
            TRY_CAST(NULLIF(g.stated_maker, '') AS BIGINT) AS stated_maker
@@ -251,9 +210,9 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
                ['link_type', 'link_id', 'stated_year', 'stated_maker']) AS g
       FROM hits)
   ),
-  -- Both link kinds resolved to one shape: the record's name, and the years and makers the
-  -- catalog allows. Empty lists rather than [NULL], so `len(...) = 0` reads as "the catalog
-  -- says nothing here, so nothing is contradicted".
+  -- Both link kinds resolved to one shape: the name, and the years and makers the catalog
+  -- allows. Empty lists rather than [NULL], so `len(...) = 0` reads as "the catalog says
+  -- nothing here, so nothing is contradicted".
   facts AS (
     SELECT p.*, m.name AS target_name,
            CASE WHEN m.year IS NULL THEN []::BIGINT[] ELSE [m.year] END AS years,
@@ -261,8 +220,8 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
     FROM parsed p JOIN models m ON m.id = p.link_id
     WHERE p.link_type = 'model'
     UNION ALL
-    -- A Title carries no year or maker of its own, so it takes its models' and a stated
-    -- value is wrong only when it matches none — a Title spanning 1978-1982 accepts either.
+    -- A Title has no year or maker of its own, so it takes its models' and a stated value
+    -- is wrong only when it matches none of them.
     SELECT p.*, t.name,
            (SELECT COALESCE(list(m.year), []) FROM models m
              WHERE m.title_id = t.id AND m.year IS NOT NULL),
@@ -277,26 +236,23 @@ CREATE OR REPLACE VIEW audit_parenthetical_fact AS
            len(f.years) > 0 AND NOT list_contains(f.years, f.stated_year) AS year_wrong,
            f.stated_maker IS NOT NULL AND len(f.makers) > 0
              AND NOT list_contains(f.makers, f.stated_maker) AS maker_wrong,
-           -- What the catalog holds, for the message. Named here so the SELECT below stays
-           -- a rendering step.
+           -- Named here so the SELECT below stays a rendering step.
            (SELECT string_agg(DISTINCT m.name, '/' ORDER BY m.name) FROM manufacturers m
              WHERE list_contains(f.makers, m.id)) AS catalog_makers
     FROM facts f
     LEFT JOIN manufacturers mk ON mk.id = f.stated_maker
   )
-  -- DISTINCT because the unit is the DEFECT, not the occurrence: one description stating
-  -- the same wrong parenthetical twice is one thing to fix, and two identical rows would
-  -- read as a bug in the audit. Two different wrong parentheticals differ in `message`
-  -- and both survive.
+  -- DISTINCT because the unit is the defect, not the occurrence: one description stating
+  -- the same wrong parenthetical twice is one thing to fix. Two different ones differ in
+  -- `message` and both survive.
   SELECT DISTINCT
          'error' AS severity,
          entity_type,
          entity_id,
          public_id,
-         -- Every piece is non-NULL by construction: concatenating a NULL blanks the whole
-         -- message, and the finding then reads as broken rather than as a defect. The
-         -- stated maker falls back to its raw id, so a link to a manufacturer that no
-         -- longer resolves still says what the prose claimed.
+         -- Every piece is non-NULL by construction: format() propagates NULL, so one NULL
+         -- argument blanks the whole message and the finding reads as broken rather than
+         -- as a defect. An unresolvable maker falls back to its raw id.
          format('{} says {} ({}) but the catalog says {}', field, target_name,
                 stated_year || COALESCE(', ' || COALESCE(stated_maker_name,
                                                          'manufacturer ' || stated_maker), ''),
@@ -312,34 +268,20 @@ COMMENT ON VIEW audit_parenthetical_fact IS
   'ERROR — one row per _[[link]]_ (year, [[manufacturer]]) parenthetical whose year or maker disagrees with the catalog. Either the prose is wrong or the record is; both want fixing.';
 
 -- ─── broken-link ───────────────────────────────────────────────────────────
--- Prose wikilinking a record that has since been soft-deleted. The reader follows it to
--- nothing.
+-- Two halves because a target can be dead in two ways. Soft-deleted carries status
+-- 'deleted'. Hard-deleted carries no status at all — a GenericForeignKey has no
+-- on_delete, so the edge outlives its target, entity_subjects resolves nothing and
+-- is_live() reads that NULL as live — so it is caught by its unresolvable public id.
 --
--- Nothing else reports these. wrong-grain-link and parenthetical-fact join the live
--- entity views, so a dead target drops out of the join rather than being flagged; and
--- linkless-description counts the edge as a link, so a record whose only link is dead
--- reads as linked. record_references carries `target_status` for exactly this question
--- and this is its only reader.
---
--- BOTH kinds of dead target, which is why the predicate has two halves. A soft-deleted
--- one carries status 'deleted'. A HARD-deleted one carries no status at all — a
--- GenericForeignKey has no on_delete, so the edge outlives its target, entity_subjects
--- resolves nothing and is_live() reads that NULL as live — so it is caught by its
--- unresolvable public id instead. catalog_checks says in as many words that a dangling
--- row is a condition a broken-link rule should report; this is the rule that does.
--- (Zero exist today. The half that finds them is here because nothing else would: a
--- record whose only link dangles reads as linked to linkless-description.)
---
--- A cite edge is excluded by the same NULL target_entity_type test that keeps it out of
--- every other link rule, and that test also stops the second half from firing on one.
+-- The NULL target_entity_type test excludes cite edges, and also keeps the second half
+-- from firing on one.
 CREATE OR REPLACE VIEW audit_broken_link AS
   SELECT 'error'            AS severity,
          source_entity_type AS entity_type,
          source_id          AS entity_id,
          source_public_id   AS public_id,
-         -- Concatenated from pieces that cannot be NULL rather than format()ed: a
-         -- deleted record is exactly the kind that might be missing a name, and one NULL
-         -- argument would blank the whole message.
+         -- Concatenated from non-NULL pieces rather than format()ed: a dead record is
+         -- the kind most likely to be missing a name, and one NULL blanks the message.
          'links [[' || target_entity_type || ':'
            || COALESCE(target_public_id, target_id::VARCHAR) || ']]'
            || COALESCE(' ("' || target_name || '")', '')
@@ -348,28 +290,18 @@ CREATE OR REPLACE VIEW audit_broken_link AS
   WHERE target_entity_type IS NOT NULL
     AND (NOT is_live(target_status) OR target_public_id IS NULL);
 COMMENT ON VIEW audit_broken_link IS
-  'ERROR — one row per wikilink pointing at a soft-deleted record. Either the link should go, or the record should not have been deleted.';
+  'ERROR — one row per wikilink whose target is deleted or missing. Either the link should go, or the record should not have gone.';
 
 -- ─── duplicate-name ────────────────────────────────────────────────────────
--- Two live records of one entity type answering to the same string — as canonical names,
--- as aliases, or one of each. Usually one record that got created twice: theme
--- `automobiles` and theme `cars`, where `cars` carries the alias "Automobiles".
+-- Names and aliases are one pool: the collision that matters is between the strings a
+-- reader or an importer would use, not between the columns they live in.
 --
--- Names and aliases are ONE pool, because the collision that matters is between the
--- strings a reader or an importer would use, not between the columns they live in.
+-- Three types are exempt, each for a reason in the data model. Model and Title names
+-- legitimately repeat across makers and eras — `namesake_count` exists on `models`
+-- because that is normal, and including them would bury every other rule. A location slug
+-- is unique only within its parent, which is why `location_path` exists.
 --
--- THREE TYPES ARE EXEMPT, and only these, each for a reason in the data model:
---   model, title — names legitimately repeat across makers and eras. `namesake_count`
---     exists on `models` precisely because this is normal; 2507 models and 2024 Titles
---     collide today, which would bury every other rule.
---   location — a location slug is unique only WITHIN its parent, which is why
---     `location_path` exists. Victoria, Australia and Victoria, Canada are not a defect.
--- Everything else is fair game, including the types with no collisions today: person is
--- the one this rule is really for, and it earns its keep the first time a maiden name
--- creates a second record.
---
--- Both sides of a collision are reported, since either record may be the one to merge
--- away and the report is read per record.
+-- Both sides of a collision are reported, since either may be the one to merge away.
 CREATE OR REPLACE VIEW audit_duplicate_name AS
   WITH keys AS (
               SELECT s.subject_type AS entity_type, s.subject_id AS entity_id,
@@ -393,10 +325,9 @@ CREATE OR REPLACE VIEW audit_duplicate_name AS
          k.entity_type,
          k.entity_id,
          k.public_id,
-         -- ORDERED, like every other aggregate that reaches a message: identity is
+         -- Ordered, like every aggregate that reaches a message: identity is
          -- (rule, record, message), so an unordered list renders the same defect
-         -- differently between runs and breaks the diffable-output contract. No collision
-         -- involves three records today, which is exactly why this would rot unnoticed.
+         -- differently between runs.
          format('{} "{}" also identifies {}', k.kind, k.text,
                 (SELECT string_agg(DISTINCT o.entity_type || '.' || o.public_id, ', '
                                    ORDER BY o.entity_type || '.' || o.public_id)
@@ -409,9 +340,8 @@ COMMENT ON VIEW audit_duplicate_name IS
   'WARNING — one row per live record whose name or alias also identifies another record of the same type, usually a record created twice. Model, Title and Location are exempt: repeated names are normal for all three.';
 
 -- ─── findings ──────────────────────────────────────────────────────────────
--- Columns are listed rather than `*` so a rule view that reorders its own SELECT cannot
--- silently swap message into severity — every column but entity_id is VARCHAR, so a swap
--- would not raise a type error.
+-- Columns listed rather than `*`: every column but entity_id is VARCHAR, so a rule that
+-- reordered its own SELECT could swap message into severity without a type error.
 CREATE OR REPLACE VIEW audit_findings AS
             SELECT 'self-link'             AS rule, severity, entity_type, entity_id, public_id, message FROM audit_self_link
   UNION ALL SELECT 'wrong-grain-link',          severity, entity_type, entity_id, public_id, message FROM audit_wrong_grain_link
@@ -424,28 +354,21 @@ COMMENT ON VIEW audit_findings IS
   'One row per catalog defect across every rule — rule, severity, the record it is about and a human-readable message. Catalog content, not a health gate.';
 
 -- ─── scoping ───────────────────────────────────────────────────────────────
--- Findings on records a given range of data patches wrote to — what a flippatch
--- pre-commit hook wants. A join, not a mechanism: the patch layer already knows every
--- subject a patch touched, so no rule needs to know data patches exist.
---
 --   FROM audit_since(240);
 --
--- A MACRO rather than a view, because the scoped result has to be two things a view
--- cannot be at once: filterable by patch number, and one row per DEFECT. Left at
--- (finding, patch) grain it reads as though a finding belonged to a patch, and a record
--- three patches touched prints three identical lines — 2.4x inflation across the full
--- patch range. Taking the bound as an argument lets the grain collapse after the filter.
+-- A macro rather than a view because the scoped result must be two things a view cannot
+-- be at once: filterable by patch number, and one row per DEFECT. Taking the bound as an
+-- argument lets the grain collapse after the filter; left at (finding, patch) grain a
+-- record several patches touched prints the same defect once per patch.
 --
--- The patch is a FILTER, not an attribution. These rules read current catalog state and
--- know nothing about patches, so a finding here means "a patch in range touched this
--- record", never "this patch caused it" — the defect is usually older than the patch.
--- The converse gap is worth knowing too: a patch can create findings on records it never
--- wrote to (rename a record and prose elsewhere now names it without linking it), and
--- nothing here will show them. Run the unscoped audit for that.
+-- The patch is a FILTER, not an attribution. The rules read current catalog state and
+-- know nothing about patches, so a row means a patch in range touched this record, never
+-- that it caused the finding — the defect is usually older than the patch. The converse
+-- gap: a patch can create findings on records it never wrote to, by renaming something
+-- that prose elsewhere names, and no scoped query will show those.
 CREATE OR REPLACE MACRO audit_since(n) AS TABLE
   SELECT f.*,
-         -- Zero-padded, because that is how a patch is named and tab-completed, and it
-         -- makes the lexical sort the numeric one.
+         -- Zero-padded: it is how a patch is named, and it makes the lexical sort numeric.
          string_agg(DISTINCT lpad(e.patch_number::VARCHAR, 4, '0'), ', '
                     ORDER BY lpad(e.patch_number::VARCHAR, 4, '0')) AS patches
   FROM audit_findings f
@@ -453,29 +376,21 @@ CREATE OR REPLACE MACRO audit_since(n) AS TABLE
     ON e.subject_type = f.entity_type AND e.subject_id = f.entity_id
   WHERE e.patch_number >= n
   -- patch_entries is one row per ChangeSet and a grouped `changesets:` block writes
-  -- several to one record, so the aggregate is what keeps that off the finding count.
+  -- several to one record, so the aggregate keeps that off the finding count.
   GROUP BY ALL;
 COMMENT ON MACRO TABLE audit_since IS
   'audit_since(240) — one row per DEFECT on a record that patch 240 or later wrote to, with those patch numbers aggregated into `patches`. The patch-scoped lens; scope is a filter, never a claim that the patch caused the finding.';
 
 -- ─── checks ────────────────────────────────────────────────────────────────
--- Invariants of the LAYER, not of the catalog. A row here means the audit is broken; a
--- catalog defect belongs in audit_findings and must never reach this view. Three
--- branches, each guarding something only execution reveals — deliberately nothing that
--- polices this file's own naming or wiring, which is what made the previous version of
--- this layer cost more than it caught.
--- `f` is read three times below, and the CTE is what keeps that from being three full
--- evaluations of every rule — the same idiom audit_report uses.
+-- Invariants of the LAYER, not of the catalog: a row here means the audit is broken. Each
+-- branch guards something only execution reveals. The CTE is what keeps three reads of
+-- `f` from being three full evaluations of every rule.
 CREATE OR REPLACE VIEW audit_checks AS
   WITH f AS (FROM audit_findings)
-  -- A required value that evaluated to NULL. The one that has actually bitten, twice:
-  -- format() propagates NULL, so a single NULL argument blanks the entire message and
-  -- the finding prints as an empty line — it reads as a broken audit rather than as a
-  -- defect. It needs its own branch because NULL slips every other test: `NULL NOT IN
-  -- (…)` is unknown rather than true, so unknown_severity would let it past.
-  --
-  -- public_id is deliberately absent: audit_report already COALESCEs it to the id, so a
-  -- NULL there costs nothing.
+  -- format() propagates NULL, so one NULL argument blanks the whole message and the
+  -- finding prints as an empty line — broken-looking rather than wrong-looking. It needs
+  -- its own branch because NULL slips every other test: `NULL NOT IN (…)` is unknown
+  -- rather than true. public_id is absent because the report falls back to the id.
   SELECT 'finding_null_required' AS check_name,
          rule || ' -> ' || col AS detail
   FROM f,
@@ -485,17 +400,14 @@ CREATE OR REPLACE VIEW audit_checks AS
   WHERE v.val IS NULL
 
   UNION ALL
-  -- A severity outside the closed vocabulary. Severity is computed per finding — a CASE
-  -- in wrong-grain-link — and a CASE that loses its ELSE returns something no consumer
-  -- knows how to rank or colour.
+  -- Severity is computed per finding, and a CASE that loses its ELSE returns something
+  -- nothing downstream knows how to rank or colour.
   SELECT 'unknown_severity', rule || ' -> ' || severity
   FROM f WHERE severity NOT IN ('error', 'warning')
 
   UNION ALL
-  -- A finding about a record that is not live. NOT tautological: unlinked-mention and
-  -- duplicate-name read entity_subjects and entity_aliases, which are deliberately not
-  -- live-filtered, and apply is_live themselves. Drop one of those predicates and the
-  -- audit starts reporting deleted records as defects. This is the check guarding a
+  -- Not redundant with the foundation: rules reading entity_subjects and entity_aliases
+  -- apply liveness themselves, since those views are not live-filtered. This guards a
   -- filter the rules own rather than inherit.
   SELECT 'finding_subject_not_live',
          rule || ' -> ' || entity_type || ':' || entity_id::VARCHAR
@@ -508,9 +420,8 @@ COMMENT ON VIEW audit_checks IS
   'The audit layer''s own invariants — a row means the AUDIT is broken, never that the catalog is. Empty is healthy. Catalog defects live in audit_findings and are deliberately not gated.';
 
 -- Counted per rule VIEW rather than grouped from audit_findings, so a rule finding nothing
--- keeps its row. A rule dropping to zero is the failure worth seeing — these detectors read
--- authored prose and a sparse edge table, where a rotted regex returns exactly what a clean
--- catalog returns — and grouping would make it vanish from the readout instead.
+-- keeps its row. These detectors fail by returning nothing, which is what a clean catalog
+-- also looks like, so a rule at zero is the state most worth seeing.
 CREATE OR REPLACE VIEW audit_summary AS
             SELECT 'self-link'            AS metric, count(*) AS value FROM audit_self_link
   UNION ALL SELECT 'wrong-grain-link',         count(*) FROM audit_wrong_grain_link
@@ -527,16 +438,12 @@ COMMENT ON VIEW audit_summary IS
   'One row per rule with its finding count, plus totals — the headline readout. Every rule keeps a row at zero, which is the state worth noticing.';
 
 -- ─── the report ────────────────────────────────────────────────────────────
--- The rendered output of `scripts/analysis/audit <patch>`, one row per line, for
--- `--format lines`. Rendered in SQL rather than by the caller so the wording lives beside
--- the data it counts and cannot drift from it — and so flippatch's pre-commit hook and
--- this repo's runner print the same thing without either owning a second copy.
+-- One row per line, for `--format lines`. Rendered in SQL so the wording lives beside the
+-- data it counts and cannot drift from it, and so every caller prints the same thing.
 --
--- Shape: header, findings, footer. The counts appear TWICE on purpose. The reader is
--- often an AI session whose tool output gets truncated, and truncation is at the tail —
--- so a total read BEFORE the findings separates "I saw 40 of 240" from "there were 40".
--- The footer is the cheap other half: a header with no footer under it means the output
--- was cut, with nothing to count.
+-- Header, findings, footer. The counts appear twice on purpose: output read by a tool is
+-- truncated at the tail, so a total BEFORE the findings separates "I saw 40 of 240" from
+-- "there were 40", and a header with no footer under it means the output was cut.
 CREATE OR REPLACE MACRO plural(n, one, many) AS
   n::VARCHAR || ' ' || CASE WHEN n = 1 THEN one ELSE many END;
 COMMENT ON MACRO plural IS
@@ -544,13 +451,12 @@ COMMENT ON MACRO plural IS
 
 CREATE OR REPLACE MACRO audit_report(since) AS TABLE (
   WITH f AS (FROM audit_since(since)),
-  -- Counted from the patch LEDGER, not from the findings: a patch that applied cleanly
-  -- and a patch that never applied both contribute nothing to f, and reporting them alike
-  -- is how a stale database passes for a clean one.
+  -- From the patch LEDGER, not from the findings: a patch that applied cleanly and one
+  -- that never applied both contribute nothing to `f`, and a stale database would
+  -- otherwise read as a clean one.
   applied AS (SELECT count(DISTINCT patch_number) AS n
               FROM patch_entries WHERE patch_number >= since),
-  -- The high end is the newest patch IN SCOPE, so a clean run still names the span it
-  -- examined instead of an empty one.
+  -- The newest patch in scope, so a clean run still names the span it examined.
   span AS (
     SELECT lpad(since::VARCHAR, 4, '0') AS lo,
            lpad(COALESCE((SELECT max(patch_number) FROM patch_entries
@@ -583,8 +489,8 @@ CREATE OR REPLACE MACRO audit_report(since) AS TABLE (
     FROM f
   )
   SELECT line FROM (
-    -- Header and footer carry the same sentence; the endings tell them apart
-    -- (', errors first:' introduces the list, '.' closes it), so neither needs a label.
+    -- Header and footer carry the same sentence; the endings tell them apart, so neither
+    -- needs a label.
     SELECT 0 AS section, NULL::INTEGER AS k1, '' AS k2,
            text || CASE WHEN n_applied = 0 THEN '' ELSE ', errors first:' END AS line
     FROM summary
