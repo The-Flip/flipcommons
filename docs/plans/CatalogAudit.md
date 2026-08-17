@@ -77,7 +77,11 @@ This is a warning not error: some hits are legitimately unlinked (a name inside 
 
 ### Parenthetical fact cross-check in descriptions
 
-The house pattern _[[model:x]]_ (1997, [[manufacturer:williams]]) embeds two claims the DB already holds. Parse it; warn when the year or maker disagrees with the catalog. Cheap, fully deterministic, and it catches both description typos and catalog errors — either way we want the warning.
+The house pattern _[[model_or_title:x]]_ (1997, [[manufacturer:williams]]) embeds two claims the DB already holds. Error when the year or maker disagrees with the catalog. The error could indicate:
+
+- The year is wrong
+- The manufacturer is wrong
+- The title/model is wrong (the description wanted `star-trek-data-east` but linked to `star-trek-bally`). This happens a lot when the titles/models are similarly named. We can figure this out deterministically: is there a similarly named title/model that strictly matches more of the stated facts (manufacturer, year) than the linked title/model?
 
 This is an error not warning.
 
