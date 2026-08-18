@@ -26,6 +26,7 @@
     type LocationEditSectionKey,
   } from '$lib/components/pages/record/edit/editors/entity/location/location-edit-sections';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
+  import { setEntityContext } from '$lib/entity-context';
   import { childrenHeading, newChildLabel, type LocationDetail } from './location-helpers';
   import LocationEditorSwitch from './edit/LocationEditorSwitch.svelte';
 
@@ -35,6 +36,15 @@
   let isRoot = $derived(profile.location_type === null);
   let path = $derived(profile.public_id);
   let displayName = $derived(profile.name || 'Locations');
+
+  setEntityContext({
+    get name() {
+      return displayName;
+    },
+    get detailHref() {
+      return isRoot ? resolve('/locations') : resolve(`/locations/${path}`);
+    },
+  });
 
   let metaDescription = $derived.by(() => {
     if (isRoot) return 'Browse pinball manufacturers by country, region, and city.';
