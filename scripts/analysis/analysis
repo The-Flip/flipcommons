@@ -36,9 +36,10 @@
 # other public `*_checks` view — stored and live — so an analysis cannot quietly opt
 # out of a module's invariants.
 # `describe` is the reference: bare, it lists every public relation with its COMMENT
-# one-liner, then every public macro with its signature; named, it adds the live column
-# list for a relation, or prints the one-liner for a macro. A term matching nothing
-# exactly is a SEARCH over names and one-liners. Given an analysis file, its OWN
+# one-liner, grouped under its `═══ §N` source section and ordered by that rank (the
+# spine first, the audit and self-test last), then every macro; named, it adds
+# the live column list for a relation, or prints the one-liner for a macro. A term
+# matching nothing exactly is a SEARCH over names and one-liners. Given an analysis file, its OWN
 # objects are listed first under the file's name and the foundation follows; only
 # foundation objects are prompted for a missing comment.
 # `columns` is measurement where `describe` is reference: per column, how many rows,
@@ -183,6 +184,8 @@ usage() {
 analysis_file=
 # Where the stored check verdicts are, from THIS session's point of view.
 check_results="raw._check_results"
+# Where the baked reference index is, likewise.
+rel_index="raw._relation_index"
 
 # session "<output flags>" -c "<sql>" [-c "<sql>"…] — one DuckDB invocation with the
 # right context ahead of the caller's commands. The flag string is one argument,
@@ -217,6 +220,7 @@ resolve_and_cd() {
         exit 2 ;;
     esac
     check_results="fc.raw._check_results"
+    rel_index="fc.raw._relation_index"
     fnd_db="'fc'"
   fi
   cd "$root"
@@ -427,15 +431,29 @@ case "$cmd" in
       fi
       # Index. Rendered as name + indented prose rather than a box table: the
       # comments are sentences, and a box would blow past any terminal width.
+      # Grouped and ordered by the baked index, NOT by oid: a reopened database hands
+      # back oids in name order, which would lead with the audit and bury the spine.
+      # Anything the index missed lands under UNGROUPED, where it cannot be mistaken
+      # for a section of its own.
       session '-noheader -list' -c \
-        "SELECT relation_name || chr(10) || '    ' || coalesce(comment, $nag_v)
-         FROM $(pub_relations "$fnd_db") ORDER BY relation_oid;"
+        "SELECT CASE WHEN grp_label IS DISTINCT FROM lag(grp_label) OVER (ORDER BY ord, relation_name)
+                     THEN chr(10) || '═══ ' || grp_label || chr(10) ELSE '' END
+                || relation_name || chr(10) || '    ' || coalesce(comment, $nag_v)
+         FROM (SELECT r.relation_name, r.comment,
+                      coalesce(g.grp_label, 'UNGROUPED') AS grp_label,
+                      coalesce(g.ord, 999999) AS ord
+               FROM $(pub_relations "$fnd_db") r
+               LEFT JOIN $rel_index g USING (relation_name))
+         ORDER BY ord, relation_name;"
       # Macros last and labelled, because they are CALLED rather than selected from.
+      # Same index order, so a macro sits beside the views it belongs with, but without
+      # headers: the list is short enough that they would cost more than they explain.
       echo
       echo "— macros —"
       session '-noheader -list' -c \
         "SELECT sig || chr(10) || '    ' || coalesce(comment, $nag_m)
-         FROM ($(pub_macros "$fnd_db")) ORDER BY oid;"
+         FROM ($(pub_macros "$fnd_db")) m LEFT JOIN $rel_index g ON g.relation_name = m.n
+         ORDER BY coalesce(g.ord, 999999), m.n;"
     else
       # Doubled for SQL. A search term is freer-form than a view name, and an apostrophe
       # in one would otherwise be a syntax error rather than simply matching nothing.

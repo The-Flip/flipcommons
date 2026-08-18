@@ -4,9 +4,9 @@ This is how to use our DuckDB analytics layer to explore the Flipcommons localho
 
 ## What this layer is
 
-**A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks. Consequences:
+**A curated semantic layer over the catalog, not a mirror of it.** Views don't include soft-deleted rows or bookkeeping columns, they spell absence one way (NULL not ''), declares their grain, decode foreign keys to stable slugs and state the specific way it would otherwise hand you a confident wrong answer. That's the value, and why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is wrong more often than you might think.
 
-- **A view is not its table.** `models` is live-filtered and denormalized across a dozen joins; `credits` resolves a subject that is a model XOR a series. Matching names do not mean matching columns or matching grain — though the name does tell you the grain: a bare plural is one row per that entity, a `model_` prefix is one row per model.
+This means **a view is not its table**. `models` is live-filtered and denormalized across a dozen joins; `credits` resolves a subject that is a model XOR a series. Matching names do not mean matching columns or matching grain — though the name _does_ tell you the grain: a bare plural is one row per that entity, a `model_` prefix is one row per model.
 
 ## Quick start
 
@@ -29,20 +29,16 @@ scripts/analysis/analysis columns --all          # sweep, showing only columns w
 scripts/analysis/audit           # per-rule lint finding counts
 scripts/analysis/audit 0240      # lint findings on records patch 0240 and later touched
 
-# Get the map — what areas exist, when you don't have a term yet
-grep '═══' scripts/analysis/sql/catalog.sql scripts/analysis/sql/provenance.sql scripts/analysis/sql/data_patches.sql
+# Get the map alone — the area headings, without the views under them
+scripts/analysis/analysis describe | grep '═══'
 
 # Get the block comment for one view — grain, liveness rule, the plausible wrong answer
 grep -B12 'CREATE OR REPLACE VIEW model_edges AS' scripts/analysis/sql/catalog.sql   # Widen -B if the block runs long
 ```
 
-In `sql/catalog.sql`, two headings say where to start: `MODELS — the spine; start here` and `MODEL-TO-MODEL RELATIONSHIPS — start with model_edges`.
-
-The schema is **baked**: the runner builds `backend/db.analytics.duckdb` from `db.sqlite3` plus every file under `scripts/analysis/sql/`, rebuilds it only when one of those changes, and every query just opens the result read-only. Any DuckDB client can do the same — `duckdb -readonly backend/db.analytics.duckdb` is the whole foundation, audit views included.
-
 `query` and `describe` put only data on stdout; diagnostics go to stderr. `query --check` is silent when the gate passes, so its output can be consumed directly.
 
-Use a CTE for intermediate steps that still fit comfortably in one query. When you need named intermediate views, manual reference data, durable checks or repeated execution, use an [analysis file](#analysis-files).
+Use a CTE for intermediate steps that still fit comfortably in one query. When you need named intermediate views, manual reference data, durable checks or repeated execution, make an [analysis file](#analysis-files).
 
 ## Working with the data model
 
@@ -134,7 +130,7 @@ Two mechanisms cross the foundation's edge, both documented where they are defin
 scripts/analysis/audit 0240   # the report: findings on records patch 0240 and later touched
 scripts/analysis/audit        # per-rule finding counts across the whole catalog
 
-# or query the views directly — the audit is baked into the foundation
+# or query the views directly
 scripts/analysis/analysis query "FROM audit_findings WHERE severity = 'error';"
 scripts/analysis/analysis query "FROM audit_since(240);"
 ```
@@ -149,7 +145,7 @@ Findings are catalog content and are deliberately **not** what `audit_checks` ga
 
 An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`catalog_checks.sql`](sql/catalog_checks.sql) is a local worked example.
 
-The runner loads an analysis file into an in-memory catalog on top of the baked foundation: the file's own `CREATE`s land in memory, unqualified reads (`FROM models`) fall through to the foundation, and nothing is `.read` from the analysis file itself — a `.read scripts/analysis/sql/catalog.sql` line is at best a slow no-op. Raw Django tables, which an analysis should rarely reach for, are spelled `fc.raw.catalog_person` from an analysis file.
+The runner loads an analysis file into an in-memory catalog on top of the foundation: the file's own `CREATE`s land in memory, unqualified reads (`FROM models`) fall through to the foundation, and nothing is `.read` from the analysis file itself — a `.read scripts/analysis/sql/catalog.sql` line is at best a slow no-op. Raw Django tables, which an analysis should rarely reach for, are spelled `fc.raw.catalog_person` from an analysis file.
 
 An analysis file has the following sections; only the second is shaped by the question:
 
@@ -177,7 +173,7 @@ CREATE OR REPLACE VIEW my_analysis_checks AS
 
 ## Runner
 
-The runner is location-independent: the analysis-file path resolves against your current directory. This is what lets a data patch campaign in Flippatch consume the foundation without copying it. The `<analysis>.sql` argument is optional everywhere it appears below — without it, the command works over the baked foundation alone.
+The runner is location-independent: the analysis-file path resolves against your current directory. This is what lets a data patch campaign in Flippatch consume the foundation without copying it. The `<analysis>.sql` argument is optional everywhere it appears below — without it, the command works over the foundation alone.
 
 ```bash
 # describe: the view reference — every public view with its one-line description
@@ -198,7 +194,7 @@ scripts/analysis/analysis ui <analysis>.sql
 
 # Desktop GUI: freeze every public view and table into a standalone database for TablePlus,
 # DBeaver, Beekeeper Studio or another DuckDB client. Bare, it prints the snapshot path —
-# the baked database itself is openable directly.
+# the database itself is openable directly.
 scripts/analysis/analysis browse <analysis>.sql
 
 # snapshot: freeze selected views as real tables into a standalone <analysis>.duckdb
@@ -211,7 +207,7 @@ What's reproducible are _queries_, not _results_: the catalog is a live, moving 
 
 The **gate is not limited to that pair**: `run` discovers every public `*_checks` view in the session and fails on a row from any of them, and prints every public `*_context` view alongside `analysis_context`. Any SQL file the analysis `.read`s therefore contributes its own invariants and watermark automatically. Private `_underscore` views are excluded from both sweeps, so an intermediate helper can be named `_foo_checks` without joining the gate.
 
-For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate as `run` executes before any data is emitted. A bare `query` without `--check` still surfaces a broken foundation — one warning line on stderr from the stored verdicts — but never blocks, because querying is how you diagnose the break. The runner is a convenience: `duckdb -readonly backend/db.analytics.duckdb` is the whole baked foundation for any client — but it reads whatever the last build produced, since only the runner rebuilds when `db.sqlite3` or the sql/ files change. `analysis_context.snapshot_imported_at` is how old that is.
+For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate as `run` executes before any data is emitted. A bare `query` without `--check` still surfaces a broken foundation — one warning line on stderr from the stored verdicts — but never blocks, because querying is how you diagnose the break. The runner is a convenience: `duckdb -readonly backend/db.analytics.duckdb` is the whole foundation for any client — but it reads whatever the last build produced, since only the runner rebuilds when `db.sqlite3` or the sql/ files change. `analysis_context.snapshot_imported_at` is how old that is.
 
 `browse` writes `<analysis>.browse.duckdb` beside the analysis file and replaces it atomically on every run. It discovers and materializes every public relation — both views and deliberately materialized tables — including relations contributed by the foundation or another `.read` file, while excluding private `_underscore` helpers. Macros do not travel: a view comment pointing you at `citation_root_for_host()` describes something only the live session has. The result is static: disconnect the desktop client, rerun `browse`, then reconnect whenever the localhost catalog or analysis changes. Any edits made through the client are disposable and disappear on the next rebuild.
 
@@ -241,4 +237,4 @@ Then `<prefix>_checks` can catch a classification that's missing a candidate, on
 
 ## Editing the foundation
 
-For **changing** the foundation — adding a view, editing a check — see [EDITING.md](EDITING.md).
+For changing the foundation — adding a view, editing a check — see [EDITING.md](EDITING.md).

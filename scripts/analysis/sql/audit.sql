@@ -15,7 +15,10 @@
 -- `audit_checks`. Only the second gates. `analysis run` and `--check` fail on a row from
 -- any `*_checks` view, so a standing backlog of catalog defects put there would exit
 -- nonzero forever and the gate would stop meaning anything.
+
 .read scripts/analysis/sql/catalog.sql
+
+-- ═══ §190 AUDIT — lint rules over the live catalog ═════════════════════════
 
 -- ─── shared: the collapsed model ───────────────────────────────────────────
 -- One row per model that its Title collapses into — the model a reader reaches by the

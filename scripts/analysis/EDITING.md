@@ -106,6 +106,21 @@ A shared helper read from OUTSIDE its own section says so in its comment. `_titl
 
 `model_edges` being outbound-only is stated in both its comment block and README, deliberately — it is the one trap that returns a confident wrong answer rather than an error. Don't trim it as a duplicate.
 
+## Where a view lands in the reference
+
+`describe` groups the foundation under the `═══ §N` section header each definition sits below, in `§N` order. Both come out of `raw._relation_index`, built by [`sql/relation_index.sql`](sql/relation_index.sql).
+
+```sql
+-- ═══ §10 MODELS ═════════════════════════════════════
+```
+
+- **The number is the display rank, and it is free to disagree with load order** — which is the point, since load order is define-before-use order and puts the plumbing ahead of the spine. Keeping the rank inside the header is what stops it drifting from the label it ranks: they are one string, edited together.
+- **Numbers run in tens**, so inserting a section costs one line rather than a renumber.
+- **A file with no headers is not a special case** — give it one. `audit.sql` and `data_patches.sql` each carry a single header, and the two generated files emit theirs from their management command.
+- **A header with no `§N` still groups, after every numbered one.** That is what a header announcing a `.read` does: it owns nothing and never appears.
+
+Attribution is per file and purely local — a header owns every `CREATE` below it in the same file — and `.read` is not followed, so catalog.sql being re-read from audit.sql cannot re-attribute the catalog. The catalog drives the final join, so a name the parse picks up that is not a real relation (a private helper, a `stg.` view) matches nothing and drops out. A relation the parse misses lists under `UNGROUPED`.
+
 ## Public and runtime surfaces are contracts
 
 Analyses outside this repo rely on the surfaces below — Flippatch's data patch campaign files are the current consumers, and none of them are exercised by anything here. Changing one can break those consumers while the self-test and mutation harness remain clean.

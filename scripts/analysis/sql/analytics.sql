@@ -6,5 +6,7 @@
 -- in the foundation (catalog.sql and the layers it reads) before defining the self-test,
 -- and audit.sql re-reads catalog.sql, which is idempotent — every definition is CREATE
 -- OR REPLACE — and costs a moment at build time, never at query time.
+-- relation_index.sql is last because it indexes the catalog every earlier file built.
 .read scripts/analysis/sql/catalog_checks.sql
 .read scripts/analysis/sql/audit.sql
+.read scripts/analysis/sql/relation_index.sql

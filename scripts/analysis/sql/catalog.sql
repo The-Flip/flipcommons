@@ -23,12 +23,12 @@
 --   main — the public surface (and its _underscore private helpers), the default.
 CREATE SCHEMA IF NOT EXISTS stg;
 
--- ═══ LIVENESS — how to hide soft-deleted records ════════════════════════════
+-- ═══ §210 LIVENESS — how to hide soft-deleted records ═══════════════════════
 CREATE OR REPLACE MACRO is_live(status) AS status IS DISTINCT FROM 'deleted';
 COMMENT ON MACRO is_live IS
   'is_live(status) — the liveness rule as a scalar, for a view that carries a status column instead of being live-filtered. Never retype the predicate.';
 
--- ═══ STAGING LAYER — the live rows of a table ═════════════
+-- ═══ §220 STAGING LAYER — the live rows of a table ════════
 -- These private views drop soft-deleted rows and bookkeeping columns, spell absence one way.
 -- One `stg.x` view per lifecycle table. No joins, no derived columns, no measures, so
 -- nothing here has an outgoing edge and no cycle can run through it.
@@ -98,7 +98,7 @@ CREATE OR REPLACE MACRO _entity_type_of(physical_table) AS
 COMMENT ON MACRO _entity_type_of IS
   '_entity_type_of(''catalog_series'') — the subject type a view should emit for rows of that physical table, read from entity_registry rather than spelled as a literal. NULL if the table is not an entity.';
 
--- ═══ NAME NORMALIZATION — comparing names across records ════════════════════
+-- ═══ §200 NAME NORMALIZATION — comparing names across records ═══════════════
 -- The key for comparing a catalog name against another record's — a source's game title,
 -- a sibling model, an alias. Split so an analysis picks the JUDGMENT deliberately:
 -- name_norm is mechanical, name_strip_paren is a judgment, name_key composes both.
@@ -122,7 +122,7 @@ CREATE OR REPLACE MACRO name_key(s) AS name_norm(name_strip_paren(s));
 COMMENT ON MACRO name_key IS
   'name_norm(name_strip_paren(s)) — the name comparison key for the common case. Use name_norm alone when a trailing parenthetical distinguishes the records.';
 
--- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
+-- ═══ §80 DIMENSIONS — what a model points at ════════════════════════════════
 -- locations — one row per live geographic Location.
 --   location_path : the stable key ('usa/il/chicago') and the one to join on. `slug` is
 --             unique only WITHIN a parent — there is more than one 'victoria' in the
@@ -235,7 +235,7 @@ CREATE OR REPLACE VIEW production_statuses AS SELECT * FROM _staging('raw.catalo
 COMMENT ON VIEW production_statuses IS
   'One row per live production status — the commercial-production vocabulary (produced, announced, one-off).';
 
--- ═══ MODELS — the spine; start here ═════════════════════════════════════════
+-- ═══ §10 MODELS ═════════════════════════════════════
 -- _ce_location — the manufacturer's home location per corporate entity, collapsed to ONE
 -- row per CE so joining it can't fan out the one-row-per-model grain. CorporateEntityLocation
 -- is 1:N, but every CE has exactly one location today; ce_multi_location fires if that stops.
@@ -362,7 +362,7 @@ CREATE OR REPLACE VIEW models AS
 COMMENT ON VIEW models IS
   'One row per LIVE MachineModel — THE spine; build analyses on this. Soft-deleted models are not here and are not anywhere: read `claims` for the history of one.';
 
--- ═══ MANUFACTURERS AND CORPORATE ENTITIES ═══════════════════════════════════
+-- ═══ §40 MANUFACTURERS AND CORPORATE ENTITIES ═══════════════════════════════
 -- presumed_producing — the still-producing verdict the SITE publishes, which is not
 -- operating_status alone: an 'unknown' subject with a recent model reads as producing
 -- ("1990–present"), one without reads as closed. The window is a product fact
@@ -533,7 +533,7 @@ CREATE OR REPLACE VIEW manufacturers AS
 COMMENT ON VIEW manufacturers IS
   'One row per live manufacturer — identity, home location/country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Read location and country each with its n_ count (0 = unknown, >1 = plural), and the span with n_dated.';
 
--- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
+-- ═══ §60 REWARDS, THEMES, TAGS — model attributes ═══════════════════════════
 -- model_rewards — one row per (live model, live reward type), and the only reader of the
 -- through table. Reward types are MULTI-VALUED — a machine can pay out several — so they
 -- get a grain view rather than a slug column on `models` like the single-FK dims.
@@ -677,7 +677,7 @@ CREATE OR REPLACE VIEW model_tag_slugs AS
 COMMENT ON VIEW model_tag_slugs IS
   'One row per tagged LIVE model — sorted list of tag SLUGS (the stable key you predicate on), keyed model_id. conversion_kit and re-themes are ModelRelationship types, not tags.';
 
--- ═══ GAMEPLAY FEATURES ══════════════════════════════════════════════════════
+-- ═══ §70 GAMEPLAY FEATURES ══════════════════════════════════════════════════
 -- model_gameplay_features — one row per (model, directly-attached gameplay feature) with
 -- its optional count. No display-list twin, unlike the other attribute families: most of
 -- these rows carry a count and most of those exceed 1 (Flippers x2; Trap Holes x25, the
@@ -755,7 +755,7 @@ CREATE OR REPLACE VIEW gameplay_features AS
 COMMENT ON VIEW gameplay_features IS
   'One row per live gameplay feature — the feature VOCABULARY, columns matching themes. Read n WITH children: n = 0 on an interior node is by design.';
 
--- ═══ MODEL-TO-MODEL RELATIONSHIPS — start with model_edges ══════════════════
+-- ═══ §20 MODEL-TO-MODEL RELATIONSHIPS — start with model_edges ══════════════
 -- `model_edges` is the DEFAULT — every edge out of a model, lineage + typed, so one
 -- `WHERE model_id = ?` returns everything and no source is missed. Drop to a component
 -- view when you want ONE mechanism:
@@ -943,7 +943,7 @@ CREATE OR REPLACE VIEW model_edges_bidir AS
 COMMENT ON VIEW model_edges_bidir IS
   'Two rows per resolved edge, one per end — the CONNECTEDNESS view, with a direction column. relationship_type is always the edge AS STATED, so read it with direction. Never aggregate here: every edge is counted twice.';
 
--- ═══ TITLES AND MODEL NUMBERS ═══════════════════════════════════════════════
+-- ═══ §30 TITLES AND MODEL NUMBERS ═══════════════════════════════════════════
 -- franchises / series — the two Title-grouping vocabularies at entity grain, for which
 -- groupings EXIST and which are used by nothing. Both flat and both curator-maintained, so
 -- `n_titles = 0` is the interesting row rather than a defect — a grouping someone created
@@ -1018,7 +1018,7 @@ CREATE OR REPLACE VIEW model_number_collisions AS
 COMMENT ON VIEW model_number_collisions IS
   'One row per (manufacturer, model number) claimed by more than one live model — exact numbers only. n_titles = 1 is usually a legitimate catalog split, not bad data.';
 
--- ═══ PEOPLE AND CREDITS ═════════════════════════════════════════════════════
+-- ═══ §50 PEOPLE AND CREDITS ═════════════════════════════════════════════════
 -- credits — one row per credit: a Person, in a CreditRole, on a subject. THE grain, and the
 -- definition `people` and `credit_roles` both aggregate.
 --   THE SUBJECT IS POLYMORPHIC, and the minority half is the trap. A Credit hangs off a
@@ -1113,7 +1113,7 @@ CREATE OR REPLACE VIEW people AS
 COMMENT ON VIEW people IS
   'One row per live Person — identity, birth/death year and credit counts over live subjects. Counts only: `credits` is the grain that says WHICH models.';
 
--- ═══ ALIASES & ABBREVIATIONS — matching source wording ══════════════════════
+-- ═══ §90 ALIASES & ABBREVIATIONS — matching source wording ══════════════════
 -- Every alias view: one row per alias of a live parent, keyed by the parent's stable slug
 -- (location_aliases uses location_path — Location slugs are parent-scoped). Values are
 -- stored AS ENTERED, mixed case included; whether 'Playing Cards' should match
@@ -1169,7 +1169,7 @@ CREATE OR REPLACE VIEW title_abbreviations AS
 COMMENT ON VIEW title_abbreviations IS
   'One row per community abbreviation of a live Title — the Title-grain twin of model_abbreviations.';
 
--- ═══ THE WIKILINK GRAPH ═════════════════════════════════════════════════════
+-- ═══ §110 THE WIKILINK GRAPH ════════════════════════════════════════════════
 -- record_references — the `[[type:public-id]]` wikilink graph, one row per stored edge.
 -- Django materializes it on every save (core.RecordReference, synced by
 -- `sync_references`), so a link question is an indexed join and never a regex over prose.
@@ -1213,7 +1213,7 @@ CREATE OR REPLACE VIEW record_references AS
 COMMENT ON VIEW record_references IS
   'One row per stored wikilink edge from a LIVE record, both ends decoded to (entity_type, public id, name). Django materializes this on save, so ANY question about what prose links is a join here, never a regex over entity_prose.text. Live on the source only — target_status is carried, because an edge to a soft-deleted record is a broken link worth finding. An inline [[cite:N]] is a row whose target_entity_type IS NULL; filter it or count it deliberately.';
 
--- ═══ DOMAIN VOCABULARY — what a slug MEANS ══════════════════════════════════
+-- ═══ §120 DOMAIN VOCABULARY — what a slug MEANS ═════════════════════════════
 -- The catalog's controlled vocabularies (game formats, cabinets, production statuses, …)
 -- are DEFINED in docs/DomainModel.md — what separates `one-off` from `unreleased`,
 -- `shuffle` from `rolldown`. The DB carries only the slug and display name, so
@@ -1261,7 +1261,7 @@ CREATE OR REPLACE VIEW domain_vocab AS
 COMMENT ON VIEW domain_vocab IS
   'One row per controlled-vocabulary term defined in docs/DomainModel.md — dim, slug and the prose definition, parsed from the doc at query time. Join it to a vocabulary view to read what a slug MEANS; the doc stays the only place domain semantics are written.';
 
--- ═══ RUN WATERMARK ══════════════════════════════════════════════════════════
+-- ═══ §230 RUN WATERMARK ═════════════════════════════════════════════════════
 -- analysis_context — the input watermark for a run, printed by every runner above the
 -- results. Enough identity to tell "same query, newer catalog" apart from a broken
 -- reproduction: a query is reproducible, but its RESULTS only are when this row matches.

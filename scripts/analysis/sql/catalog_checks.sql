@@ -33,9 +33,12 @@
 -- PUBLIC view consume it? _ce_location and _title_live_n feed models, so they stay
 -- there. These do not.
 
+-- ═══ §240 FOUNDATION SELF-TEST — invariants of this layer ══════════════════
+
 -- _ce_location_n — live locations per CE. catalog.sql's `_ce_location` collapses a CE
 -- to ONE row on the assumption that every CE has exactly one live location; this states
 -- that assumption as a number so ce_multi_location can test it.
+
 CREATE OR REPLACE VIEW _ce_location_n AS
   SELECT corporate_entity_id, count(*) AS n
   FROM corporate_entity_locations
