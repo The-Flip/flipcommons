@@ -62,7 +62,15 @@ COMMENT ON VIEW record_references IS
 -- set below a genuine quote is the harmful direction, and it fails twice over: the quote
 -- drops out of prose_quotes AND stays in prose_words, seeding exactly the spurious
 -- mentions the exclusion exists to prevent.
-CREATE OR REPLACE MACRO _quoted_run() AS '["“”][^"“”\n]{0,300}["“”]';
+--
+-- AN OPENING MARK IS NEVER FOLLOWED BY A SPACE, which is what separates a quote from an
+-- INCH MARK: `a 3" flipper` reads as an opening mark to anything matching on the mark
+-- alone, and it then pairs with the next measurement down the line and deletes every
+-- word between them — silently, since prose_words losing text produces no finding
+-- anywhere. Nothing local distinguishes a CLOSING mark from an inch mark (both sit after
+-- a non-space and before a break, and a genuine quote may end on a digit), so the rule
+-- is stated on the opening end, where the distinction actually exists.
+CREATE OR REPLACE MACRO _quoted_run() AS '["“”][^\s"“”][^"“”\n]{0,299}["“”]';
 
 -- prose_quotes — the wordings prose QUOTES rather than says: a machine's nickname, a
 -- feature name as a source spelled it, a marketing slogan. A name in here is legitimately
@@ -85,6 +93,12 @@ COMMENT ON VIEW prose_quotes IS
 -- collapsing would otherwise read `/Attack_From_Mars` in a URL as three capitalized
 -- words — a catalog name no author wrote and none can link, so a span consumer reports a
 -- mention that exists nowhere on the page.
+--
+-- The destination carries ONE LEVEL OF BALANCED PARENTHESES, which CommonMark allows and
+-- Wikipedia's disambiguators (`/wiki/Medieval_Madness_(pinball)`) spend constantly.
+-- Stopping at the first `)` ends the match mid-URL and hands the remainder back as prose,
+-- which is the same fabricated mention by another route. One level is the practical
+-- bound, not a general one: RE2 has no recursion, and no real destination nests deeper.
 -- A macro for the reason _quoted_run and _paren_pattern are macros: it is the only way
 -- foundation_checks can state the tokenization against input we control. A view reads
 -- entity_prose, so a check over one can assert what the corpus happens to contain and
@@ -94,7 +108,7 @@ CREATE OR REPLACE MACRO _prose_tokens(t) AS
   str_split(trim(regexp_replace(
     strip_accents(regexp_replace(
       regexp_replace(regexp_replace(t, '\[\[[^\]]*\]\]', ' ', 'g'),
-                     '\]\([^)\n]*\)', ' ', 'g'),
+                     '\]\((?:[^()\n]|\([^()\n]*\))*\)', ' ', 'g'),
       _quoted_run(), ' ', 'g')),
     '[^\p{L}\p{N}]+', ' ', 'g')), ' ');
 

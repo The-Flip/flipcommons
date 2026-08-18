@@ -328,6 +328,14 @@ CREATE OR REPLACE VIEW foundation_checks AS
      OR len(regexp_extract_all('say "unclosed' || chr(10) || 'next line', _quoted_run())) IS DISTINCT FROM 0
      -- the exclusion direction, which is what prose_words applies
      OR regexp_replace('say "quoted" here', _quoted_run(), ' ', 'g') IS DISTINCT FROM 'say   here'
+     -- INCH MARKS ARE NOT QUOTES: pairing two of them deletes every word between from
+     -- prose_words, and losing text raises no finding anywhere
+     OR len(regexp_extract_all('The 3" flipper and Attack From Mars and a 5" ramp',
+                               _quoted_run())) IS DISTINCT FROM 0
+     -- ...while a genuine quote may still open on a digit or close on one
+     OR regexp_extract_all('a "2.0" upgrade', _quoted_run()) IS DISTINCT FROM ['"2.0"']
+     OR regexp_extract_all('"Attack From Mars 2" here', _quoted_run())
+        IS DISTINCT FROM ['"Attack From Mars 2"']
   UNION ALL
   -- The shared tokenization (prose.sql), stated against input we control. Every strip
   -- here fails the same silent way: the rows survive, the WORDS are wrong, and a corpus
@@ -346,6 +354,12 @@ CREATE OR REPLACE VIEW foundation_checks AS
      -- punctuation collapses to one break rather than to empty words, which would
      -- shift every position downstream
      OR _prose_tokens('Foo, bar; baz!') IS DISTINCT FROM ['Foo', 'bar', 'baz']
+     -- a destination may carry balanced parentheses (CommonMark allows them, Wikipedia
+     -- disambiguators use them); stopping at the first one leaks the rest as prose
+     OR _prose_tokens('See [source](https://x.org/(Attack)_From_Mars) here')
+        IS DISTINCT FROM ['See', 'source', 'here']
+     OR _prose_tokens('See [w](https://en.wikipedia.org/wiki/Medieval_Madness_(pinball)) x')
+        IS DISTINCT FROM ['See', 'w', 'x']
   UNION ALL
   SELECT 'macro_presumed_producing',
          concat_ws('/', presumed_producing('ongoing', 1932),
