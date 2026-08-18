@@ -77,7 +77,7 @@ This is a warning not error: some hits are legitimately unlinked (a name inside 
 
 ### Parenthetical fact cross-check in descriptions
 
-The house pattern _[[model_or_title:x]]_ (1997, [[manufacturer:williams]]) embeds two claims the DB already holds. Error when the year or maker disagrees with the catalog. The error could indicate:
+The house pattern when referencing a title or model is "_[[title_or_model:x]]_ (1997, [[manufacturer:williams]])". Error when the year or maker disagrees with the catalog. The error could indicate:
 
 - The year is wrong
 - The manufacturer is wrong
@@ -96,13 +96,9 @@ The rule: for every title or model wikilinked from the description of a gameplay
 
 Warning not error. Prose can mention unattachable titles -- like "Model X was the last Gottlieb before they switched to this feature".
 
-### Earlier-carrier contradiction in descriptions
+### Earliest / first statements
 
-When a gameplay feature's description says "first machine that..." and links a machine with a parenthetical year, warn if the catalog holds a carrier of that feature with an earlier year.
-
-- This is the Variety/Big Time bug class: 0251 credited Magic Lines to Big Time because the catalog's two 1954 carriers tie at year grain and arg_min picked wrong.
-
-Related sub-warning: when a description makes a first-on claim and the earliest carriers tie on year, flag that year-grain can't order them (month-grain evidence needed).
+When a gameplay feature or reward type or tag (or probably other record type)'s description says "first machine that...", it's an error: our catalog isn't complete and we have no buisiness making such a statement. Even if it says "first machine in our catalog that...", it's sensationalist. The only time it's acceptable is when accompanied by a citation where someone said that fact somewhere else.
 
 ### Repeated-gloss across multiple descriptions
 
