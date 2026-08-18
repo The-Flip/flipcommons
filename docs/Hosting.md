@@ -94,6 +94,10 @@ Bunny fronts `flipcommons.org` for anonymous SSR HTML caching. Configured to:
 - bypass any request carrying `sessionid`
 - bypass any request carrying `mode=kiosk`
 
+Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. SvelteKit leaves `+server.ts` endpoints unstamped, so [Caddyfile](../Caddyfile) sets `Cache-Control: no-store` on `/__health` — otherwise an edge PoP serves uptime probes a cached `ok` for weeks after the origin stops responding.
+
+**Changing a cache header is not retroactive.** Bunny consults the origin header only when it pulls, so a PoP holding an object keeps serving it for the remainder of the TTL it was cached under. After deploying a `Cache-Control` change, [purge](https://docs.bunny.net/cdn/purge-cache) the affected URL from the pull zone — otherwise the old policy survives up to its original expiry, unevenly across PoPs as eviction pressure varies. Confirm with `curl -sSI https://flipcommons.org/__health`: a `cdn-cache: HIT` still reporting the previous `Cache-Control` means the purge hasn't landed.
+
 The origin-side cache contract is described in [Architecture.md](Architecture.md#edge-caching-of-ssr-html). The client-IP and origin-locking prerequisites for fronting the apex are under [Client IP trust](#client-ip-trust).
 
 The apex DNS CNAMEs to the Bunny pull zone rather than Railway, but the domain stays registered on the Railway service so it still routes by `Host`.
