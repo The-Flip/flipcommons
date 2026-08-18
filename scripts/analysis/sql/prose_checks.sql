@@ -35,4 +35,17 @@ CREATE OR REPLACE VIEW _prose_checks AS
   WHERE r.target_entity_type IS NOT NULL AND r.target_public_id IS NULL
     AND EXISTS (SELECT 1 FROM entity_subjects s
                 WHERE s.subject_type = r.target_entity_type
-                  AND s.subject_id = r.target_id);
+                  AND s.subject_id = r.target_id)
+
+  -- ─── Prose text ────────────────────────────────────────────────────────────
+  -- prose_words is one row per authored prose field and nothing else. The tokenization
+  -- itself is pinned by macro_prose_tokens against literals; what no literal can see is
+  -- a JOIN added to the view, which fans the grain out silently — every consumer reads
+  -- word POSITIONS off this array, so a duplicated row is a second coordinate system for
+  -- the same text rather than a visibly wrong answer.
+  UNION ALL
+  SELECT 'prose_words_grain',
+         'prose_words=' || (SELECT count(*) FROM prose_words)::VARCHAR
+           || ' authored=' || (SELECT count(*) FROM entity_prose WHERE text IS NOT NULL)::VARCHAR
+  WHERE (SELECT count(*) FROM prose_words)
+        IS DISTINCT FROM (SELECT count(*) FROM entity_prose WHERE text IS NOT NULL);

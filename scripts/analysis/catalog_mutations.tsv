@@ -46,6 +46,11 @@ collision ids truncated	collision_grain_broken	CREATE TABLE _m AS SELECT * FROM 
 name_norm ascii-only	macro_name_norm	CREATE OR REPLACE MACRO name_norm(s) AS trim(regexp_replace(lower(COALESCE(s, '')), '[^a-z0-9]+', ' ', 'g'));
 name_norm loses accent folding	macro_name_norm	CREATE OR REPLACE MACRO name_norm(s) AS trim(regexp_replace(lower(COALESCE(s, '')), '[^\p{L}\p{N}]+', ' ', 'g'));
 paren pattern year width rots	macro_paren_pattern	CREATE OR REPLACE MACRO _paren_pattern() AS '\[\[(model|title):id:(\d+)\]\][^(\[]{0,8}\((\d{2})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)';
+paren gap admits intervening prose	macro_paren_pattern	CREATE OR REPLACE MACRO _paren_pattern() AS '\[\[(model|title):id:(\d+)\]\][^(\[]{0,8}\((\d{4})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)';
+quoted run cap truncates a real quote	macro_quoted_run	CREATE OR REPLACE MACRO _quoted_run() AS '["“”][^"“”\n]{0,80}["“”]';
+quoted run stops matching curly marks	macro_quoted_run	CREATE OR REPLACE MACRO _quoted_run() AS '"[^"\n]{0,300}"';
+prose tokens stop stripping wikilinks	macro_prose_tokens	CREATE OR REPLACE MACRO _prose_tokens(t) AS str_split(trim(regexp_replace(strip_accents(regexp_replace(regexp_replace(t, '\]\([^)\n]*\)', ' ', 'g'), _quoted_run(), ' ', 'g')), '[^\p{L}\p{N}]+', ' ', 'g')), ' ');
+prose tokens keep link destinations	macro_prose_tokens	CREATE OR REPLACE MACRO _prose_tokens(t) AS str_split(trim(regexp_replace(strip_accents(regexp_replace(regexp_replace(t, '\[\[[^\]]*\]\]', ' ', 'g'), _quoted_run(), ' ', 'g')), '[^\p{L}\p{N}]+', ' ', 'g')), ' ');
 name_strip_paren greedy	macro_name_strip_paren	CREATE OR REPLACE MACRO name_strip_paren(s) AS regexp_replace(COALESCE(s, ''), '\s*\([^()]*\)\s*', '', 'g');
 name_key returns NULL	macro_name_key	CREATE OR REPLACE MACRO name_key(s) AS NULL::VARCHAR;
 presumed_producing ignores the recency window	macro_presumed_producing	CREATE OR REPLACE MACRO presumed_producing(operating_status, year_of_last_model) AS operating_status = 'ongoing';
@@ -170,3 +175,4 @@ entity view bypasses _staging()	entity_view_not_live_filtered	CREATE OR REPLACE 
 staging view gains an outgoing edge	staging_view_not_flat	CREATE OR REPLACE VIEW stg.title AS SELECT t.* FROM _staging('raw.catalog_title') t LEFT JOIN raw.catalog_franchise f ON f.id = t.franchise_id;
 reference source unresolved	reference_source_unresolved	CREATE TABLE _m AS SELECT * FROM record_references; CREATE OR REPLACE VIEW record_references AS SELECT * REPLACE (NULL::VARCHAR AS source_public_id) FROM _m;
 reference target undecoded	reference_target_undecoded	CREATE TABLE _m AS SELECT * FROM record_references; CREATE OR REPLACE VIEW record_references AS SELECT * REPLACE (NULL::VARCHAR AS target_public_id) FROM _m;
+prose words grain fans out	prose_words_grain	CREATE OR REPLACE VIEW prose_words AS SELECT p.entity_type, p.entity_id, p.public_id, p.field, _prose_tokens(p.text) AS w FROM entity_prose p LEFT JOIN entity_names n ON n.entity_type = p.entity_type AND n.entity_id = p.entity_id WHERE p.text IS NOT NULL;

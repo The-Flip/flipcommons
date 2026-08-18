@@ -305,6 +305,47 @@ CREATE OR REPLACE VIEW foundation_checks AS
      OR len(regexp_extract_all('[[person:id:9]] (1997)', _paren_pattern())) IS DISTINCT FROM 0
      -- a two-digit year is prose, not a stated fact
      OR len(regexp_extract_all('[[model:id:1]] (97)', _paren_pattern())) IS DISTINCT FROM 0
+     -- a WORD between the link and the parenthetical makes it a sentence, not the
+     -- convention: admitting one turns correct prose into a parenthetical-fact error
+     OR len(regexp_extract_all('[[title:id:7]] Remake (2014)', _paren_pattern())) IS DISTINCT FROM 0
+     -- ...while the emphasis markers the convention itself writes must still anchor one
+     OR len(regexp_extract_all('*[[title:id:7]]* (2014)', _paren_pattern())) IS DISTINCT FROM 1
+  UNION ALL
+  -- The quoted-run definition (prose.sql). Both directions are pinned because one macro
+  -- serves both: prose_quotes EXTRACTS with it and prose_words EXCLUDES with it, so a
+  -- rot empties the first while handing every quoted wording to the second as ordinary
+  -- prose — two silent failures, neither distinguishable from a clean catalog.
+  SELECT 'macro_quoted_run',
+         regexp_extract_all('He called it "The Machine" once', _quoted_run())::VARCHAR
+  WHERE regexp_extract_all('He called it "The Machine" once', _quoted_run())
+        IS DISTINCT FROM ['"The Machine"']
+     -- curly doubles are the same run
+     OR regexp_extract_all('a “Curly Name” here', _quoted_run()) IS DISTINCT FROM ['“Curly Name”']
+     -- a long quote is still a quote; a cap below one drops it from prose_quotes AND
+     -- leaves it in prose_words, which is the direction that fabricates mentions
+     OR len(regexp_extract_all('"' || repeat('x', 229) || '"', _quoted_run())) IS DISTINCT FROM 1
+     -- an unclosed mark yields nothing rather than swallowing the line below it
+     OR len(regexp_extract_all('say "unclosed' || chr(10) || 'next line', _quoted_run())) IS DISTINCT FROM 0
+     -- the exclusion direction, which is what prose_words applies
+     OR regexp_replace('say "quoted" here', _quoted_run(), ' ', 'g') IS DISTINCT FROM 'say   here'
+  UNION ALL
+  -- The shared tokenization (prose.sql), stated against input we control. Every strip
+  -- here fails the same silent way: the rows survive, the WORDS are wrong, and a corpus
+  -- with no markup left in it looks exactly like a corpus that was tokenized correctly.
+  SELECT 'macro_prose_tokens', _prose_tokens('See [[title:id:5]] here')::VARCHAR
+     -- wikilink markup goes; the prose around it stays
+  WHERE _prose_tokens('See [[title:id:5]] here') IS DISTINCT FROM ['See', 'here']
+     -- a markdown link contributes its visible text, never its destination: the URL
+     -- path would otherwise read as a catalog name no author wrote
+     OR _prose_tokens('See [IPDB](https://x.org/Attack_From_Mars) here')
+        IS DISTINCT FROM ['See', 'IPDB', 'here']
+     -- quoted wordings belong to prose_quotes, not to the span coordinate system
+     OR _prose_tokens('a "Quoted Name" b') IS DISTINCT FROM ['a', 'b']
+     -- accents fold, CASE IS KEPT — the game Pinball stays distinct from the word
+     OR _prose_tokens('Pokémon Pinball') IS DISTINCT FROM ['Pokemon', 'Pinball']
+     -- punctuation collapses to one break rather than to empty words, which would
+     -- shift every position downstream
+     OR _prose_tokens('Foo, bar; baz!') IS DISTINCT FROM ['Foo', 'bar', 'baz']
   UNION ALL
   SELECT 'macro_presumed_producing',
          concat_ws('/', presumed_producing('ongoing', 1932),

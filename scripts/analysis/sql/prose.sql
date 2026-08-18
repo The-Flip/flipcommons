@@ -54,9 +54,15 @@ COMMENT ON VIEW record_references IS
 
 -- The one definition of a quoted run, shared by the view that extracts them and the view
 -- that excludes them — two copies would disagree about which text is which. Straight and
--- curly doubles alike; bounded and single-line so an unbalanced quote can swallow at
--- most 80 characters of one line, never the rest of the description.
-CREATE OR REPLACE MACRO _quoted_run() AS '["“”][^"“”\n]{0,80}["“”]';
+-- curly doubles alike.
+--
+-- EXCLUDING \n IS THE CONTAINMENT: an unbalanced mark can never reach past its own
+-- paragraph. The length cap only bounds the damage inside that line, which is why it sits
+-- well above the longest quote anyone writes (229 characters in the corpus today). A cap
+-- set below a genuine quote is the harmful direction, and it fails twice over: the quote
+-- drops out of prose_quotes AND stays in prose_words, seeding exactly the spurious
+-- mentions the exclusion exists to prevent.
+CREATE OR REPLACE MACRO _quoted_run() AS '["“”][^"“”\n]{0,300}["“”]';
 
 -- prose_quotes — the wordings prose QUOTES rather than says: a machine's nickname, a
 -- feature name as a source spelled it, a marketing slogan. A name in here is legitimately
@@ -67,23 +73,36 @@ CREATE OR REPLACE VIEW prose_quotes AS
                  for q in regexp_extract_all(text, _quoted_run())]) AS quote
   FROM entity_prose WHERE text IS NOT NULL;
 COMMENT ON VIEW prose_quotes IS
-  'One row per double-quoted run in a live record''s prose (straight or curly, marks stripped) — the wordings prose quotes rather than says. The complement of prose_words, which excludes these runs.';
+  'One row per double-quoted run in a live record''s prose (straight or curly, marks stripped) — the wordings prose quotes rather than says. The complement of prose_words, which excludes these runs. A run must open and close on one line and within 300 characters; a mark left unclosed yields no row rather than swallowing the paragraph.';
 
 -- prose_words — each prose field as a word array: wikilink markup and quoted runs
 -- removed, accents folded, punctuation collapsed, CASE KEPT so a consumer can still
 -- distinguish the game Pinball from the word pinball. Word position in this array is the
 -- shared coordinate system: every consumer that matches spans against prose reads this
 -- one tokenization, or its positions disagree with its neighbours'.
+--
+-- A markdown link contributes its VISIBLE TEXT and not its destination. Punctuation
+-- collapsing would otherwise read `/Attack_From_Mars` in a URL as three capitalized
+-- words — a catalog name no author wrote and none can link, so a span consumer reports a
+-- mention that exists nowhere on the page.
+-- A macro for the reason _quoted_run and _paren_pattern are macros: it is the only way
+-- foundation_checks can state the tokenization against input we control. A view reads
+-- entity_prose, so a check over one can assert what the corpus happens to contain and
+-- nothing about what the strips DO — and a strip that stops stripping leaves every row
+-- in place with the wrong words in it, which is indistinguishable from a clean catalog.
+CREATE OR REPLACE MACRO _prose_tokens(t) AS
+  str_split(trim(regexp_replace(
+    strip_accents(regexp_replace(
+      regexp_replace(regexp_replace(t, '\[\[[^\]]*\]\]', ' ', 'g'),
+                     '\]\([^)\n]*\)', ' ', 'g'),
+      _quoted_run(), ' ', 'g')),
+    '[^\p{L}\p{N}]+', ' ', 'g')), ' ');
+
 CREATE OR REPLACE VIEW prose_words AS
-  SELECT entity_type, entity_id, public_id, field,
-         str_split(trim(regexp_replace(
-           strip_accents(regexp_replace(
-             regexp_replace(text, '\[\[[^\]]*\]\]', ' ', 'g'),
-             _quoted_run(), ' ', 'g')),
-           '[^\p{L}\p{N}]+', ' ', 'g')), ' ') AS w
+  SELECT entity_type, entity_id, public_id, field, _prose_tokens(text) AS w
   FROM entity_prose WHERE text IS NOT NULL;
 COMMENT ON VIEW prose_words IS
-  'One row per prose field of a live record — the text as a word array, wikilink markup and quoted runs removed, accents folded, case kept. The shared tokenization: match spans against this so word positions agree across consumers; quoted wordings live in prose_quotes instead.';
+  'One row per prose field of a live record — the text as a word array, wikilink markup, markdown link destinations and quoted runs removed, accents folded, case kept. The shared tokenization: match spans against this so word positions agree across consumers; quoted wordings live in prose_quotes instead.';
 
 -- The house parenthetical — _[[model:x]]_ (1997, [[manufacturer:williams]]) — is an
 -- authoring convention of the corpus: prose restates a year and maker the catalog
@@ -92,8 +111,14 @@ COMMENT ON VIEW prose_words IS
 --
 -- A macro rather than the CTE this looks like it wants: the named-group form of
 -- regexp_extract requires a CONSTANT pattern, and a column reference is not one.
+--
+-- ONLY EMPHASIS MARKERS AND HORIZONTAL WHITESPACE separate the link from the
+-- parenthetical, because the convention writes the two adjacent. A gap admitting WORDS
+-- reads an ordinary sentence — `the [[title:id:N]] Remake (2014)` — as a restated
+-- catalog fact, and audit_parenthetical_fact then reports the disagreement as an error
+-- against prose that is right.
 CREATE OR REPLACE MACRO _paren_pattern() AS
-  '\[\[(model|title):id:(\d+)\]\][^(\[]{0,8}\((\d{4})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)';
+  '\[\[(model|title):id:(\d+)\]\][*_ \t]{0,8}\((\d{4})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)';
 
 -- prose_parentheticals — every house parenthetical in the corpus, parsed once. A second
 -- copy of this parse would drift from the first without either one failing.
