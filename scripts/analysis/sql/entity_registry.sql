@@ -34,7 +34,7 @@ CREATE OR REPLACE VIEW entity_registry AS
     ('title'                   , 'titles'                   , 'catalog.title'                  , 'catalog_title'                  , 'slug'         , true )
   ) AS t(entity_type, entity_type_plural, django_label, db_table, public_id_field, is_wikilinkable);
 COMMENT ON VIEW entity_registry IS
-  'One row per catalog entity type — the entity_type this layer speaks and its plural, and the content-type label, table name and public id field the physical schema speaks. is_wikilinkable says whether prose may link it at all (Location cannot). Join it to fc.django_content_type to decode a polymorphic reference; _entity_type_of(table) spells a single one.';
+  'One row per catalog entity type — the entity_type this layer speaks and its plural, and the content-type label, table name and public id field the physical schema speaks. is_wikilinkable says whether prose may link it at all (Location cannot). Join it to raw.django_content_type to decode a polymorphic reference; _entity_type_of(table) spells a single one.';
 
 -- entity_subjects — the polymorphic-reference resolver. `subject_public_id`
 -- is NOT a slug: it is whatever the model declares as `public_id_field`,
@@ -53,27 +53,27 @@ CREATE OR REPLACE VIEW entity_subjects AS
     name      AS subject_name,
     status    AS subject_status
   FROM (
-              SELECT 'cabinet'                  AS subject_type, id, slug AS public_id, name, status FROM fc.catalog_cabinet
-    UNION ALL SELECT 'corporate-entity'        , id, slug, name, status FROM fc.catalog_corporateentity
-    UNION ALL SELECT 'credit-role'             , id, slug, name, status FROM fc.catalog_creditrole
-    UNION ALL SELECT 'display-subtype'         , id, slug, name, status FROM fc.catalog_displaysubtype
-    UNION ALL SELECT 'display-type'            , id, slug, name, status FROM fc.catalog_displaytype
-    UNION ALL SELECT 'franchise'               , id, slug, name, status FROM fc.catalog_franchise
-    UNION ALL SELECT 'game-format'             , id, slug, name, status FROM fc.catalog_gameformat
-    UNION ALL SELECT 'gameplay-feature'        , id, slug, name, status FROM fc.catalog_gameplayfeature
-    UNION ALL SELECT 'location'                , id, location_path, name, status FROM fc.catalog_location
-    UNION ALL SELECT 'manufacturer'            , id, slug, name, status FROM fc.catalog_manufacturer
-    UNION ALL SELECT 'model'                   , id, slug, name, status FROM fc.catalog_machinemodel
-    UNION ALL SELECT 'person'                  , id, slug, name, status FROM fc.catalog_person
-    UNION ALL SELECT 'production-status'       , id, slug, name, status FROM fc.catalog_productionstatus
-    UNION ALL SELECT 'reward-type'             , id, slug, name, status FROM fc.catalog_rewardtype
-    UNION ALL SELECT 'series'                  , id, slug, name, status FROM fc.catalog_series
-    UNION ALL SELECT 'system'                  , id, slug, name, status FROM fc.catalog_system
-    UNION ALL SELECT 'tag'                     , id, slug, name, status FROM fc.catalog_tag
-    UNION ALL SELECT 'technology-generation'   , id, slug, name, status FROM fc.catalog_technologygeneration
-    UNION ALL SELECT 'technology-subgeneration', id, slug, name, status FROM fc.catalog_technologysubgeneration
-    UNION ALL SELECT 'theme'                   , id, slug, name, status FROM fc.catalog_theme
-    UNION ALL SELECT 'title'                   , id, slug, name, status FROM fc.catalog_title
+              SELECT 'cabinet'                  AS subject_type, id, slug AS public_id, name, status FROM raw.catalog_cabinet
+    UNION ALL SELECT 'corporate-entity'        , id, slug, name, status FROM raw.catalog_corporateentity
+    UNION ALL SELECT 'credit-role'             , id, slug, name, status FROM raw.catalog_creditrole
+    UNION ALL SELECT 'display-subtype'         , id, slug, name, status FROM raw.catalog_displaysubtype
+    UNION ALL SELECT 'display-type'            , id, slug, name, status FROM raw.catalog_displaytype
+    UNION ALL SELECT 'franchise'               , id, slug, name, status FROM raw.catalog_franchise
+    UNION ALL SELECT 'game-format'             , id, slug, name, status FROM raw.catalog_gameformat
+    UNION ALL SELECT 'gameplay-feature'        , id, slug, name, status FROM raw.catalog_gameplayfeature
+    UNION ALL SELECT 'location'                , id, location_path, name, status FROM raw.catalog_location
+    UNION ALL SELECT 'manufacturer'            , id, slug, name, status FROM raw.catalog_manufacturer
+    UNION ALL SELECT 'model'                   , id, slug, name, status FROM raw.catalog_machinemodel
+    UNION ALL SELECT 'person'                  , id, slug, name, status FROM raw.catalog_person
+    UNION ALL SELECT 'production-status'       , id, slug, name, status FROM raw.catalog_productionstatus
+    UNION ALL SELECT 'reward-type'             , id, slug, name, status FROM raw.catalog_rewardtype
+    UNION ALL SELECT 'series'                  , id, slug, name, status FROM raw.catalog_series
+    UNION ALL SELECT 'system'                  , id, slug, name, status FROM raw.catalog_system
+    UNION ALL SELECT 'tag'                     , id, slug, name, status FROM raw.catalog_tag
+    UNION ALL SELECT 'technology-generation'   , id, slug, name, status FROM raw.catalog_technologygeneration
+    UNION ALL SELECT 'technology-subgeneration', id, slug, name, status FROM raw.catalog_technologysubgeneration
+    UNION ALL SELECT 'theme'                   , id, slug, name, status FROM raw.catalog_theme
+    UNION ALL SELECT 'title'                   , id, slug, name, status FROM raw.catalog_title
   );
 COMMENT ON VIEW entity_subjects IS
   'One row per catalog entity of ANY type, keyed (subject_type, subject_id) the way a polymorphic reference names it — public id, name and status for resolving a claim, changeset or patch entry subject without branching on its type. NOT live-filtered; predicate on subject_status.';
@@ -88,27 +88,27 @@ COMMENT ON VIEW entity_subjects IS
 -- spelling Django stored.
 CREATE OR REPLACE VIEW entity_prose AS
   SELECT * FROM (
-              SELECT 'cabinet'                  AS entity_type, id, slug AS public_id, 'description' AS field, description AS text FROM _staging('fc.catalog_cabinet')
-    UNION ALL SELECT 'corporate-entity'        , id, slug, 'description', description FROM _staging('fc.catalog_corporateentity')
-    UNION ALL SELECT 'credit-role'             , id, slug, 'description', description FROM _staging('fc.catalog_creditrole')
-    UNION ALL SELECT 'display-subtype'         , id, slug, 'description', description FROM _staging('fc.catalog_displaysubtype')
-    UNION ALL SELECT 'display-type'            , id, slug, 'description', description FROM _staging('fc.catalog_displaytype')
-    UNION ALL SELECT 'franchise'               , id, slug, 'description', description FROM _staging('fc.catalog_franchise')
-    UNION ALL SELECT 'game-format'             , id, slug, 'description', description FROM _staging('fc.catalog_gameformat')
-    UNION ALL SELECT 'gameplay-feature'        , id, slug, 'description', description FROM _staging('fc.catalog_gameplayfeature')
-    UNION ALL SELECT 'location'                , id, location_path, 'description', description FROM _staging('fc.catalog_location')
-    UNION ALL SELECT 'manufacturer'            , id, slug, 'description', description FROM _staging('fc.catalog_manufacturer')
-    UNION ALL SELECT 'model'                   , id, slug, 'description', description FROM _staging('fc.catalog_machinemodel')
-    UNION ALL SELECT 'person'                  , id, slug, 'description', description FROM _staging('fc.catalog_person')
-    UNION ALL SELECT 'production-status'       , id, slug, 'description', description FROM _staging('fc.catalog_productionstatus')
-    UNION ALL SELECT 'reward-type'             , id, slug, 'description', description FROM _staging('fc.catalog_rewardtype')
-    UNION ALL SELECT 'series'                  , id, slug, 'description', description FROM _staging('fc.catalog_series')
-    UNION ALL SELECT 'system'                  , id, slug, 'description', description FROM _staging('fc.catalog_system')
-    UNION ALL SELECT 'tag'                     , id, slug, 'description', description FROM _staging('fc.catalog_tag')
-    UNION ALL SELECT 'technology-generation'   , id, slug, 'description', description FROM _staging('fc.catalog_technologygeneration')
-    UNION ALL SELECT 'technology-subgeneration', id, slug, 'description', description FROM _staging('fc.catalog_technologysubgeneration')
-    UNION ALL SELECT 'theme'                   , id, slug, 'description', description FROM _staging('fc.catalog_theme')
-    UNION ALL SELECT 'title'                   , id, slug, 'description', description FROM _staging('fc.catalog_title')
+              SELECT 'cabinet'                  AS entity_type, id, slug AS public_id, 'description' AS field, description AS text FROM _staging('raw.catalog_cabinet')
+    UNION ALL SELECT 'corporate-entity'        , id, slug, 'description', description FROM _staging('raw.catalog_corporateentity')
+    UNION ALL SELECT 'credit-role'             , id, slug, 'description', description FROM _staging('raw.catalog_creditrole')
+    UNION ALL SELECT 'display-subtype'         , id, slug, 'description', description FROM _staging('raw.catalog_displaysubtype')
+    UNION ALL SELECT 'display-type'            , id, slug, 'description', description FROM _staging('raw.catalog_displaytype')
+    UNION ALL SELECT 'franchise'               , id, slug, 'description', description FROM _staging('raw.catalog_franchise')
+    UNION ALL SELECT 'game-format'             , id, slug, 'description', description FROM _staging('raw.catalog_gameformat')
+    UNION ALL SELECT 'gameplay-feature'        , id, slug, 'description', description FROM _staging('raw.catalog_gameplayfeature')
+    UNION ALL SELECT 'location'                , id, location_path, 'description', description FROM _staging('raw.catalog_location')
+    UNION ALL SELECT 'manufacturer'            , id, slug, 'description', description FROM _staging('raw.catalog_manufacturer')
+    UNION ALL SELECT 'model'                   , id, slug, 'description', description FROM _staging('raw.catalog_machinemodel')
+    UNION ALL SELECT 'person'                  , id, slug, 'description', description FROM _staging('raw.catalog_person')
+    UNION ALL SELECT 'production-status'       , id, slug, 'description', description FROM _staging('raw.catalog_productionstatus')
+    UNION ALL SELECT 'reward-type'             , id, slug, 'description', description FROM _staging('raw.catalog_rewardtype')
+    UNION ALL SELECT 'series'                  , id, slug, 'description', description FROM _staging('raw.catalog_series')
+    UNION ALL SELECT 'system'                  , id, slug, 'description', description FROM _staging('raw.catalog_system')
+    UNION ALL SELECT 'tag'                     , id, slug, 'description', description FROM _staging('raw.catalog_tag')
+    UNION ALL SELECT 'technology-generation'   , id, slug, 'description', description FROM _staging('raw.catalog_technologygeneration')
+    UNION ALL SELECT 'technology-subgeneration', id, slug, 'description', description FROM _staging('raw.catalog_technologysubgeneration')
+    UNION ALL SELECT 'theme'                   , id, slug, 'description', description FROM _staging('raw.catalog_theme')
+    UNION ALL SELECT 'title'                   , id, slug, 'description', description FROM _staging('raw.catalog_title')
   ) AS t(entity_type, entity_id, public_id, field, text);
 COMMENT ON VIEW entity_prose IS
   'One row per LIVE entity per markdown field, of ANY entity type — the authored-prose corpus. For questions that SPAN entity types; a question about one type reads that entity view, which carries description already. text IS NULL where the field is unset, and every MarkdownField is a row, so predicate on `field` rather than assuming description.';
@@ -122,13 +122,13 @@ COMMENT ON VIEW entity_prose IS
 -- supplies the name and public id, so doing it here would mean doing it twice.
 CREATE OR REPLACE VIEW entity_aliases AS
   SELECT * FROM (
-              SELECT 'corporate-entity' AS entity_type, corporate_entity_id AS entity_id, value AS alias FROM fc.catalog_corporateentityalias
-    UNION ALL SELECT 'gameplay-feature', feature_id         , value FROM fc.catalog_gameplayfeaturealias
-    UNION ALL SELECT 'location'        , location_id        , value FROM fc.catalog_locationalias
-    UNION ALL SELECT 'manufacturer'    , manufacturer_id    , value FROM fc.catalog_manufactureralias
-    UNION ALL SELECT 'person'          , person_id          , value FROM fc.catalog_personalias
-    UNION ALL SELECT 'reward-type'     , reward_type_id     , value FROM fc.catalog_rewardtypealias
-    UNION ALL SELECT 'theme'           , theme_id           , value FROM fc.catalog_themealias
+              SELECT 'corporate-entity' AS entity_type, corporate_entity_id AS entity_id, value AS alias FROM raw.catalog_corporateentityalias
+    UNION ALL SELECT 'gameplay-feature', feature_id         , value FROM raw.catalog_gameplayfeaturealias
+    UNION ALL SELECT 'location'        , location_id        , value FROM raw.catalog_locationalias
+    UNION ALL SELECT 'manufacturer'    , manufacturer_id    , value FROM raw.catalog_manufactureralias
+    UNION ALL SELECT 'person'          , person_id          , value FROM raw.catalog_personalias
+    UNION ALL SELECT 'reward-type'     , reward_type_id     , value FROM raw.catalog_rewardtypealias
+    UNION ALL SELECT 'theme'           , theme_id           , value FROM raw.catalog_themealias
   ) AS t(entity_type, entity_id, alias);
 COMMENT ON VIEW entity_aliases IS
   'One row per alias of ANY entity type, keyed (entity_type, entity_id) to match entity_subjects — the alternate names prose might use. NOT live-filtered and it carries no parent name: join entity_subjects for liveness, public id and the canonical name. The per-type views (theme_aliases, person_aliases, …) stay the way to ask about ONE type, since they decode the parent slug.';

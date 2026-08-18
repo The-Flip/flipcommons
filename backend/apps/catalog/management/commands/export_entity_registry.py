@@ -112,7 +112,7 @@ def _registry_view(rows: list[EntityRow]) -> list[str]:
         "  'One row per catalog entity type — the entity_type this layer speaks and its"
         " plural, and the content-type label, table name and public id field the"
         " physical schema speaks. is_wikilinkable says whether prose may link it at all"
-        " (Location cannot). Join it to fc.django_content_type to decode a polymorphic"
+        " (Location cannot). Join it to raw.django_content_type to decode a polymorphic"
         " reference; _entity_type_of(table) spells a single one.';",
     ]
     return lines
@@ -142,7 +142,7 @@ def _subjects_view(rows: list[EntityRow]) -> list[str]:
             # S608 reads any f-string containing SELECT as query construction. This is a
             # code generator: the interpolated parts are `_meta.db_table` and
             # `public_id_field` off the model class, and nothing here executes the text.
-            f"    {lead}SELECT {head}, id, {pid}, name, status FROM fc.{r.db_table}"  # noqa: S608
+            f"    {lead}SELECT {head}, id, {pid}, name, status FROM raw.{r.db_table}"  # noqa: S608
         )
     lines += [
         "  );",
@@ -177,7 +177,7 @@ def _prose_view(rows: list[EntityRow]) -> list[str]:
             # S608: see _subjects_view. Interpolated parts are `_meta.db_table`,
             # `public_id_field` and MarkdownField names off the model class.
             f"    {lead}SELECT {head}, id, {pid}, {col}, {text}"  # noqa: S608
-            f" FROM _staging('fc.{r.db_table}')"
+            f" FROM _staging('raw.{r.db_table}')"
         )
     lines += [
         "  ) AS t(entity_type, entity_id, public_id, field, text);",
@@ -260,7 +260,7 @@ def _aliases_view(rows: list[AliasRow]) -> list[str]:
         lines.append(
             # S608: see _subjects_view. Interpolated parts are `_meta.db_table` and the
             # parent FK name, both off the model class.
-            f"    {lead}SELECT {head}, {eid}, {value} FROM fc.{r.db_table}"  # noqa: S608
+            f"    {lead}SELECT {head}, {eid}, {value} FROM raw.{r.db_table}"  # noqa: S608
         )
     lines += [
         "  ) AS t(entity_type, entity_id, alias);",

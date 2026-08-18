@@ -35,7 +35,7 @@
 -- A VIEW and not a read of `fc`, so check-mutations can break it: `fc` is attached
 -- READ_ONLY and its tables cannot be shadowed. Same reasoning as _citation_parent_chain.
 CREATE OR REPLACE VIEW _changeset_action AS
-  SELECT id AS changeset_id, action FROM fc.provenance_changeset;
+  SELECT id AS changeset_id, action FROM raw.provenance_changeset;
 
 CREATE OR REPLACE VIEW _provenance_checks AS
   -- `claims` decoded ONCE for the branches below, on foundation_checks' reasoning and
@@ -153,22 +153,22 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   -- physical tables so a lost row is loud.
   UNION ALL
   SELECT 'claim_rows_dropped',
-         'physical=' || (SELECT count(*) FROM fc.provenance_claim)::VARCHAR
+         'physical=' || (SELECT count(*) FROM raw.provenance_claim)::VARCHAR
            || ' view=' || (SELECT count(*) FROM claims)::VARCHAR
-  WHERE (SELECT count(*) FROM fc.provenance_claim) IS DISTINCT FROM (SELECT count(*) FROM claims)
+  WHERE (SELECT count(*) FROM raw.provenance_claim) IS DISTINCT FROM (SELECT count(*) FROM claims)
 
   UNION ALL
   SELECT 'citation_instance_rows_dropped',
-         'physical=' || (SELECT count(*) FROM fc.provenance_citationinstance)::VARCHAR
+         'physical=' || (SELECT count(*) FROM raw.provenance_citationinstance)::VARCHAR
            || ' view=' || (SELECT count(*) FROM citation_instances)::VARCHAR
-  WHERE (SELECT count(*) FROM fc.provenance_citationinstance)
+  WHERE (SELECT count(*) FROM raw.provenance_citationinstance)
         IS DISTINCT FROM (SELECT count(*) FROM citation_instances)
 
   UNION ALL
   SELECT 'changeset_rows_dropped',
-         'physical=' || (SELECT count(*) FROM fc.provenance_changeset)::VARCHAR
+         'physical=' || (SELECT count(*) FROM raw.provenance_changeset)::VARCHAR
            || ' view=' || (SELECT count(*) FROM changesets)::VARCHAR
-  WHERE (SELECT count(*) FROM fc.provenance_changeset)
+  WHERE (SELECT count(*) FROM raw.provenance_changeset)
         IS DISTINCT FROM (SELECT count(*) FROM changesets)
 
   -- ─── Subject resolution ──────────────────────────────────────────────────
@@ -191,8 +191,8 @@ CREATE OR REPLACE VIEW _provenance_checks AS
            || ' subject=' || coalesce(
                 c.subject_type,
                 'UNREGISTERED[' || coalesce((SELECT ct.app_label || '.' || ct.model
-                                             FROM fc.provenance_claim pc
-                                             JOIN fc.django_content_type ct
+                                             FROM raw.provenance_claim pc
+                                             JOIN raw.django_content_type ct
                                                ON ct.id = pc.content_type_id
                                              WHERE pc.id = c.claim_id), '?') || ']')
            || ':' || c.subject_id::VARCHAR

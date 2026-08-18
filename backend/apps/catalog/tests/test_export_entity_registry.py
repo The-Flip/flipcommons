@@ -60,7 +60,7 @@ def _subject_models() -> list[type[ClaimControlledModel]]:
 def test_every_claim_subject_gets_a_union_branch(output: str) -> None:
     """A missing branch is invisible until the first claim about that entity."""
     for cls in _subject_models():
-        assert f"FROM fc.{cls._meta.db_table}" in output, cls.__name__
+        assert f"FROM raw.{cls._meta.db_table}" in output, cls.__name__
 
 
 def test_every_entity_gets_a_registry_row(output: str) -> None:
@@ -74,8 +74,8 @@ def test_every_entity_gets_a_registry_row(output: str) -> None:
 
 def test_public_id_field_is_honoured_per_entity(output: str) -> None:
     """Location addresses by ``location_path``; live places share the slug `victoria`."""
-    assert "id, location_path, name, status FROM fc.catalog_location" in output
-    assert "id, slug, name, status FROM fc.catalog_person" in output
+    assert "id, location_path, name, status FROM raw.catalog_location" in output
+    assert "id, slug, name, status FROM raw.catalog_person" in output
 
 
 def test_is_wikilinkable_tracks_the_picker_base(output: str) -> None:
@@ -125,14 +125,14 @@ def test_every_markdown_field_gets_a_prose_branch(output: str) -> None:
     for cls in _prose_models():
         for field in get_markdown_fields(cls):
             assert f"'{field}'" in prose_block, f"{cls.__name__}.{field}"
-        assert f"_staging('fc.{cls._meta.db_table}')" in prose_block, cls.__name__
+        assert f"_staging('raw.{cls._meta.db_table}')" in prose_block, cls.__name__
 
 
 def test_prose_branches_read_through_staging(output: str) -> None:
     """The liveness rule stays spelled once, in the macro — never inlined here."""
     assert "IS DISTINCT FROM 'deleted'" not in output
     prose_block = _view_block(output, "entity_prose")
-    assert "FROM fc.catalog_" not in prose_block
+    assert "FROM raw.catalog_" not in prose_block
 
 
 def test_an_entity_with_prose_but_no_lifecycle_fails_codegen() -> None:
@@ -153,7 +153,7 @@ def test_every_alias_type_gets_a_branch(output: str) -> None:
     rows = _alias_rows()
     assert len(rows) == len(discover_alias_types())
     for row in rows:
-        assert f"FROM fc.{row.db_table}" in alias_block, row.entity_type
+        assert f"FROM raw.{row.db_table}" in alias_block, row.entity_type
         assert row.fk_column in alias_block, row.entity_type
         assert f"'{row.entity_type}'" in alias_block, row.entity_type
 

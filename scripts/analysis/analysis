@@ -5,7 +5,7 @@
 # from db.sqlite3 plus every file under scripts/analysis/sql/, and rebuilds it when
 # either changes. A query session never re-creates a view — it opens the snapshot
 # (read-only) and runs. An analysis FILE (a campaign or planning-doc program) loads
-# into an in-memory catalog on top, with the snapshot attached as `base` and the
+# into an in-memory catalog on top, with the snapshot attached as `fc` and the
 # search path set so unqualified names resolve to the foundation.
 #
 # Location-independent: it finds its own flipcommons root and cd's there before
@@ -25,7 +25,7 @@
 # `run <prefix>` prints the context, a baked summary and the stored check verdicts.
 #
 # CHECKS run at BUILD time, not query time: the build evaluates every public
-# `*_checks` view and stores one row per view in `fc._check_results`. A failing check
+# `*_checks` view and stores one row per view in `raw._check_results`. A failing check
 # never blocks the build — querying is how you diagnose one — but the GATE still
 # gates: `run` and `query --check <prefix>` exit nonzero on a stored failing check or
 # on a row from a live analysis `*_checks` view, while a bare `query` only warns on
@@ -65,7 +65,7 @@ entry="scripts/analysis/sql/analytics.sql"
 
 # Bump when the build steps below change shape (what is materialized, where the stamp
 # lives), so an existing snapshot from the older recipe rebuilds instead of half-working.
-build_format=1
+build_format=2
 
 # mtime+size, BSD and GNU stat. Size is in there because mtime alone has one-second
 # granularity, and an ingest that rewrites the file inside the same second as the last
@@ -84,7 +84,7 @@ sql_stamp() {
 }
 
 # The snapshot is the WHOLE analytics system: the raw Django tables (imported into
-# schema `fc`), every view and macro from scripts/analysis/sql/, the materialized
+# schema `raw`), every view and macro from scripts/analysis/sql/, the materialized
 # tables, and the stored check results. Rebuilt when db.sqlite3 OR any sql/ file
 # changes; the staleness test is a couple of stats. Nobody has to ask for a rebuild.
 #
@@ -107,7 +107,7 @@ ensure_snapshot() {
     # is allowed to fail and falls through to the build below.
     have=$(duckdb -readonly "$snapshot" -noheader -list \
              "SELECT source_mtime || ' ' || source_size || ' ' || sql_stamp || ' ' || build_format
-              FROM fc._import_stamp" 2>/dev/null) || have=
+              FROM raw._import_stamp" 2>/dev/null) || have=
     [ "$have" = "$want" ] && return 0
   fi
   printf 'building analytics database (source or schema changed)… ' >&2
@@ -120,21 +120,21 @@ ensure_snapshot() {
   # ── raw import ──
   # Table by table rather than COPY FROM DATABASE, which refuses on the partial indexes
   # Django creates. Indexes are not copied at all: DuckDB does not use them. Into schema
-  # `fc`, which is what lets every `fc.catalog_*` reference in the sql/ files resolve as
-  # a schema of THIS catalog — the same files load into any catalog unchanged.
+  # `raw`, which is what lets every `raw.catalog_*` reference in the sql/ files resolve
+  # as a schema of THIS catalog — the same files load into any catalog unchanged.
   copy_stmts=$(duckdb :memory: -noheader -list "
     INSTALL sqlite; LOAD sqlite;
     ATTACH '$source_db' AS src (TYPE sqlite, READ_ONLY);
-    SELECT 'CREATE TABLE out.fc.\"' || table_name || '\" AS SELECT * FROM src.\"' || table_name || '\";'
+    SELECT 'CREATE TABLE out.raw.\"' || table_name || '\" AS SELECT * FROM src.\"' || table_name || '\";'
     FROM duckdb_tables() WHERE database_name = 'src' ORDER BY table_name;")
   src_stamp=$(source_stamp)
   duckdb :memory: "
     INSTALL sqlite; LOAD sqlite;
     ATTACH '$source_db' AS src (TYPE sqlite, READ_ONLY);
     ATTACH '$tmp' AS out;
-    CREATE SCHEMA out.fc;
+    CREATE SCHEMA out.raw;
     $copy_stmts
-    CREATE TABLE out.fc._import_stamp AS
+    CREATE TABLE out.raw._import_stamp AS
       SELECT ${src_stamp%% *}::BIGINT AS source_mtime, ${src_stamp##* }::BIGINT AS source_size,
              '$(sql_stamp)' AS sql_stamp, $build_format AS build_format,
              now() AS imported_at;" >/dev/null
@@ -158,8 +158,8 @@ ensure_snapshot() {
   for v in $checks; do
     counts_sql=${counts_sql:+"$counts_sql UNION ALL "}"SELECT '$v' AS checks_view, count(*) AS n FROM $v"
   done
-  duckdb "$tmp" "CREATE TABLE fc._check_results AS $counts_sql;
-                 COMMENT ON TABLE fc._check_results IS
+  duckdb "$tmp" "CREATE TABLE raw._check_results AS $counts_sql;
+                 COMMENT ON TABLE raw._check_results IS
                    'One row per public *_checks view with its row count at build time. The stored gate: run and query --check fail on n > 0.';" >/dev/null
 
   mv "$tmp" "$snapshot"
@@ -177,14 +177,12 @@ usage() {
 # ── session shape ──────────────────────────────────────────────────────────────
 # Two session shapes. Foundation mode opens the snapshot itself read-only, so it IS
 # the default catalog and even macro expansion resolves in it. Analysis mode is an
-# in-memory catalog with the snapshot attached as `base` and the search path set: the
+# in-memory catalog with the snapshot attached as `fc` and the search path set: the
 # analysis's CREATEs land in memory, its unqualified reads fall through to the
-# foundation. `base`, not `fc` — the raw schema inside the snapshot is named fc, and
-# DuckDB refuses the ambiguity of a catalog and a schema sharing a name. Raw tables
-# from an analysis file are therefore spelled `base.fc.catalog_person`.
+# foundation, and raw tables are spelled `fc.raw.catalog_person`.
 analysis_file=
 # Where the stored check verdicts are, from THIS session's point of view.
-check_results="fc._check_results"
+check_results="raw._check_results"
 
 # session "<output flags>" -c "<sql>" [-c "<sql>"…] — one DuckDB invocation with the
 # right context ahead of the caller's commands. The flag string is one argument,
@@ -193,7 +191,7 @@ session() {
   flags=$1; shift
   if [ -n "$analysis_file" ]; then
     set -- :memory: \
-      -c "ATTACH '$snapshot' AS base (READ_ONLY); SET search_path = 'memory,base';" \
+      -c "ATTACH '$snapshot' AS fc (READ_ONLY); SET search_path = 'memory,fc';" \
       -c ".read \"$analysis_file\"" "$@"
   else
     set -- -readonly "$snapshot" "$@"
@@ -218,8 +216,8 @@ resolve_and_cd() {
         echo "$1 is part of the baked foundation — drop the file argument; the snapshot already holds it" >&2
         exit 2 ;;
     esac
-    check_results="base.fc._check_results"
-    fnd_db="'base'"
+    check_results="fc.raw._check_results"
+    fnd_db="'fc'"
   fi
   cd "$root"
   ensure_snapshot
@@ -228,7 +226,7 @@ resolve_and_cd() {
 # ── public-object predicates ───────────────────────────────────────────────────
 # Public = not an _underscore helper, in the main schema of the right catalog. In
 # foundation mode that catalog is the snapshot itself (current_database()); in analysis
-# mode the analysis's objects are in `memory` and the foundation's in `base`. One
+# mode the analysis's objects are in `memory` and the foundation's in `fc`. One
 # definition per group, shared by describe, columns, browse and the gate discovery, so
 # the places that mean "public" cannot come to disagree about it.
 own_db="'memory'"
@@ -313,7 +311,7 @@ EOF
 warn_stored() {
   dirty=$(duckdb -readonly "$snapshot" -noheader -list \
     "SELECT coalesce(string_agg(checks_view || ' (' || n || ')', ', ' ORDER BY checks_view), '')
-     FROM fc._check_results WHERE n > 0;" 2>/dev/null) || dirty=
+     FROM raw._check_results WHERE n > 0;" 2>/dev/null) || dirty=
   [ -z "$dirty" ] ||
     echo "⚠ failing checks from the last build: $dirty — 'analysis query \"FROM <view>;\"' shows the rows" >&2
 }
@@ -527,7 +525,7 @@ case "$cmd" in
       init_file="${TMPDIR:-/tmp}/analysis-ui.$$.sql"
       trap 'rm -f "$init_file"' EXIT
       {
-        printf "ATTACH '%s' AS base (READ_ONLY);\nSET search_path = 'memory,base';\n" "$snapshot"
+        printf "ATTACH '%s' AS fc (READ_ONLY);\nSET search_path = 'memory,fc';\n" "$snapshot"
         printf '.read "%s"\n' "$analysis_file"
       } > "$init_file"
       duckdb -ui -init "$init_file" :memory:

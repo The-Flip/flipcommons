@@ -89,13 +89,13 @@ CREATE OR REPLACE VIEW actors AS
     s.source_type         AS ingest_source_type,
     l.slug                AS ingest_source_default_license_slug,
     u.username            AS username,
-    (SELECT count(*) FROM fc.provenance_claim c      WHERE c.actor_id = a.id) AS n_claims,
-    (SELECT count(*) FROM fc.provenance_changeset cs WHERE cs.actor_id = a.id) AS n_changesets,
+    (SELECT count(*) FROM raw.provenance_claim c      WHERE c.actor_id = a.id) AS n_claims,
+    (SELECT count(*) FROM raw.provenance_changeset cs WHERE cs.actor_id = a.id) AS n_changesets,
     a.created_at          AS created_at
-  FROM fc.actors_actor a
-  LEFT JOIN fc.provenance_source s ON s.actor_id = a.id
-  LEFT JOIN fc.accounts_user u     ON u.actor_id = a.id
-  LEFT JOIN fc.core_license l      ON l.id = s.default_license_id;
+  FROM raw.actors_actor a
+  LEFT JOIN raw.provenance_source s ON s.actor_id = a.id
+  LEFT JOIN raw.accounts_user u     ON u.actor_id = a.id
+  LEFT JOIN raw.core_license l      ON l.id = s.default_license_id;
 COMMENT ON VIEW actors IS
   'One row per ACTOR — the single thing that can assert a claim, an ingest source XOR a user. actor_name/actor_slug are uniform across both kinds; priority and resolution_status live here, not on the backing table, so the winner-pick ladder is per-actor.';
 
@@ -148,7 +148,7 @@ CREATE OR REPLACE VIEW _claim_key_parts AS
     -- than "to the end", which silently empties every identity part in the file.
     list_slice(str_split(c.claim_key, '|'), 2,
                len(str_split(c.claim_key, '|')))                AS raw_parts
-  FROM fc.provenance_claim c;
+  FROM raw.provenance_claim c;
 
 -- claim_identity_parts — the decoded identity parts of a claim_key, one row per part.
 -- The general form of `claims.ref_id`, for the compound claims ref_id cannot express
@@ -276,8 +276,8 @@ CREATE OR REPLACE VIEW claims AS
     c.retracted_by_changeset_id                   AS retracted_by_changeset_id,
     ir_r.patch_id                                 AS retracted_by_patch_id,
     c.created_at                                  AS created_at
-  FROM fc.provenance_claim c
-  JOIN fc.django_content_type ct   ON ct.id = c.content_type_id
+  FROM raw.provenance_claim c
+  JOIN raw.django_content_type ct   ON ct.id = c.content_type_id
   -- Both LEFT, though every claim resolves today: an inner join would silently drop a
   -- claim whose subject type is unregistered or whose subject row vanished. Either way
   -- `subject_type` lands NULL and the checks report it.
@@ -285,13 +285,13 @@ CREATE OR REPLACE VIEW claims AS
   LEFT JOIN entity_subjects e      ON e.subject_type = er.entity_type
                                   AND e.subject_id = c.object_id
   JOIN _claim_key_parts p          ON p.claim_id = c.id
-  JOIN fc.provenance_changeset cs  ON cs.id = c.changeset_id
+  JOIN raw.provenance_changeset cs  ON cs.id = c.changeset_id
   JOIN _claim_actor a              ON a.actor_id = c.actor_id
   LEFT JOIN _claim_ref r           ON r.claim_id = c.id
-  LEFT JOIN fc.core_license l      ON l.id = c.license_id
-  LEFT JOIN fc.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
-  LEFT JOIN fc.provenance_changeset cs_r ON cs_r.id = c.retracted_by_changeset_id
-  LEFT JOIN fc.provenance_ingestrun ir_r ON ir_r.id = cs_r.ingest_run_id;
+  LEFT JOIN raw.core_license l      ON l.id = c.license_id
+  LEFT JOIN raw.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
+  LEFT JOIN raw.provenance_changeset cs_r ON cs_r.id = c.retracted_by_changeset_id
+  LEFT JOIN raw.provenance_ingestrun ir_r ON ir_r.id = cs_r.ingest_run_id;
 COMMENT ON VIEW claims IS
   'One row per claim, every subject type — who asserted what, with the subject resolved (subject_public_id/name/status), rank, member_exists, ref_id, ingest source, changeset and patch_id, plus the changeset/patch that later retracted it. Predicate on value_text, not value: JSON keeps "500" and 500 apart and both write paths are in the data. NOT live-filtered; use model_claims for the live-model lens.';
 
@@ -369,7 +369,7 @@ CREATE OR REPLACE VIEW ingest_sources AS
     count(c.claim_id)                                          AS n_claims,
     count(*) FILTER (c.is_active)                              AS n_active_claims,
     count(*) FILTER (c.rank = 1)                               AS n_top_ranked
-  FROM _blanks_null('fc.provenance_source') s
+  FROM _blanks_null('raw.provenance_source') s
   JOIN _claim_actor a ON a.actor_id = s.actor_id
   LEFT JOIN claims c  ON c.actor_id = s.actor_id
   GROUP BY ALL;
@@ -398,8 +398,8 @@ CREATE OR REPLACE VIEW ingest_runs AS
     -- the reason to read them is a run whose status is not 'success'.
     ir.errors, ir.warnings,
     ir.note             AS note
-  FROM _blanks_null('fc.provenance_ingestrun') ir
-  LEFT JOIN fc.provenance_source s ON s.id = ir.source_id;
+  FROM _blanks_null('raw.provenance_ingestrun') ir
+  LEFT JOIN raw.provenance_source s ON s.id = ir.source_id;
 COMMENT ON VIEW ingest_runs IS
   'One row per ingest run — patch_id, ingest source, status, fingerprint and the asserted/retracted/rejected claim counts. Reach for it when the subject is a patch rather than what the patch wrote.';
 
@@ -413,7 +413,7 @@ COMMENT ON VIEW ingest_runs IS
 -- anything derived from it. 737 are patch retractions and 2 are user reverts; not one
 -- is inert (`inert_changeset` holds that). Deriving this view from `claims` for
 -- convenience would reproduce exactly the gap it exists to close, which is why the FROM
--- clause here is `fc.provenance_changeset` with everything else LEFT JOINed onto it.
+-- clause here is `raw.provenance_changeset` with everything else LEFT JOINed onto it.
 --
 -- flippatch hit this from the other side: `_patch_acts` in its patches.sql UNIONs
 -- assertions with retractions to rebuild this grain by hand, and records that an
@@ -441,11 +441,11 @@ COMMENT ON VIEW ingest_runs IS
 CREATE OR REPLACE VIEW changesets AS
   WITH wrote AS (
     SELECT changeset_id, count(*) AS n
-    FROM fc.provenance_claim GROUP BY changeset_id
+    FROM raw.provenance_claim GROUP BY changeset_id
   ),
   retracted AS (
     SELECT retracted_by_changeset_id AS changeset_id, count(*) AS n
-    FROM fc.provenance_claim
+    FROM raw.provenance_claim
     WHERE retracted_by_changeset_id IS NOT NULL
     GROUP BY retracted_by_changeset_id
   )
@@ -460,9 +460,9 @@ CREATE OR REPLACE VIEW changesets AS
     coalesce(r.n, 0)                  AS n_retracted,
     cs.note                           AS note,
     cs.created_at                     AS created_at
-  FROM _blanks_null('fc.provenance_changeset') cs
+  FROM _blanks_null('raw.provenance_changeset') cs
   LEFT JOIN actors a                   ON a.actor_id = cs.actor_id
-  LEFT JOIN fc.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
+  LEFT JOIN raw.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
   LEFT JOIN wrote w                    ON w.changeset_id = cs.id
   LEFT JOIN retracted r                ON r.changeset_id = cs.id;
 COMMENT ON VIEW changesets IS
@@ -491,14 +491,14 @@ COMMENT ON VIEW changesets IS
 -- fire. Same reasoning as _ce_location_n and _dim_status in catalog.sql.
 CREATE OR REPLACE VIEW _citation_parent_chain AS
   SELECT c.id AS citation_source_id, c.parent_id, p.parent_id AS grandparent_id
-  FROM _blanks_null('fc.citation_citationsource') c
-  LEFT JOIN fc.citation_citationsource p ON p.id = c.parent_id;
+  FROM _blanks_null('raw.citation_citationsource') c
+  LEFT JOIN raw.citation_citationsource p ON p.id = c.parent_id;
 
 CREATE OR REPLACE VIEW _citation_root_domains AS
   -- host || path_prefix so a path-scoped slice of a shared CDN host displays
   -- distinctly from (and never masquerades as) a whole-host registration.
   SELECT source_id, list_sort(list(host || path_prefix)) AS root_domains
-  FROM fc.citation_citationsourcerootdomain
+  FROM raw.citation_citationsourcerootdomain
   GROUP BY source_id;
 
 -- citation_sources — every citation source, root and child alike, with its root
@@ -550,8 +550,8 @@ CREATE OR REPLACE VIEW citation_sources AS
     -- issue-normalizing utility queries.
     c.slug                                    AS slug,
     coalesce(r.slug, c.slug)                  AS root_citation_source_slug
-  FROM _blanks_null('fc.citation_citationsource') c
-  LEFT JOIN _blanks_null('fc.citation_citationsource') r ON r.id = c.parent_id;
+  FROM _blanks_null('raw.citation_citationsource') c
+  LEFT JOIN _blanks_null('raw.citation_citationsource') r ON r.id = c.parent_id;
 COMMENT ON VIEW citation_sources IS
   'One row per CITATION SOURCE (external evidence), root and child alike, with its root resolved — a root resolves to itself. slug/root_citation_source_slug are the authored cite handles on slug-addressed (periodical) rows, null elsewhere. year/month/day is a precision ladder that dates the WORK on a root and the cited ITEM on a child. Not to be confused with ingest_sources (who asserted the fact).';
 
@@ -566,7 +566,7 @@ COMMENT ON VIEW citation_sources IS
 -- records what it cost: without the fold, the majority shape never matched. It is here because the evidence question a consumer
 -- actually asks is "what did the source SAY", and answering it from `locator` alone is
 -- impossible: a locator narrows the work, the quote is the work's own words. Flippatch's
--- citation campaigns were reading `fc.provenance_citationinstance` directly to get it,
+-- citation campaigns were reading `raw.provenance_citationinstance` directly to get it,
 -- which is the documented promotion signal in EDITING.md. Note the quote belongs to the
 -- CITING ACT, not to the source: two claims citing the same page carry two instances
 -- with two quotes, which is why it lives here and not on `citation_sources`.
@@ -592,7 +592,7 @@ CREATE OR REPLACE VIEW citation_instances AS
     s.root_citation_source_slug       AS root_citation_source_slug,
     s.citation_source_type            AS citation_source_type,
     ci.created_at                     AS created_at
-  FROM _blanks_null('fc.provenance_citationinstance') ci
+  FROM _blanks_null('raw.provenance_citationinstance') ci
   JOIN citation_sources s ON s.citation_source_id = ci.citation_source_id;
 COMMENT ON VIEW citation_instances IS
   'One row per citation instance — a specific act of citing, with its locator (page, timestamp) and the verbatim quote it rests on, plus both the immediate and the ROOT citation source, including the root stable key/slug to filter on.';
@@ -602,7 +602,7 @@ COMMENT ON VIEW citation_instances IS
 -- NOT "unattributed". The ingest source on `claims` is the attribution.
 CREATE OR REPLACE VIEW claim_citations AS
   SELECT claim_id, citation_instance_id
-  FROM fc.provenance_claimcitationinstance;
+  FROM raw.provenance_claimcitationinstance;
 COMMENT ON VIEW claim_citations IS
   'One row per (claim, citation instance) — the evidence bridge. Most claims have no row: that means no external evidence was recorded, NOT that the claim is unattributed.';
 
@@ -711,7 +711,7 @@ CREATE OR REPLACE VIEW citation_root_domains AS
     s.identifier_key  AS root_identifier_key,
     rd.host           AS host,
     rd.path_prefix    AS path_prefix
-  FROM fc.citation_citationsourcerootdomain rd
+  FROM raw.citation_citationsourcerootdomain rd
   JOIN citation_sources s ON s.citation_source_id = rd.source_id;
 COMMENT ON VIEW citation_root_domains IS
   'One row per (root citation source, registered host slice) — the grain twin of citation_roots.root_domains, for joining a URL back to its work. path_prefix is '''' on whole-host rows, a tenant prefix on shared-CDN slices. Match with citation_root_for_url() (or citation_root_for_host() for a bare host), NOT equality: the rule is longest label-boundary suffix plus segment-boundary path prefix.';
@@ -829,11 +829,11 @@ COMMENT ON MACRO citation_root_for_url IS
 -- the run's position in patch and changeset history is there.
 CREATE OR REPLACE VIEW provenance_context AS
   SELECT
-    (SELECT count(*) FROM fc.provenance_claim)                  AS claims_total,
-    (SELECT count(*) FROM fc.provenance_claim WHERE is_active)  AS claims_active,
-    (SELECT count(*) FROM fc.provenance_ingestrun)              AS ingest_runs,
-    (SELECT count(*) FROM fc.provenance_source)                 AS ingest_sources,
+    (SELECT count(*) FROM raw.provenance_claim)                  AS claims_total,
+    (SELECT count(*) FROM raw.provenance_claim WHERE is_active)  AS claims_active,
+    (SELECT count(*) FROM raw.provenance_ingestrun)              AS ingest_runs,
+    (SELECT count(*) FROM raw.provenance_source)                 AS ingest_sources,
     (SELECT count(*) FROM citation_roots)                       AS citation_roots,
-    (SELECT count(*) FROM fc.provenance_citationinstance)       AS citation_instances;
+    (SELECT count(*) FROM raw.provenance_citationinstance)       AS citation_instances;
 COMMENT ON VIEW provenance_context IS
   'One row — the provenance watermark: claim totals, ingest run and ingest source counts, citation root and instance counts. Printed by every analysis run.';

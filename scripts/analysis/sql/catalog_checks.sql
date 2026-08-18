@@ -25,7 +25,7 @@
 -- them, and they were sitting in front of the foundation's first public view.
 --
 -- Why they must be VIEWS at all: `fc` is attached READ_ONLY and its tables cannot be
--- shadowed, so a check written directly against `fc.` could never be mutation-tested —
+-- shadowed, so a check written directly against `raw.` could never be mutation-tested —
 -- it would be a check nobody could prove fires. Each of these restates a slice of the
 -- physical layer as something check-mutations can break on purpose.
 --
@@ -48,12 +48,12 @@ CREATE OR REPLACE VIEW _ce_location_n AS
 -- SQL can see it. Feeds `unexposed_alias_table`.
 CREATE OR REPLACE VIEW _alias_tables AS
   SELECT table_name FROM duckdb_tables()
-  WHERE database_name = current_database() AND schema_name = 'fc'
+  WHERE database_name = current_database() AND schema_name = 'raw'
     AND (table_name LIKE 'catalog\_%alias' ESCAPE '\'
       OR table_name LIKE 'catalog\_%abbreviation' ESCAPE '\');
 
 -- ─── Dimension liveness scaffolding ───────────────────────────────────────
--- These three views exist so that check can read a VIEW instead of the `fc.` tables:
+-- These three views exist so that check can read a VIEW instead of the `raw.` tables:
 -- `fc` is READ_ONLY and unshadowable, so a check written against it could never be
 -- mutation-tested (same reasoning as _ce_location_n above).
 --   _model_dim_ref       (live model, dim column, target id) — UNPIVOT drops the NULLs,
@@ -61,7 +61,7 @@ CREATE OR REPLACE VIEW _alias_tables AS
 --   _dim_status          (dim column, id, status) for every dim table. Keyed by the FK
 --                        COLUMN name so the two lists join, and so the coverage
 --                        meta-check (uncovered_model_dim) can compare this against the
---                        real column list of fc.catalog_machinemodel — a new dim FK on
+--                        real column list of raw.catalog_machinemodel — a new dim FK on
 --                        MachineModel fails loudly here instead of going uncovered.
 --   _model_dim_liveness  the violations: a live model on a soft-deleted dim.
 -- Split wide-then-UNPIVOT rather than UNPIVOT-over-a-subquery so the dim set is a
@@ -76,8 +76,8 @@ CREATE OR REPLACE VIEW _model_dim_wide AS
          m.technology_generation_id, m.technology_subgeneration_id,
          m.display_type_id, m.display_subtype_id,
          m.system_id, m.cabinet_id, m.production_status_id
-  FROM fc.catalog_machinemodel m
-  LEFT JOIN fc.catalog_corporateentity ce ON ce.id = m.corporate_entity_id
+  FROM raw.catalog_machinemodel m
+  LEFT JOIN raw.catalog_corporateentity ce ON ce.id = m.corporate_entity_id
   WHERE m.status IS DISTINCT FROM 'deleted';
 
 -- COLUMNS(* EXCLUDE (model_id)), not a written-out ON list: the list above is the ONE
@@ -91,17 +91,17 @@ CREATE OR REPLACE VIEW _model_dim_ref AS
 -- MachineModel), which is why it appears here but not in the coverage meta-check's
 -- column sweep.
 CREATE OR REPLACE VIEW _dim_status AS
-            SELECT 'title_id'                     AS dim, id, status FROM fc.catalog_title
-  UNION ALL SELECT 'corporate_entity_id',         id, status FROM fc.catalog_corporateentity
-  UNION ALL SELECT 'manufacturer_id',             id, status FROM fc.catalog_manufacturer
-  UNION ALL SELECT 'game_format_id',              id, status FROM fc.catalog_gameformat
-  UNION ALL SELECT 'technology_generation_id',    id, status FROM fc.catalog_technologygeneration
-  UNION ALL SELECT 'technology_subgeneration_id', id, status FROM fc.catalog_technologysubgeneration
-  UNION ALL SELECT 'display_type_id',             id, status FROM fc.catalog_displaytype
-  UNION ALL SELECT 'display_subtype_id',          id, status FROM fc.catalog_displaysubtype
-  UNION ALL SELECT 'system_id',                   id, status FROM fc.catalog_system
-  UNION ALL SELECT 'cabinet_id',                  id, status FROM fc.catalog_cabinet
-  UNION ALL SELECT 'production_status_id',        id, status FROM fc.catalog_productionstatus;
+            SELECT 'title_id'                     AS dim, id, status FROM raw.catalog_title
+  UNION ALL SELECT 'corporate_entity_id',         id, status FROM raw.catalog_corporateentity
+  UNION ALL SELECT 'manufacturer_id',             id, status FROM raw.catalog_manufacturer
+  UNION ALL SELECT 'game_format_id',              id, status FROM raw.catalog_gameformat
+  UNION ALL SELECT 'technology_generation_id',    id, status FROM raw.catalog_technologygeneration
+  UNION ALL SELECT 'technology_subgeneration_id', id, status FROM raw.catalog_technologysubgeneration
+  UNION ALL SELECT 'display_type_id',             id, status FROM raw.catalog_displaytype
+  UNION ALL SELECT 'display_subtype_id',          id, status FROM raw.catalog_displaysubtype
+  UNION ALL SELECT 'system_id',                   id, status FROM raw.catalog_system
+  UNION ALL SELECT 'cabinet_id',                  id, status FROM raw.catalog_cabinet
+  UNION ALL SELECT 'production_status_id',        id, status FROM raw.catalog_productionstatus;
 
 CREATE OR REPLACE VIEW _model_dim_liveness AS
   SELECT r.model_id, r.dim, r.target_id
@@ -120,12 +120,12 @@ CREATE OR REPLACE VIEW _model_dim_liveness AS
 -- asserted rather than assumed.
 -- Reuses _dim_status for the eleven dim tables rather than re-listing them.
 CREATE OR REPLACE VIEW _status_domain AS
-            SELECT 'machine_model'    AS entity, status FROM fc.catalog_machinemodel
-  UNION ALL SELECT 'location',         status FROM fc.catalog_location
-  UNION ALL SELECT 'theme',            status FROM fc.catalog_theme
-  UNION ALL SELECT 'gameplay_feature', status FROM fc.catalog_gameplayfeature
-  UNION ALL SELECT 'reward_type',      status FROM fc.catalog_rewardtype
-  UNION ALL SELECT 'tag',              status FROM fc.catalog_tag
+            SELECT 'machine_model'    AS entity, status FROM raw.catalog_machinemodel
+  UNION ALL SELECT 'location',         status FROM raw.catalog_location
+  UNION ALL SELECT 'theme',            status FROM raw.catalog_theme
+  UNION ALL SELECT 'gameplay_feature', status FROM raw.catalog_gameplayfeature
+  UNION ALL SELECT 'reward_type',      status FROM raw.catalog_rewardtype
+  UNION ALL SELECT 'tag',              status FROM raw.catalog_tag
   UNION ALL SELECT dim,                status FROM _dim_status;
 
 -- _dim_vocab — the live slug vocabularies, one hand-written UNION because a view cannot
@@ -134,15 +134,15 @@ CREATE OR REPLACE VIEW _status_domain AS
 -- the doc never defines fails stale_vocab_dim. Carries status so the live filter is the
 -- consumer's, matching the rest of this file.
 CREATE OR REPLACE VIEW _dim_vocab AS
-            SELECT 'technologygeneration'    AS dim, slug, status FROM fc.catalog_technologygeneration
-  UNION ALL SELECT 'technologysubgeneration', slug, status FROM fc.catalog_technologysubgeneration
-  UNION ALL SELECT 'displaytype',             slug, status FROM fc.catalog_displaytype
-  UNION ALL SELECT 'displaysubtype',          slug, status FROM fc.catalog_displaysubtype
-  UNION ALL SELECT 'cabinet',                 slug, status FROM fc.catalog_cabinet
-  UNION ALL SELECT 'productionstatus',        slug, status FROM fc.catalog_productionstatus
-  UNION ALL SELECT 'gameformat',              slug, status FROM fc.catalog_gameformat
-  UNION ALL SELECT 'rewardtype',              slug, status FROM fc.catalog_rewardtype
-  UNION ALL SELECT 'tag',                     slug, status FROM fc.catalog_tag;
+            SELECT 'technologygeneration'    AS dim, slug, status FROM raw.catalog_technologygeneration
+  UNION ALL SELECT 'technologysubgeneration', slug, status FROM raw.catalog_technologysubgeneration
+  UNION ALL SELECT 'displaytype',             slug, status FROM raw.catalog_displaytype
+  UNION ALL SELECT 'displaysubtype',          slug, status FROM raw.catalog_displaysubtype
+  UNION ALL SELECT 'cabinet',                 slug, status FROM raw.catalog_cabinet
+  UNION ALL SELECT 'productionstatus',        slug, status FROM raw.catalog_productionstatus
+  UNION ALL SELECT 'gameformat',              slug, status FROM raw.catalog_gameformat
+  UNION ALL SELECT 'rewardtype',              slug, status FROM raw.catalog_rewardtype
+  UNION ALL SELECT 'tag',                     slug, status FROM raw.catalog_tag;
 
 CREATE OR REPLACE VIEW _live_dim_vocab AS
   SELECT dim, slug FROM _dim_vocab WHERE status IS DISTINCT FROM 'deleted';
@@ -167,7 +167,7 @@ CREATE OR REPLACE VIEW _live_dim_vocab AS
 -- database and cannot see the attached `fc`.
 CREATE OR REPLACE VIEW _entity_table AS
   SELECT table_name FROM duckdb_columns()
-  WHERE database_name = current_database() AND schema_name = 'fc' AND table_name LIKE 'catalog\_%' ESCAPE '\'
+  WHERE database_name = current_database() AND schema_name = 'raw' AND table_name LIKE 'catalog\_%' ESCAPE '\'
   GROUP BY table_name
   HAVING bool_or(column_name = 'slug') AND bool_or(column_name = 'status');
 
@@ -178,7 +178,7 @@ CREATE OR REPLACE VIEW _entity_table AS
 -- There are no exemptions, and the absence of an exemption column is the point. The
 -- seven taxonomy dims used to be listed here as deliberately-unexposed, on the argument
 -- that their slug on `models` is both the readable label and the raw-join key back to
--- fc.catalog_<dim>. That argument holds for the model row and does not extend to the
+-- raw.catalog_<dim>. That argument holds for the model row and does not extend to the
 -- record: a dim carries an authored `description` that no `models` column can hold, and
 -- with no view over it the foundation could not answer which vocabulary terms were still
 -- undocumented. `catalog.sql` exposes all seven now, so every first-class entity names a
@@ -230,7 +230,7 @@ CREATE OR REPLACE VIEW _entity_view AS
 -- cases instead of hoping for them.
 -- The schema is taken from the real table with LIMIT 0, so a fixture cannot drift from
 -- its source the way a hand-declared one would; only the rows are ours.
-CREATE OR REPLACE TABLE _fx_lifecycle AS SELECT * FROM fc.catalog_cabinet LIMIT 0;
+CREATE OR REPLACE TABLE _fx_lifecycle AS SELECT * FROM raw.catalog_cabinet LIMIT 0;
 INSERT INTO _fx_lifecycle (id, slug, name, description, display_order, status, created_at, updated_at)
 VALUES (1, 'live-null-status', 'A', '',    0, NULL,      '2020-01-01', '2020-01-01'),
        (2, 'live-active',      'B', 'has', 1, 'active',  '2020-01-01', '2020-01-01'),
@@ -238,7 +238,7 @@ VALUES (1, 'live-null-status', 'A', '',    0, NULL,      '2020-01-01', '2020-01-
 
 -- _fx_claim_value — the JSON shapes a claim value comes in, for _json_scalar_text.
 CREATE OR REPLACE TABLE _fx_claim_value AS
-  SELECT id, value FROM fc.provenance_claim LIMIT 0;
+  SELECT id, value FROM raw.provenance_claim LIMIT 0;
 INSERT INTO _fx_claim_value (id, value)
 VALUES (1, '"500"'),            -- one asserted value, the two spellings both write paths
        (2, '500'),              --   produce
@@ -258,7 +258,7 @@ VALUES (1, '"500"'),            -- one asserted value, the two spellings both wr
 -- The cause is upstream, in DuckDB's sqlite scanner (v1.5.5, extension f79b1db). When
 -- two branches of one query aggregate over DIFFERENT attached-SQLite tables and their
 -- pushed-down projection and filter are textually identical — which
--- `SELECT id, slug, name, description FROM fc.catalog_<x> WHERE status IS DISTINCT FROM
+-- `SELECT id, slug, name, description FROM raw.catalog_<x> WHERE status IS DISTINCT FROM
 -- 'deleted'` is for every simple dim view — the second table is never scanned at all and
 -- inherits the first's aggregate. `sqlite_debug_show_queries` shows only one scan issued
 -- for two branches. It is not specific to count: max() and sum() collapse the same way,
@@ -405,14 +405,14 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- with the view's joins: a rule added there and not here reports as a dropped row.
   _credit_physical    AS MATERIALIZED (
     SELECT count(*) AS n
-    FROM fc.catalog_credit c
-    WHERE EXISTS (SELECT 1 FROM fc.catalog_person p
+    FROM raw.catalog_credit c
+    WHERE EXISTS (SELECT 1 FROM raw.catalog_person p
                   WHERE p.id = c.person_id AND p.status IS DISTINCT FROM 'deleted')
-      AND EXISTS (SELECT 1 FROM fc.catalog_creditrole r
+      AND EXISTS (SELECT 1 FROM raw.catalog_creditrole r
                   WHERE r.id = c.role_id   AND r.status IS DISTINCT FROM 'deleted')
-      AND (EXISTS (SELECT 1 FROM fc.catalog_machinemodel m
+      AND (EXISTS (SELECT 1 FROM raw.catalog_machinemodel m
                    WHERE m.id = c.model_id AND m.status IS DISTINCT FROM 'deleted')
-        OR EXISTS (SELECT 1 FROM fc.catalog_series s
+        OR EXISTS (SELECT 1 FROM raw.catalog_series s
                    WHERE s.id = c.series_id AND s.status IS DISTINCT FROM 'deleted'))
   )
 
@@ -476,7 +476,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
 
   -- manufacturers.operating_status recomputed from corporate_entities — a second
   -- derivation of the same rollup, off the public CE view rather than the private helper
-  -- reading fc. Nothing materializes the backend's answer (it is computed per request),
+  -- reading raw. Nothing materializes the backend's answer (it is computed per request),
   -- so this is the only thing holding the precedence and the CE population honest.
   SELECT 'mfr_status_rollup_disagrees',
          m.slug || ': ' || m.operating_status || ' vs ' || r.expected
@@ -493,7 +493,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
 
   -- manufacturers' location rungs rolled up again from corporate_entities — the same
   -- second-derivation trick as the status check above, off the public CE view rather than
-  -- the private helper reading fc. It pins the SOURCE as much as the arithmetic: these
+  -- the private helper reading raw. It pins the SOURCE as much as the arithmetic: these
   -- were once aggregated from `models`, which reports a maker whose models are all gone or
   -- not yet seeded as location-unknown even though its CEs carry an address. That failure
   -- produces a plausible NULL, not an error, so nothing else in the sweep can see it.
@@ -733,7 +733,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
     AND e.entity_table IN (SELECT table_name FROM _entity_table)
 
   -- Every entity view over a LIFECYCLE table reaches its rows through _staging(), directly or
-  -- through a _stg_* leaf that does. Keyed on the source table carrying `status`, so
+  -- through a stg.* leaf that does. Keyed on the source table carrying `status`, so
   -- provenance entities fall out structurally rather than by exemption.
   UNION ALL
   SELECT 'entity_view_not_live_filtered', e.view_name
@@ -741,26 +741,27 @@ CREATE OR REPLACE VIEW foundation_checks AS
   JOIN duckdb_views() v ON v.view_name = e.view_name AND v.database_name = current_database()
   WHERE e.entity_table IN (SELECT table_name FROM _entity_table)
     -- A TEXT match, with the limit that implies: it catches a view that forgot to filter,
-    -- not one that mentions _staging() or a _stg_* leaf without reading through it. Naming
+    -- not one that mentions _staging() or a stg.* leaf without reading through it. Naming
     -- the leaves instead of wildcarding does not change that — a bypass smuggling the token
     -- through a no-op subquery passes either way. An exact check is not available:
     -- query_table() takes literals only, so "compare each view against _staging() of its
     -- source" cannot be written once over the entity set.
     AND v.sql NOT LIKE '%_staging(%'
-    AND v.sql NOT LIKE '%_stg_%'
+    AND v.sql NOT LIKE '%stg.%'
 
-  -- The staging layer's one property: a `_stg_*` view is a bare read of a single table. No
+  -- The staging layer's one property: a `stg.*` view is a bare read of a single table. No
   -- join, no aggregate, no derived column — which is what leaves it with no outgoing edge,
   -- and what makes a cycle THROUGH it impossible rather than merely absent today. A join
   -- added here restores the hazard the layer exists to remove, and restores it silently:
   -- the view still returns the right rows, and the cycle only appears later, in whichever
   -- unrelated view next tries to compose. A text match, with the limits of one — it catches
-  -- the shape going wrong, not a bare read that is somehow still wrong.
+  -- the shape going wrong, not a bare read that is somehow still wrong. The stg SCHEMA is
+  -- the layer's boundary, so membership is by schema, not by name prefix.
   UNION ALL
   SELECT 'staging_view_not_flat', v.view_name
   FROM duckdb_views() v
   WHERE v.database_name = current_database()
-    AND starts_with(v.view_name, '_stg_')
+    AND v.schema_name = 'stg'
     AND (v.sql ILIKE '%join%' OR v.sql ILIKE '%group by%')
 
   -- live filter: models carries no soft-deleted row. Asserted against the PHYSICAL table
@@ -769,7 +770,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'models_has_deleted', 'model_id=' || m.id::VARCHAR
   FROM models m
-  WHERE EXISTS (SELECT 1 FROM fc.catalog_machinemodel p
+  WHERE EXISTS (SELECT 1 FROM raw.catalog_machinemodel p
                 WHERE p.id = m.id AND p.status = 'deleted')
 
   -- design contract: license_status IS NULL  <=>  edge_source = 'lineage_fk'
@@ -842,7 +843,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'uncovered_model_dim', column_name
   FROM duckdb_columns()
-  WHERE database_name = current_database() AND schema_name = 'fc' AND table_name = 'catalog_machinemodel'
+  WHERE database_name = current_database() AND schema_name = 'raw' AND table_name = 'catalog_machinemodel'
     AND column_name LIKE '%\_id' ESCAPE '\'
     AND column_name NOT IN (SELECT DISTINCT dim FROM _dim_status)
     AND column_name NOT IN (
@@ -1200,7 +1201,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   SELECT 'stale_entity_view', e.entity_table
   FROM _entity_view e
   WHERE NOT EXISTS (SELECT 1 FROM duckdb_tables()
-                    WHERE database_name = current_database() AND schema_name = 'fc' AND table_name = e.entity_table)
+                    WHERE database_name = current_database() AND schema_name = 'raw' AND table_name = e.entity_table)
 
   UNION ALL
   SELECT 'missing_entity_view',
