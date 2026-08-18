@@ -331,24 +331,45 @@ class TestSyncReferences:
             f"and [[system:id:{system.pk}]]"
         )
         # Use system as the source (it has a MarkdownField)
-        sync_references(system, text)
+        system.description = text
+        sync_references(system)
         refs = RecordReference.objects.all()
         assert refs.count() == 2
 
     def test_removes_stale_references(self, manufacturer, system):
         # First sync with a link
         text = f"Links to [[manufacturer:id:{manufacturer.pk}]]"
-        sync_references(system, text)
+        system.description = text
+        sync_references(system)
         assert RecordReference.objects.count() == 1
 
         # Second sync without the link
-        sync_references(system, "No links here")
+        system.description = "No links here"
+        sync_references(system)
         assert RecordReference.objects.count() == 0
+
+    def test_a_second_markdown_field_does_not_evict_the_first(
+        self, manufacturer, system, monkeypatch
+    ) -> None:
+        """Reconciliation is per source, so it must see every field at once.
+
+        Read one field at a time and the second pass treats the first field's
+        links as stale and deletes them.
+        """
+        monkeypatch.setattr(
+            "apps.core.markdown.field.get_markdown_fields",
+            lambda model: ["description", "name"],
+        )
+        system.description = f"[[manufacturer:id:{manufacturer.pk}]]"
+        system.name = f"[[system:id:{system.pk}]]"
+        sync_references(system)
+        assert RecordReference.objects.count() == 2
 
     def test_idempotent(self, manufacturer, system):
         text = f"Links to [[manufacturer:id:{manufacturer.pk}]]"
-        sync_references(system, text)
-        sync_references(system, text)
+        system.description = text
+        sync_references(system)
+        sync_references(system)
         assert RecordReference.objects.count() == 1
 
 
@@ -423,7 +444,8 @@ class TestCitationLinkType:
 
     def test_sync_references_for_citations(self, citation_instance, system):
         text = f"Cited.[[cite:id:{citation_instance.pk}]]"
-        sync_references(system, text)
+        system.description = text
+        sync_references(system)
         refs = RecordReference.objects.all()
         assert refs.count() == 1
 

@@ -29,13 +29,13 @@
 -- Check-only scaffolding, because no public view carries both halves a vocabulary check
 -- needs. `claims` holds the raw value but names only changesets that WROTE a claim, so
 -- the retraction-only ones are outside it entirely — the population `changesets` exists
--- to reach. `changesets` is that complete grain but reads through blanks_null, which
+-- to reach. `changesets` is that complete grain but reads through _blanks_null, which
 -- folds a stored '' onto the NULL that legitimately marks an ingest changeset, making
 -- the defect indistinguishable from the healthy shape.
 -- A VIEW and not a read of `fc`, so check-mutations can break it: `fc` is attached
 -- READ_ONLY and its tables cannot be shadowed. Same reasoning as _citation_parent_chain.
 CREATE OR REPLACE VIEW _changeset_action AS
-  SELECT id AS changeset_id, action FROM fc.provenance_changeset;
+  SELECT id AS changeset_id, action FROM raw.provenance_changeset;
 
 CREATE OR REPLACE VIEW _provenance_checks AS
   -- `claims` decoded ONCE for the branches below, on foundation_checks' reasoning and
@@ -153,22 +153,22 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   -- physical tables so a lost row is loud.
   UNION ALL
   SELECT 'claim_rows_dropped',
-         'physical=' || (SELECT count(*) FROM fc.provenance_claim)::VARCHAR
+         'physical=' || (SELECT count(*) FROM raw.provenance_claim)::VARCHAR
            || ' view=' || (SELECT count(*) FROM claims)::VARCHAR
-  WHERE (SELECT count(*) FROM fc.provenance_claim) IS DISTINCT FROM (SELECT count(*) FROM claims)
+  WHERE (SELECT count(*) FROM raw.provenance_claim) IS DISTINCT FROM (SELECT count(*) FROM claims)
 
   UNION ALL
   SELECT 'citation_instance_rows_dropped',
-         'physical=' || (SELECT count(*) FROM fc.provenance_citationinstance)::VARCHAR
+         'physical=' || (SELECT count(*) FROM raw.provenance_citationinstance)::VARCHAR
            || ' view=' || (SELECT count(*) FROM citation_instances)::VARCHAR
-  WHERE (SELECT count(*) FROM fc.provenance_citationinstance)
+  WHERE (SELECT count(*) FROM raw.provenance_citationinstance)
         IS DISTINCT FROM (SELECT count(*) FROM citation_instances)
 
   UNION ALL
   SELECT 'changeset_rows_dropped',
-         'physical=' || (SELECT count(*) FROM fc.provenance_changeset)::VARCHAR
+         'physical=' || (SELECT count(*) FROM raw.provenance_changeset)::VARCHAR
            || ' view=' || (SELECT count(*) FROM changesets)::VARCHAR
-  WHERE (SELECT count(*) FROM fc.provenance_changeset)
+  WHERE (SELECT count(*) FROM raw.provenance_changeset)
         IS DISTINCT FROM (SELECT count(*) FROM changesets)
 
   -- ─── Subject resolution ──────────────────────────────────────────────────
@@ -191,8 +191,8 @@ CREATE OR REPLACE VIEW _provenance_checks AS
            || ' subject=' || coalesce(
                 c.subject_type,
                 'UNREGISTERED[' || coalesce((SELECT ct.app_label || '.' || ct.model
-                                             FROM fc.provenance_claim pc
-                                             JOIN fc.django_content_type ct
+                                             FROM raw.provenance_claim pc
+                                             JOIN raw.django_content_type ct
                                                ON ct.id = pc.content_type_id
                                              WHERE pc.id = c.claim_id), '?') || ']')
            || ':' || c.subject_id::VARCHAR
@@ -277,22 +277,12 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   JOIN citation_sources s ON s.citation_source_id = d.root_citation_source_id
   WHERE NOT s.is_root
 
-  -- A shared multi-tenant CDN host carries only path-scoped rows — a bare row there
-  -- would attribute every tenant's files to one maker, which is why the backend's
-  -- clean() refuses to write one. The recognition macros already refuse to MATCH such
-  -- a row (citation_domain_eligible), so this is the visibility half: a row that
-  -- slipped in through a validation bypass surfaces here as data to garden rather than
-  -- silently sitting inert.
-  UNION ALL
-  SELECT 'shared_cdn_bare_root_domain',
-         'host=' || d.host || ' root=' || d.root_citation_source_name
-  FROM citation_root_domains d
-  WHERE d.path_prefix = '' AND _shared_cdn_host(d.host)
-
-  -- ...and the inverse write invariant: a path prefix lives on a shared host ONLY. A
-  -- prefixed row on an ordinary host (a validation bypass — clean() refuses to write
-  -- one) would split a normal site into path-scoped roots; the recognition macros
-  -- already refuse to match it, so as above this is the visibility half.
+  -- A path prefix lives on a shared host ONLY. A prefixed row on an ordinary host (a
+  -- validation bypass — clean() refuses to write one) would split a normal site into
+  -- path-scoped roots; the recognition macros already refuse to match it, so this is
+  -- the visibility half. The inverse — a bare row on a shared host, which would
+  -- attribute every tenant's files to one maker — is a data condition rather than a
+  -- layer invariant, and the audit's shared-cdn-bare-host rule owns it.
   UNION ALL
   SELECT 'path_scoped_row_on_ordinary_host',
          'host=' || d.host || d.path_prefix || ' root=' || d.root_citation_source_name
@@ -362,7 +352,7 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   -- EACH ONE TESTS FOR ABSENCE SEPARATELY, because the two ways an enum goes wrong are
   -- different defects and only one of them is loud. `v NOT IN (…)` is NULL on a NULL v
   -- and a NULL predicate selects nothing, so an enum arriving blank passes the very
-  -- check written to police it. Three of these views read through blanks_null, which
+  -- check written to police it. Three of these views read through _blanks_null, which
   -- turns a '' in the table into exactly that NULL — and none of these columns has a
   -- CHECK constraint behind it, since `choices` is enforced by full_clean() alone.
   -- A closed enum has no absent state: the five below are NOT NULL with a default, so a

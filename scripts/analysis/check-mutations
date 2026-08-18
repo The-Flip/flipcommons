@@ -13,15 +13,39 @@
 # check. A check already firing at baseline (doc drift, an expired skip) BLOCKS its own
 # mutations without failing the run — see the baseline section below. Run it after
 # touching catalog_checks.sql; the everyday gate stays `analysis run`.
+#
+# Mechanics: the analytics schema is baked into backend/db.analytics.duckdb, and a view
+# redefined in an in-memory session cannot intercept what a baked view reads — a baked
+# `foundation_checks` resolves `models` inside its own catalog, not through the
+# session's shadow. So every probe runs against a writable COPY of the snapshot, inside
+# a transaction that is never committed: the mutation redefines the real views, the
+# checks are queried, and the copy is pristine again when the process exits.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$root"
-plan=scripts/analysis/catalog_checks.sql
+runner=scripts/analysis/analysis
+baked=backend/db.analytics.duckdb
+sqldir=scripts/analysis/sql
 spec=scripts/analysis/catalog_mutations.tsv
 filter=${1:-}
 
 pass=0; fail=0; skip=0
+
+# A fresh bake first: the probes read the copy, so a stale snapshot would test
+# yesterday's schema against today's TSV. The runner owns freshness; one no-op query
+# invokes it. Its stored-check warning is noise here — the baseline below makes the
+# same point with names — so stderr is dropped for this call only.
+"$runner" query "SELECT 1;" >/dev/null 2>&1
+
+work="${TMPDIR:-/tmp}/check-mutations.$$.duckdb"
+trap 'rm -f "$work" "$work.wal"' EXIT
+trap 'exit 1' HUP INT TERM
+cp "$baked" "$work"
+
+# DuckDB writes a coloured `-- Loading resources` banner to stderr; strip the escapes
+# and surrounding blanks so an empty result really reads as empty.
+clean() { tail -1 | sed 's/\x1b\[[0-9;]*m//g; s/^[[:space:]]*//; s/[[:space:]]*$//'; }
 
 # ── baseline ───────────────────────────────────────────────────────────────────
 # Every verdict below is "the expected check appeared". That is only evidence the
@@ -33,11 +57,7 @@ pass=0; fail=0; skip=0
 # So a dirty baseline doesn't abort the run — it BLOCKS exactly the mutations whose
 # expected check is already firing, and its noise is subtracted from every probe so
 # the remaining verdicts stay trustworthy.
-# DuckDB writes a coloured `-- Loading resources` banner to stderr; strip the escapes
-# and surrounding blanks so an empty result really reads as empty.
-clean() { tail -1 | sed 's/\x1b\[[0-9;]*m//g; s/^[[:space:]]*//; s/[[:space:]]*$//'; }
-
-baseline=$(duckdb -init "$plan" -noheader -list :memory: \
+baseline=$(duckdb -readonly "$work" -noheader -list \
   "SELECT COALESCE(string_agg(DISTINCT check_name, ','), '') FROM foundation_checks;" 2>&1 | clean)
 if [ -n "$baseline" ]; then
   echo "⚠ baseline is not clean: foundation_checks already returns [$baseline]"
@@ -48,44 +68,26 @@ baseline_sql=$(printf '%s' "$baseline" | sed "s/[^,][^,]*/'&'/g")
 in_baseline() { case ",$baseline," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
 # ── coverage ───────────────────────────────────────────────────────────────────
-# Every check_name declared in catalog_checks.sql needs a mutation, or nobody has
-# proven it fires. This is the same reasoning as the `unanchored_view` meta-check, and
-# it matters more: the anchor lists are EXCEPTION lists where a missing entry fails
-# loudly, while this one is a COVERAGE list where a missing entry is silent.
-# Check branches are the top-level UNION arms, indented two spaces; the deeper-indented
+# Every check_name declared in a *_checks.sql file needs a mutation, or nobody has
+# proven it fires. This is a COVERAGE list where a missing entry is silent, which is
+# why both directions are checked — the spec must not rot into false coverage after a
+# check is renamed or dropped.
+# The scan runs per *_checks.sql file, opening at that file's FIRST checks view so the
+# string literals of anything above it cannot be mistaken for check names. Check
+# branches are the top-level UNION arms, indented two spaces; the deeper-indented
 # literals inside subqueries are labels, not check names.
-#
-# The plan `.read`s the layers it gates (catalog.sql, provenance_checks.sql), and a
-# checks view defined in one of those — `_provenance_checks` — declares check names the
-# plan text never contains. Reading only the plan would silently stop covering them,
-# which is the same false-coverage failure the reverse direction below guards against.
-# So the scan runs over the plan with its reads INLINED. Two passes because the nesting
-# goes two deep (plan -> catalog.sql -> provenance.sql); a third level would need
-# another, and would also mean a layer defining checks further down than it should.
-expand_reads() {
-  awk '/^[[:space:]]*\.read[[:space:]]+/ {
-         f = $2
-         while ((getline line < f) > 0) print line
-         close(f)
-         next
-       }
-       { print }'
-}
-# The range opens at the FIRST checks view rather than at foundation_checks by name, so
-# a checks view read in ahead of it is inside the range. Everything before that — the
-# foundation itself, foundation_summary — stays outside, where its string literals
-# cannot be mistaken for check names.
-declared=$(expand_reads < "$plan" | expand_reads \
-  | awk '/CREATE OR REPLACE VIEW [_a-z]*checks AS/,0' \
-  | grep -oE "^  SELECT (DISTINCT )?'[a-z_]+'" | grep -oE "'[a-z_]+'" | tr -d "'" | sort -u)
+declared=$(for f in "$sqldir"/*_checks.sql; do
+  awk '/CREATE OR REPLACE VIEW [_a-z]*checks AS/,0' "$f" \
+    | grep -oE "^  SELECT (DISTINCT )?'[a-z_]+'" | grep -oE "'[a-z_]+'" | tr -d "'"
+done | sort -u)
 covered=$(grep -v '^#' "$spec" | cut -f2 | grep -vE '^$|^\*$' | sort -u)
 
-tmp=${TMPDIR:-/tmp}/check-mutations.$$
-trap 'rm -f "$tmp"' EXIT
+tmp=${TMPDIR:-/tmp}/check-mutations-names.$$
 printf '%s\n' "$covered"  > "$tmp"
 uncovered=$(printf '%s\n' "$declared" | grep -vxFf "$tmp" || true)
 printf '%s\n' "$declared" > "$tmp"
 stale=$(printf '%s\n' "$covered" | grep -vxFf "$tmp" || true)
+rm -f "$tmp"
 
 if [ -n "$uncovered" ]; then
   echo "✗ checks with no mutation proving they fire:"
@@ -93,8 +95,6 @@ if [ -n "$uncovered" ]; then
   echo "  Add a line to $spec that breaks what each one guards."
   exit 1
 fi
-# ...and the reverse, so the spec can't rot into false coverage after a check is
-# renamed or dropped — the same both-directions guard _anchor_array carries.
 if [ -n "$stale" ]; then
   echo "✗ $spec expects check names that no longer exist:"
   echo "$stale" | sed 's/^/    /'
@@ -103,15 +103,15 @@ fi
 
 printf '%-34s %-32s %s\n' NAME EXPECT RESULT
 
-# The mutation SQL runs before foundation_checks is queried, so it redefines the views
-# the checks read. Everything happens in an in-memory DB over a READ_ONLY attachment —
-# the catalog itself is never touched.
+# The mutation SQL redefines the views the checks read, inside the writable copy and
+# inside a transaction that is never committed — the process exits after the SELECT and
+# the copy rolls back to pristine. The real snapshot is never touched.
 #
 # Fast path: query foundation_checks FILTERED to the expected check_name. Each check is
 # a UNION branch selecting a literal, so DuckDB prunes every other branch and the run
-# costs ~0.5s instead of ~4s. A hit is conclusive — that check fired. Only a MISS needs
-# the full unfiltered run, to say whether the mutation survived outright or tripped a
-# different check. Misses are the rare case, so the suite pays for them rarely.
+# stays sub-second. A hit is conclusive — that check fired. Only a MISS needs the full
+# unfiltered run, to say whether the mutation survived outright or tripped a different
+# check. Misses are the rare case, so the suite pays for them rarely.
 probe() {  # probe <sql> [check_name] — stderr kept, so a broken mutation is visible
   # Unfiltered (the miss path) drops undocumented_view: nearly every mutation redefines
   # a view with CREATE OR REPLACE, which DROPS that view's COMMENT ON VIEW, so the check
@@ -124,7 +124,8 @@ probe() {  # probe <sql> [check_name] — stderr kept, so a broken mutation is v
   # and letting a '*' mutation pass on noise.
   _where="WHERE check_name NOT IN ('undocumented_view', 'undocumented_macro'${baseline_sql:+, $baseline_sql})"
   [ -n "${2:-}" ] && _where="WHERE check_name = '$2'"
-  _out=$(duckdb -init "$plan" -noheader -list :memory: "
+  _out=$(duckdb "$work" -noheader -list "
+      BEGIN TRANSACTION;
       $1
       SELECT COALESCE(string_agg(DISTINCT check_name, ','), '')
       FROM foundation_checks $_where;" 2>&1 || true)

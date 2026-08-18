@@ -44,16 +44,13 @@ from ._image_fields import IMAGE_FIELDS, _stamp_image_license
 
 
 def _sync_markdown_references(obj: ClaimControlledModel) -> None:
-    """Sync RecordReference table for all markdown fields on the object.
+    """Sync the RecordReference table for the object's markdown fields.
 
-    Always calls sync_references, even for empty fields, so that stale
-    references are cleaned up when a field is blanked.
+    Called unconditionally, so that blanking a field clears its references.
     """
-    from apps.core.markdown import get_markdown_fields
     from apps.core.markdown.references import sync_references
 
-    for field_name in get_markdown_fields(type(obj)):
-        sync_references(obj, getattr(obj, field_name, "") or "")
+    sync_references(obj)
 
 
 # ------------------------------------------------------------------
