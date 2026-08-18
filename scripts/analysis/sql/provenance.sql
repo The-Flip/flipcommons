@@ -1,8 +1,5 @@
 -- Provenance analysis foundation — the attribution and citation layer.
 --
--- `.read` by catalog.sql at its tail, so any analysis that reads the foundation gets
--- these for free. It needs `models` (for the live-model lens) so it cannot load first.
---
 -- WHAT THIS ANSWERS. catalog.sql shows the catalog's RESOLVED state — the value that
 -- won. This file shows WHO SAID SO: which ingest source asserted a fact, in which
 -- ingest run / data patch, whether it won, and what external evidence was cited.
@@ -820,7 +817,7 @@ COMMENT ON MACRO citation_root_for_url IS
 --
 -- IT IS NOT THE WHOLE PROVENANCE WATERMARK. `latest_patch`, `patch_fingerprint` and
 -- `latest_changeset` are provenance facts that live in `analysis_context` in
--- catalog.sql, and they stay there: that view is the REPRODUCIBILITY watermark, and
+-- run_context.sql, and they stay there: that view is the REPRODUCIBILITY watermark, and
 -- telling "same query, newer catalog" from a broken reproduction needs the patch and
 -- changeset point in the same row as the schema point. Splitting it to group by topic
 -- would break every consumer that records the watermark and buy nothing at runtime,

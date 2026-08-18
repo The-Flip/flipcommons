@@ -48,7 +48,7 @@ CREATE OR REPLACE MACRO name_key(s) AS name_norm(name_strip_paren(s));
 COMMENT ON MACRO name_key IS
   'name_norm(name_strip_paren(s)) — the name comparison key for the common case. Use name_norm alone when a trailing parenthetical distinguishes the records.';
 
--- ═══ §80 DIMENSIONS — what a model points at ════════════════════════════════
+-- ═══ §80 MODEL DIMENSIONS — what a model points at ════════════════════════════════
 -- locations — one row per live geographic Location.
 --   location_path : the stable key ('usa/il/chicago') and the one to join on. `slug` is
 --             unique only WITHIN a parent — there is more than one 'victoria' in the
@@ -286,7 +286,7 @@ CREATE OR REPLACE VIEW models AS
   LEFT JOIN cabinets                   cab ON cab.id = m.cabinet_id
   LEFT JOIN production_statuses        ps  ON ps.id  = m.production_status_id;
 COMMENT ON VIEW models IS
-  'One row per LIVE MachineModel — THE spine; build analyses on this. Soft-deleted models are not here and are not anywhere: read `claims` for the history of one.';
+  'One row per live MachineModel.';
 
 -- ═══ §40 MANUFACTURERS AND CORPORATE ENTITIES ═══════════════════════════════
 -- presumed_producing — the still-producing verdict the SITE publishes, which is not
@@ -490,7 +490,7 @@ CREATE OR REPLACE VIEW model_reward_names AS
   JOIN stg.reward_type rt ON rt.id = mr.reward_type_id
   GROUP BY mr.model_id;
 COMMENT ON VIEW model_reward_names IS
-  'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
+  'One row per live model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
 -- ─── Theme vocabulary ───────────────────────────────────────────────────────
 -- Four views per multi-valued vocabulary, the gameplay-feature block below mirroring them:
@@ -568,7 +568,7 @@ CREATE OR REPLACE VIEW model_theme_names AS
   JOIN stg.theme t ON t.id = mt.theme_id
   GROUP BY mt.model_id;
 COMMENT ON VIEW model_theme_names IS
-  'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, themes for questions about the vocabulary itself.';
+  'One row per live model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, themes for questions about the vocabulary itself.';
 
 -- The only reader of the tag through table.
 CREATE OR REPLACE VIEW model_tags AS
@@ -869,14 +869,14 @@ CREATE OR REPLACE VIEW model_edges_bidir AS
 COMMENT ON VIEW model_edges_bidir IS
   'Two rows per resolved edge, one per end — the CONNECTEDNESS view, with a direction column. relationship_type is always the edge AS STATED, so read it with direction. Never aggregate here: every edge is counted twice.';
 
--- ═══ §30 TITLES AND MODEL NUMBERS ═══════════════════════════════════════════
--- franchises / series — the two Title-grouping vocabularies at entity grain, for which
--- groupings EXIST and which are used by nothing. Both flat and both curator-maintained, so
+-- ═══ §85 TITLE DIMENSIONS ═══════════════════════════════════════════
+-- franchises / series: Title-grouping vocabularies at entity grain, for which groupings
+-- EXIST and which are used by nothing. Both flat and both curator-maintained, so
 -- `n_titles = 0` is the interesting row rather than a defect — a grouping someone created
 -- and never attached, invisible from `titles` alone.
--- The Title side stays a _staging() read: `titles` decodes franchise and series onto each
--- Title, so composing it here would close a cycle. Hence also the position ahead of
--- `titles` — views bind at CREATE.
+--
+-- The Title side reads from staging: `titles` decodes franchise and series onto each
+-- Title, so composing it here would close a cycle.
 CREATE OR REPLACE VIEW franchises AS
   SELECT f.*,
          count(t.id) AS n_titles
@@ -894,6 +894,9 @@ CREATE OR REPLACE VIEW series AS
   GROUP BY ALL;
 COMMENT ON VIEW series IS
   'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
+
+
+-- ═══ §15 TITLES ═══════════════════════════════════════════
 
 -- titles — one row per live Title: the entity grain behind `models.title_*`. Reach for it
 -- when the Title itself is the subject.
@@ -918,7 +921,7 @@ CREATE OR REPLACE VIEW titles AS
   LEFT JOIN franchises f     ON f.id  = t.franchise_id
   LEFT JOIN series se        ON se.id = t.series_id;
 COMMENT ON VIEW titles IS
-  'One row per LIVE Title — identity, franchise/series grouping and n_models. A Title with no live models stays, at n_models = 0.';
+  'One row per live Title — identity, franchise/series grouping and n_models. A Title with no live models stays, at n_models = 0.';
 
 -- collapsed_models — one row per model that its Title collapses into: the model a reader
 -- reaches by the Title's URL, because the Title page renders its detail inline instead of
@@ -1196,32 +1199,3 @@ CREATE OR REPLACE VIEW domain_vocab AS
                   FROM duckdb_tables() WHERE database_name = current_database() AND schema_name = 'raw');
 COMMENT ON VIEW domain_vocab IS
   'One row per controlled-vocabulary term defined in docs/DomainModel.md — dim, slug and the prose definition, parsed from the doc at query time. Join it to a vocabulary view to read what a slug MEANS; the doc stays the only place domain semantics are written.';
-
--- ═══ §230 RUN WATERMARK ═════════════════════════════════════════════════════
--- analysis_context — the input watermark for a run, printed by every runner above the
--- results. Enough identity to tell "same query, newer catalog" apart from a broken
--- reproduction: a query is reproducible, but its RESULTS only are when this row matches.
---   migrations_applied / latest_migration : the schema point — count + newest name, not
---       the raw max(id) insertion sequence (which is neither a head nor comparable).
---   latest_patch / patch_fingerprint : the newest SUCCESSFULLY-applied data patch and its
---       content hash, filtered to status='success' with a non-null patch_id so a
---       failed/running/interactive ingest can't misreport it.
---   latest_changeset : catches interactive edits — the drift a patch id can't see.
---   snapshot_imported_at : when `fc` was last imported from db.sqlite3. Every other field
---       here is read THROUGH that import, so it dates all of them.
--- `provenance_context` carries that layer's counts and does not restate these; read the two
--- together.
-CREATE OR REPLACE VIEW analysis_context AS
-  SELECT
-    version()                                    AS duckdb_version,
-    (SELECT count(*) FROM models)                AS live_models,
-    (SELECT count(*) FROM raw.django_migrations)  AS migrations_applied,
-    (SELECT app || '.' || name FROM raw.django_migrations ORDER BY id DESC LIMIT 1) AS latest_migration,
-    (SELECT patch_id FROM raw.provenance_ingestrun
-       WHERE status = 'success' AND patch_id IS NOT NULL ORDER BY id DESC LIMIT 1) AS latest_patch,
-    (SELECT input_fingerprint FROM raw.provenance_ingestrun
-       WHERE status = 'success' AND patch_id IS NOT NULL ORDER BY id DESC LIMIT 1) AS patch_fingerprint,
-    (SELECT max(id) FROM raw.provenance_changeset) AS latest_changeset,
-    (SELECT imported_at FROM raw._import_stamp)    AS snapshot_imported_at;
-COMMENT ON VIEW analysis_context IS
-  'One row — the input watermark: DuckDB version, live model count, migration point, latest successful patch + fingerprint, latest changeset id, and when the catalog was imported. Printed by every analysis run.';

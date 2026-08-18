@@ -2,7 +2,7 @@
 
 For changing the foundation's SQL under `sql/`. If you're writing an analysis on top of the foundation, you want [README.md](README.md) instead — this file is about the foundation itself.
 
-[`analytics.sql`](sql/analytics.sql) is the manifest: one `.read` per file in dependency order, and the only place load order is stated — no file `.read`s another. The layer files are [`staging.sql`](sql/staging.sql) (liveness + staging macros, the `stg` schema), the generated `entity_registry.sql`, [`catalog.sql`](sql/catalog.sql) (the catalog spine), [`prose.sql`](sql/prose.sql) (the wikilink graph and prose tokenization), the generated `shared_hosts.sql`, [`provenance.sql`](sql/provenance.sql) and [`data_patches.sql`](sql/data_patches.sql). Each layer's checks live in its `*_checks.sql` file as a private view; [`foundation_checks.sql`](sql/foundation_checks.sql) folds them into the one public gate and adds the cross-layer checks. [`audit.sql`](sql/audit.sql) and [`relation_index.sql`](sql/relation_index.sql) load last.
+[`analytics.sql`](sql/analytics.sql) is the manifest: one `.read` per file in dependency order, and the only place load order is stated — no file `.read`s another. The layer files are [`staging.sql`](sql/staging.sql) (liveness + staging macros, the `stg` schema), the generated `entity_registry.sql`, [`catalog.sql`](sql/catalog.sql) (the catalog spine), [`prose.sql`](sql/prose.sql) (the wikilink graph and prose tokenization), the generated `shared_hosts.sql`, [`provenance.sql`](sql/provenance.sql) and [`data_patches.sql`](sql/data_patches.sql). Each layer's checks live in its `*_checks.sql` file as a private view; [`foundation_checks.sql`](sql/foundation_checks.sql) folds them into the one public gate and adds the cross-layer checks. [`audit.sql`](sql/audit.sql), [`run_context.sql`](sql/run_context.sql) — `analysis_context`, which belongs to no layer and reads the public views of all of them — and [`relation_index.sql`](sql/relation_index.sql) load last, in that order: the index records the relations that exist when it runs, so nothing may be defined after it.
 
 ## What this layer is
 
@@ -84,7 +84,7 @@ A public view ships with a `COMMENT ON VIEW` immediately after its `CREATE`:
 ```sql
 CREATE OR REPLACE VIEW titles AS …;
 COMMENT ON VIEW titles IS
-  'One row per LIVE Title — identity, franchise/series grouping and n_models. …';
+  'One row per live Title — identity, franchise/series grouping and n_models. …';
 ```
 
 That comment **is** the view reference. `scripts/analysis/analysis describe` reads it from the session, so README.md does not duplicate the view list — and a term naming nothing exactly searches these one-liners, so the words you choose are how the view gets found at all. `undocumented_view` fails the self-test for any public view without a comment; review remains responsible for keeping the comment accurate, while `DESCRIBE` supplies the live column list.

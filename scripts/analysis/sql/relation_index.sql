@@ -1,17 +1,9 @@
 -- The reference index — the `═══ §N` section each relation is defined under, and the
 -- order `describe` lists them in.
 --
--- Order is DECLARED, in the header itself, because the order the files load is
--- define-before-use order: it puts the plumbing ahead of the spine, and the self-test
--- ahead of both. Keeping the rank inside the header is what stops it drifting from the
--- label it ranks — they are one string, edited together.
---
--- It cannot be left to the catalog either. DuckDB reassigns oids in NAME order when it
--- reopens a persisted database, so creation order does not survive the bake, and a
--- listing ordered by oid is silently ordered alphabetically.
---
--- Numbers run in tens so a new section costs one line rather than a renumber. A header
--- with no §N still groups, after every numbered one.
+-- Order is declared via a number §N in the header itself.
+-- Numbers run in tens so a new section costs one line rather than a renumber.
+-- A header with no §N still groups, after every numbered one.
 
 CREATE OR REPLACE TABLE raw._relation_index AS
 WITH
