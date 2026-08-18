@@ -30,6 +30,16 @@ From flippatch, looking at what records fail lint more generally, in order to dr
 
 Think of them as audit or linting rules for catalog structure. Rules must be deterministic, not AI-based. I would imagine we translate all the existing flippatch linting rules into this system, so that we can lint the entire catalog.
 
+## Warnings stand; no acknowledgment mechanism
+
+A warning the author has confirmed as deliberate re-appears on every run, and the first field session asked for a way to record the confirmation (a suppression file keyed on rule + entity + link target, or similar). Decided against, deliberately:
+
+- The analytics layer is derived, read-only and stateless. "This link is deliberate" is an assertion about catalog content, and catalog assertions are claims-based and live in the catalog — a suppression file in either repo is a shadow catalog with no stable key surface (findings carry no structured target column, so it would key on message text and rot on any wording or slug change).
+- The noise self-limits in the primary use case: `audit-patches` scopes to the mutable patch window, so a campaign's confirmed warnings leave the pre-commit report when the campaign ships. Standing warnings persist only in the full-catalog lens, which is not operational yet.
+- Where the catalog itself holds evidence that a flagged choice is deliberate, the rule reads that evidence instead of asking a human to file a confirmation — see the carriage suppression under [wrong-grain machine wikilinks](#wrong-grain-machine-wikilinks-in-a-description). Suppression by evidence is a rule refinement; suppression by acknowledgment is unaccountable state.
+
+If the full-catalog use case someday accumulates confirmed warnings that no evidence can dissolve, the direction is a claims-based confirmation resident in the catalog, not a file.
+
 ## This lives in Flipcommons
 
 This system would live in Flipcommons, Flippatch: it's about overall database coherence, not specifically data patches. Flippatch would invoke it but not own it.
@@ -73,7 +83,12 @@ This is incomplete.
 
 In prose (mostly descriptions), entities that are mentioned but not wikilinked. Titles, manufacturers, gameplay features etc. Looks at both name and aliases.
 
-This is a warning not error: some hits are legitimately unlinked (a name inside a quote).
+Two mention classes are excluded mechanically rather than left to the reader's judgment:
+
+- **A name inside quotation marks** (straight or curly doubles) is prose quoting a wording, not naming a record, and does not count as a mention.
+- **A span inside an occurrence of the record's own name** does not count — "Stern SPIKE" inside "Stern SPIKE 3 is the third generation..." names no sibling SPIKE record. Judged per occurrence, so the same words standing free elsewhere in the prose still count; the record's aliases and paren-stripped name ("Big Dryvers (EM)" appears in prose as "Big Dryvers") own their occurrences too, and a Title and the model it collapses into own each other's names in both directions.
+
+This is a warning not error: what survives can still be legitimate shorthand for something contextually present (a description saying "two months after the Star Wars debut" needn't link the franchise).
 
 ### Parenthetical fact cross-check in descriptions
 
@@ -92,7 +107,9 @@ The catalog can have two independent assertions about the same fact:
 - **The prose**: a gameplay feature's description names a title or model — "The first Mystic Lines game was [[title:border-beauty]] (1965)".
 - **The attachment data**: `model_gameplay_features` rows — "model `border-beauty` has feature `mystic-lines`".
 
-The rule: for every title or model wikilinked from the description of a gameplay feature / system / game format (and maybe others?), warn if the linked-to model has no attachment to the feature. This must count attachments to the feature's DAG descendants — a machine attached to `bash-toys` satisfies a link from `interactive-toys`. It means either the attachment is missing or the prose names the wrong machine.
+The rule: for every title or model wikilinked from a vocabulary record's prose, warn if the linked model — or, for a Title, every model of it — does not carry that record. "Carry" spans every channel by which a model carries a vocabulary term: the M2M attachments (gameplay features, themes, tags, reward types) and the single-valued dims (system, game format). For the DAG vocabularies an attachment to a descendant carries every ancestor — a machine attached to `bash-toys` satisfies a link from `interactive-toys`. A finding means either the attachment is missing or the prose names the wrong machine.
+
+For system and game format the message names the value the machine does carry, because that value is the triage: a sibling generation (`williams-system-11a` under the System 11 description) is usually deliberate prose, a foreign one (a Zaccaria system under a Williams one) is usually a same-named wrong machine linked.
 
 Warning not error. Prose can mention unattachable titles -- like "Model X was the last Gottlieb before they switched to this feature".
 
@@ -114,7 +131,9 @@ Error not warning.
 
 ### Wrong-grain machine wikilinks in a description
 
-A description linking [[model:X]] where X's title holds exactly one model — should be [[title:X]]. This is an error. If there's more than one model in the title, it should be a warning -- there are legitimate cases to link to a model, but the AI should be asked to think about whether it's valid.
+A description linking [[model:X]] where X's Title collapses into it (the product rule from `titles.py`, not the `title_size = 1` approximation) — should be [[title:X]]. This is an error. If the Title does not collapse, it should be a warning -- there are legitimate cases to link to a model, but the AI should be asked to think about whether it's valid.
+
+One deliberateness signal is mechanical, and the warning does not fire on it: a vocabulary record whose prose links a model that **carries** that record (the limited-edition tag naming the LE builds it attaches to, a gameplay feature naming an attached machine build) has chosen the model grain on evidence the catalog itself holds. Carriage is the same relation the [feature-carrier rule](#feature-carrier-consistency-in-descriptions) checks, so the two rules cannot disagree — one never flags the link the other justifies. Only the warning is suppressed: linking a collapsed model stays an error no matter what the model carries, because its Title is its page.
 
 AIs get this badly wrong, often. This is an important one.
 

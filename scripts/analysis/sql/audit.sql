@@ -48,6 +48,57 @@ CREATE OR REPLACE VIEW _collapsed_models AS
 COMMENT ON VIEW _collapsed_models IS
   'One row per model whose Title collapses into it — the product rule from titles.py (one active non-variant model, itself without live variants), not the title_size = 1 approximation.';
 
+-- ─── shared: vocabulary carriage ────────────────────────────────────────────
+-- One row per (vocabulary record, model that carries it), across every channel by which a
+-- model carries a vocabulary term: the M2M attachments (gameplay features, themes, tags,
+-- reward types) and the single-valued dims (system, game format). For the two DAG
+-- vocabularies an attachment to a DESCENDANT carries every ancestor — a machine attached
+-- to bash-toys carries interactive-toys — because the DAG means the child IS a kind of
+-- the parent, and a rule reading direct edges alone would demand a double attachment
+-- the product never writes.
+--
+-- Two rules read this and must agree: uncarried-link reports a prose link to a machine
+-- that carries nothing under the description's own record, and wrong-grain-link reads
+-- carriage as evidence that a model-grain link is deliberate. Disagreement would have
+-- one rule flag the exact link the other justifies.
+--
+-- The dim branches join `systems`/`game_formats` on slug, not id: `models` decodes those
+-- FKs to slugs and does not surface the id, and both slugs are globally unique.
+CREATE OR REPLACE VIEW _vocab_carriage AS
+  WITH RECURSIVE
+  -- UNION, not UNION ALL: a DAG reaches a node once per path, and this closure's
+  -- contract is one row per (root, node).
+  feature_desc AS (
+    SELECT id AS root_id, id AS node_id FROM gameplay_features
+    UNION
+    SELECT d.root_id, c.id
+    FROM feature_desc d
+    JOIN gameplay_features p ON p.id = d.node_id
+    JOIN gameplay_features c ON list_contains(p.children, c.slug)
+  ),
+  theme_desc AS (
+    SELECT id AS root_id, id AS node_id FROM themes
+    UNION
+    SELECT d.root_id, c.id
+    FROM theme_desc d
+    JOIN themes p ON p.id = d.node_id
+    JOIN themes c ON list_contains(p.children, c.slug)
+  )
+            SELECT _entity_type_of('catalog_gameplayfeature') AS entity_type,
+                   d.root_id AS entity_id, a.model_id
+            FROM feature_desc d
+            JOIN model_gameplay_features a ON a.feature_id = d.node_id
+  UNION     SELECT _entity_type_of('catalog_theme'), d.root_id, a.model_id
+            FROM theme_desc d
+            JOIN model_themes a ON a.theme_id = d.node_id
+  UNION     SELECT _entity_type_of('catalog_tag'), tag_id, model_id FROM model_tags
+  UNION     SELECT _entity_type_of('catalog_rewardtype'), reward_type_id, model_id
+            FROM model_rewards
+  UNION     SELECT _entity_type_of('catalog_system'), s.id, m.id
+            FROM systems s JOIN models m ON m.system_slug = s.slug
+  UNION     SELECT _entity_type_of('catalog_gameformat'), g.id, m.id
+            FROM game_formats g JOIN models m ON m.game_format_slug = g.slug;
+
 -- ─── self-link ─────────────────────────────────────────────────────────────
 -- A `[[cite:N]]` edge has a NULL target_entity_type, and comparing anything to NULL
 -- yields NULL rather than true, so cites drop out of the WHERE unmentioned.
@@ -66,6 +117,12 @@ COMMENT ON VIEW audit_self_link IS
 -- A collapsed model is the same thing as its Title in the UI (SingleModelTitles.md), so
 -- linking the model is simply wrong. Where the Title does not collapse, both grains reach
 -- a real page and the choice can be deliberate, hence a warning rather than an error.
+--
+-- One deliberateness signal is mechanical, so the warning does not fire on it: a
+-- vocabulary record whose prose links a model CARRYING that record (the limited-edition
+-- tag naming the LE builds it attaches to) has chosen the model grain on evidence the
+-- catalog itself holds. Only the warning branch reads it — a collapsed model's Title is
+-- its page, so that link stays an error no matter what the model carries.
 CREATE OR REPLACE VIEW audit_wrong_grain_link AS
   SELECT CASE WHEN c.id IS NOT NULL THEN 'error' ELSE 'warning' END AS severity,
          r.source_entity_type AS entity_type,
@@ -92,9 +149,13 @@ CREATE OR REPLACE VIEW audit_wrong_grain_link AS
     -- A Title naming its own models is the one place the model grain is unambiguously
     -- deliberate. It is also the corner the advice cannot survive: for a collapsed model,
     -- "link the Title instead" would name the source itself.
-    AND NOT (r.source_entity_type = 'title' AND m.title_id = r.source_id);
+    AND NOT (r.source_entity_type = 'title' AND m.title_id = r.source_id)
+    AND NOT (c.id IS NULL AND EXISTS (
+      SELECT 1 FROM _vocab_carriage v
+      WHERE v.entity_type = r.source_entity_type AND v.entity_id = r.source_id
+        AND v.model_id = m.id));
 COMMENT ON VIEW audit_wrong_grain_link IS
-  'ERROR when prose links a model its Title collapses into (link the Title instead); WARNING when the Title does not collapse, where both grains reach a real page and the choice may be deliberate.';
+  'ERROR when prose links a model its Title collapses into (link the Title instead); WARNING when the Title does not collapse, where both grains reach a real page and the choice may be deliberate. No warning when the source is a vocabulary record the linked model carries — that model grain is deliberate on the catalog''s own evidence.';
 
 -- ─── linkless-description ──────────────────────────────────────────────────
 -- GRAIN: record_references stores no field, so "has a link" is answered per RECORD while
@@ -159,38 +220,99 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
     -- entity_subjects and entity_aliases are not live-filtered, so liveness is applied here.
     WHERE is_live(s.subject_status) AND n.name IS NOT NULL AND r.is_wikilinkable
   ),
-  -- Markup stripped first, so an already-linked name contributes no span at all.
+  -- Markup stripped first, so an already-linked name contributes no span at all. Quoted
+  -- runs go with it: a name inside quotation marks is prose quoting a wording, not naming
+  -- a record, so it must not seed a span. Straight and curly doubles alike; the run is
+  -- bounded and single-line so an unbalanced quote can swallow at most 80 characters of
+  -- one line, never the rest of the description.
   words AS (
     SELECT entity_type, entity_id, public_id, field,
            str_split(trim(regexp_replace(
-             strip_accents(regexp_replace(text, '\[\[[^\]]*\]\]', ' ', 'g')),
+             strip_accents(regexp_replace(
+               regexp_replace(text, '\[\[[^\]]*\]\]', ' ', 'g'),
+               '["“”][^"“”\n]{0,80}["“”]', ' ', 'g')),
              '[^\p{L}\p{N}]+', ' ', 'g')), ' ') AS w
     FROM entity_prose WHERE text IS NOT NULL
   ),
+  -- One row per span OCCURRENCE — lo/hi are word positions, kept so an occurrence can be
+  -- judged by where it sits (inside an own-name occurrence, below). The report's unit
+  -- stays the span TEXT: occurrences regroup in the final aggregate.
   -- The floor is the precision rule above; the ceiling bounds the span count, and a name
   -- longer than it is found by a shorter prefix or not at all.
   spans AS (
-    SELECT entity_type, entity_id, public_id, field,
-           UNNEST(flatten([[array_to_string(w[i : i + n - 1], ' ')
-                            for i in range(1, len(w) + 1) if i + n - 1 <= len(w)]
-                           for n in range(2, 6)])) AS span
-    FROM words
+    SELECT entity_type, entity_id, public_id, field, s.span AS span, s.lo AS lo, s.hi AS hi
+    FROM (
+      SELECT entity_type, entity_id, public_id, field,
+             UNNEST(flatten([[{'span': array_to_string(w[i : i + n - 1], ' '),
+                               'lo': i, 'hi': i + n - 1}
+                              for i in range(1, len(w) + 1) if i + n - 1 <= len(w)]
+                             for n in range(2, 6)])) AS s
+      FROM words)
+  ),
+  -- Every normalized spelling of the record's own identity, at BOTH grains of a collapsed
+  -- pair — a Title and the model it collapses into are one thing in the UI, so each owns
+  -- the other's names. Each name contributes its paren-stripped form too: the trailing
+  -- parenthetical is the catalog's disambiguator — Big Dryvers (EM), New World Series
+  -- (ニューワールドシリーズ) — and prose never spells it, so without the stripped form
+  -- the lead sentence fails to read as the record's own name and its sub-spans leak.
+  -- Multi-word only: a one-word name cannot contain a two-word span.
+  own_names AS (
+    SELECT DISTINCT entity_type, entity_id, nn FROM (
+      SELECT entity_type, entity_id, UNNEST([name_norm(name), name_key(name)]) AS nn
+      FROM (
+                  SELECT entity_type, entity_id, name FROM names
+        UNION ALL SELECT 'model', cm.id, n.name
+                  FROM _collapsed_models cm
+                  JOIN names n ON n.entity_type = 'title' AND n.entity_id = cm.title_id
+        UNION ALL SELECT 'title', cm.title_id, n.name
+                  FROM _collapsed_models cm
+                  JOIN names n ON n.entity_type = 'model' AND n.entity_id = cm.id))
+  ),
+  -- Word ranges where the prose spells the record's own name — through the word array,
+  -- not the span machinery, because a name longer than the span ceiling ("Teenage Mutant
+  -- Ninja Turtles: Battle in the Sewer") still owns its sub-spans.
+  own_ranges AS (
+    SELECT entity_type, entity_id, field, r.lo AS lo, r.hi AS hi
+    FROM (
+      SELECT wd.entity_type, wd.entity_id, wd.field,
+             UNNEST([{'lo': j, 'hi': j + o.k - 1}
+                     for j in range(1, len(wd.w) - o.k + 2)
+                     if name_norm(array_to_string(wd.w[j : j + o.k - 1], ' ')) = o.nn]) AS r
+      FROM words wd
+      JOIN (SELECT entity_type, entity_id, nn, len(str_split(nn, ' ')) AS k
+            FROM own_names WHERE nn LIKE '% %') o
+        ON o.entity_type = wd.entity_type AND o.entity_id = wd.entity_id)
   ),
   candidates AS (
-    SELECT * FROM spans
+    SELECT * FROM spans sp
     -- Every word starts with a capital or a digit. One lowercase word rejects the span.
     WHERE NOT list_contains(
       [regexp_matches(x, '^[\p{Lu}\p{N}]') for x in str_split(span, ' ')], false)
+    -- An occurrence inside the record's own name is the name, not a mention of whatever
+    -- record a piece of it happens to match — "Stern SPIKE" inside "Stern SPIKE 3" names
+    -- no SPIKE. Judged per occurrence, which is what the positions are for: the same
+    -- words standing free elsewhere in the prose still seed a span, so New Crazy 15's
+    -- description naming the original Crazy 15 is still found.
+    AND NOT EXISTS (
+      SELECT 1 FROM own_ranges o
+      WHERE o.entity_type = sp.entity_type AND o.entity_id = sp.entity_id
+        AND o.field = sp.field AND o.lo <= sp.lo AND sp.hi <= o.hi)
   ),
   -- One row per (span, record that span could name), carrying the two ways a span can
   -- already be accounted for. Computed per candidate, judged per span below.
   matched AS (
     SELECT c.entity_type, c.entity_id, c.public_id, c.field, c.span, p.suggest_link,
-           -- Prose naming its own subject is not a missing link. Both grains are tested
-           -- because they differ for a collapsed model, and a Title whose own prose names
-           -- its sole model must not be told to link itself.
+           -- Prose naming its own subject is not a missing link, and for a collapsed pair
+           -- the subject wears two identities. The first two tests cover the span
+           -- resolving to the record itself or to the Title suggested in its place; the
+           -- third is the reverse grain, a model's prose naming the Title that collapses
+           -- into it, which no pool row can equate because the pool row belongs to the
+           -- Title.
            (c.entity_type = p.target_type  AND c.entity_id = p.target_id)
-             OR (c.entity_type = p.suggest_type AND c.entity_id = p.suggest_id) AS is_self,
+             OR (c.entity_type = p.suggest_type AND c.entity_id = p.suggest_id)
+             OR EXISTS (SELECT 1 FROM _collapsed_models cm
+                        WHERE c.entity_type = 'model' AND cm.id = c.entity_id
+                          AND p.target_type = 'title' AND p.target_id = cm.title_id) AS is_self,
            -- Linked anywhere in this record's prose, not only at this span: one link
            -- accounts for every mention of the same record. Either grain settles it —
            -- prose that linked the model did link the mention, and having linked it at the
@@ -233,7 +355,7 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
   -- its namesakes behind and warns about prose that is not wrong.
   HAVING NOT bool_or(is_self OR linked);
 COMMENT ON VIEW audit_unlinked_mention IS
-  'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Matches canonical names and aliases alike; a span naming several records renders as "N candidates". The link in the message is the one to WRITE, not the record the span named: a model alone in its Title resolves to the Title, so following the suggestion never authors a wrong-grain error. A name inside a quotation is legitimately unlinked, which is why this is not an error.';
+  'WARNING — one row per (record, prose field, capitalized 2-5 word span) naming a linkable record the prose never links. Matches canonical names and aliases alike; a span naming several records renders as "N candidates". The link in the message is the one to WRITE, not the record the span named: a model alone in its Title resolves to the Title, so following the suggestion never authors a wrong-grain error. Quoted wordings and spans inside the record''s own name do not fire; a warning rather than an error because prose may still legitimately shorthand a record it has no reason to link.';
 
 -- ─── parenthetical-fact ────────────────────────────────────────────────────
 -- The house pattern _[[model:x]]_ (1997, [[manufacturer:williams]]) restates two claims
@@ -475,6 +597,79 @@ CREATE OR REPLACE VIEW audit_broken_link AS
 COMMENT ON VIEW audit_broken_link IS
   'ERROR — one row per wikilink whose target is deleted or missing. Either the link should go, or the record should not have gone.';
 
+-- ─── uncarried-link ────────────────────────────────────────────────────────
+-- The catalog holds two independent assertions about the same fact: the prose ("The
+-- first Mystic Lines game was [[title:border-beauty]]") and the attachment data (model
+-- border-beauty ⋈ feature mystic-lines). This rule cross-checks them: a machine
+-- wikilinked from a vocabulary record's prose should carry that record, per
+-- _vocab_carriage — so either the attachment is missing or the prose names the wrong
+-- machine. A warning either way, because prose may legitimately name a non-carrier
+-- ("the last Gottlieb before they switched to this feature").
+--
+-- For the two single-valued dims the message names what the machine DOES carry, because
+-- that value is the triage: a sibling generation (williams-system-11a under a
+-- williams-system-11 description) is usually deliberate prose, a foreign one (a
+-- Zaccaria system under a Williams one) is usually a same-named wrong machine linked.
+-- The M2M kinds get no such clause — a model's full feature list explains nothing.
+--
+-- Dead targets are skipped: broken-link already reports those, and this rule could say
+-- nothing about them that isn't the deletion itself.
+CREATE OR REPLACE VIEW audit_uncarried_link AS
+  -- DISTINCT because the unit is the (record, linked machine) pair, however many times
+  -- the prose links it.
+  WITH links AS (
+    SELECT DISTINCT r.source_entity_type, r.source_id, r.source_public_id,
+           r.target_entity_type, r.target_id, r.target_public_id, r.target_name
+    FROM record_references r
+    WHERE r.source_entity_type IN (SELECT entity_type FROM _vocab_carriage)
+      AND r.target_entity_type IN ('model', 'title')
+      AND is_live(r.target_status) AND r.target_public_id IS NOT NULL
+  ),
+  -- The models a link puts in scope: the model itself, or every live model of the Title.
+  -- LEFT so a Title holding no live models keeps its row and reports as uncarried.
+  judged AS (
+    SELECT l.*,
+           COALESCE(bool_or(EXISTS (
+             SELECT 1 FROM _vocab_carriage v
+             WHERE v.entity_type = l.source_entity_type AND v.entity_id = l.source_id
+               AND v.model_id = m.id)), false) AS carried,
+           -- The dim values actually carried, for the message. Both computed on every
+           -- row and picked by source type at render — a CASE choosing between
+           -- aggregates does not bind. Aggregated because a Title link scopes several
+           -- models; sorted so the same defect renders identically between runs.
+           string_agg(DISTINCT m.system_slug, '/' ORDER BY m.system_slug)           AS systems_carried,
+           string_agg(DISTINCT m.game_format_slug, '/' ORDER BY m.game_format_slug) AS formats_carried
+    FROM links l
+    LEFT JOIN models m
+      ON (l.target_entity_type = 'model' AND m.id = l.target_id)
+      OR (l.target_entity_type = 'title' AND m.title_id = l.target_id)
+    GROUP BY ALL
+  )
+  SELECT 'warning'          AS severity,
+         source_entity_type AS entity_type,
+         source_id          AS entity_id,
+         source_public_id   AS public_id,
+         format('links [[{}:{}]] ("{}"), {}',
+                target_entity_type, target_public_id,
+                -- A live record can still be missing a name; format() propagates NULL and
+                -- would blank the message.
+                COALESCE(target_name, target_public_id),
+                CASE WHEN source_entity_type IN ('system', 'game-format') THEN
+                       CASE WHEN carried_dims IS NULL
+                            THEN format('which carries no {}', replace(source_entity_type, '-', ' '))
+                            ELSE format('which carries {} {}', replace(source_entity_type, '-', ' '), carried_dims)
+                       END
+                     WHEN target_entity_type = 'title'
+                     THEN format('no model of which is attached to this {}', replace(source_entity_type, '-', ' '))
+                     ELSE format('which is not attached to this {}', replace(source_entity_type, '-', ' '))
+                END) AS message
+  FROM (SELECT *, CASE source_entity_type WHEN 'system'      THEN systems_carried
+                                          WHEN 'game-format' THEN formats_carried END AS carried_dims
+        FROM judged)
+  WHERE NOT carried;
+COMMENT ON VIEW audit_uncarried_link IS
+  'WARNING — one row per wikilink from a vocabulary record''s prose (gameplay feature, theme, tag, reward type, system, game format) to a machine that does not carry that record, DAG descendants counted. Either the attachment is missing or the prose names the wrong machine; for system and game format the message names what the machine does carry, which is the triage. Prose may legitimately name a non-carrier, hence a warning.';
+
 -- ─── duplicate-name ────────────────────────────────────────────────────────
 -- Names and aliases are one pool: the collision that matters is between the strings a
 -- reader or an importer would use, not between the columns they live in.
@@ -563,6 +758,7 @@ CREATE OR REPLACE TABLE audit_findings AS
   UNION ALL SELECT 'parenthetical-fact',        severity, entity_type, entity_id, public_id, message FROM audit_parenthetical_fact
   UNION ALL SELECT 'duplicate-name',            severity, entity_type, entity_id, public_id, message FROM audit_duplicate_name
   UNION ALL SELECT 'broken-link',               severity, entity_type, entity_id, public_id, message FROM audit_broken_link
+  UNION ALL SELECT 'uncarried-link',            severity, entity_type, entity_id, public_id, message FROM audit_uncarried_link
   UNION ALL SELECT 'shared-cdn-bare-host',      severity, entity_type, entity_id, public_id, message FROM audit_shared_cdn_bare_host;
 COMMENT ON TABLE audit_findings IS
   'One row per catalog defect across every rule — rule, severity, the record it is about and a human-readable message. Catalog content, not a health gate. Materialized at build; the per-rule audit_* views are the live spelling.';
@@ -657,6 +853,7 @@ CREATE OR REPLACE VIEW audit_summary AS
   UNION ALL SELECT 'parenthetical-fact',       count(*) FROM audit_parenthetical_fact
   UNION ALL SELECT 'duplicate-name',           count(*) FROM audit_duplicate_name
   UNION ALL SELECT 'broken-link',              count(*) FROM audit_broken_link
+  UNION ALL SELECT 'uncarried-link',           count(*) FROM audit_uncarried_link
   UNION ALL SELECT 'shared-cdn-bare-host',     count(*) FROM audit_shared_cdn_bare_host
   UNION ALL SELECT 'TOTAL errors', count(*) FILTER (severity = 'error') FROM audit_findings
   UNION ALL SELECT 'TOTAL warnings', count(*) FILTER (severity = 'warning') FROM audit_findings
