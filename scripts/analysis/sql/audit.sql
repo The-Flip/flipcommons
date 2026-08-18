@@ -20,34 +20,6 @@
 
 -- ═══ §190 AUDIT — lint rules over the live catalog ═════════════════════════
 
--- ─── shared: the collapsed model ───────────────────────────────────────────
--- One row per model that its Title collapses into — the model a reader reaches by the
--- Title's URL, because the Title page renders its detail inline instead of a model list.
---
--- This is the product's rule, not an approximation of it: `titles.py` collapses when the
--- Title has exactly one active NON-VARIANT model and that model has no live variants.
--- `title_size` cannot express it. That column counts every live model in the Title,
--- variants included, so it answers a different question in both directions — a Title whose
--- sole model is a variant of a model in ANOTHER Title reads as size 1 while the product
--- shows a model list, and a Title holding one model plus its variants reads as size 3
--- while the product still refuses to collapse.
---
--- Two rules read this and must agree: one reports linking a collapsed model as an error,
--- the other resolves a mention of one to its Title. Disagreement would have the audit
--- prescribe the link it flags.
-CREATE OR REPLACE VIEW _collapsed_models AS
-  SELECT m.id, m.slug, m.name, m.title_id, m.title_slug
-  FROM models m
-  WHERE m.variant_of_id IS NULL
-    -- Live variants only, which `models` already guarantees: a soft-deleted variant does
-    -- not stop the product collapsing, so it must not stop this either.
-    AND NOT EXISTS (SELECT 1 FROM models v WHERE v.variant_of_id = m.id)
-    AND NOT EXISTS (SELECT 1 FROM models o
-                    WHERE o.title_id = m.title_id AND o.variant_of_id IS NULL
-                      AND o.id <> m.id);
-COMMENT ON VIEW _collapsed_models IS
-  'One row per model whose Title collapses into it — the product rule from titles.py (one active non-variant model, itself without live variants), not the title_size = 1 approximation.';
-
 -- ─── shared: vocabulary carriage ────────────────────────────────────────────
 -- One row per (vocabulary record, model that carries it), across every channel by which a
 -- model carries a vocabulary term: the M2M attachments (gameplay features, themes, tags,
@@ -144,7 +116,7 @@ CREATE OR REPLACE VIEW audit_wrong_grain_link AS
          END AS message
   FROM record_references r
   JOIN models m ON m.id = r.target_id
-  LEFT JOIN _collapsed_models c ON c.id = m.id
+  LEFT JOIN collapsed_models c ON c.id = m.id
   WHERE r.target_entity_type = 'model'
     -- A Title naming its own models is the one place the model grain is unambiguously
     -- deliberate. It is also the corner the advice cannot survive: for a collapsed model,
@@ -191,13 +163,7 @@ COMMENT ON VIEW audit_linkless_description IS
 -- A span naming several records is reported as "N candidates" rather than filtered out;
 -- the collision itself is duplicate-name's business.
 CREATE OR REPLACE VIEW audit_unlinked_mention AS
-  WITH names AS (
-              SELECT subject_type AS entity_type, subject_id AS entity_id,
-                     subject_name AS name
-              FROM entity_subjects
-    UNION ALL SELECT entity_type, entity_id, alias FROM entity_aliases
-  ),
-  pool AS (
+  WITH pool AS (
     -- Location is URL-addressable but absent from the wikilink picker, so
     -- `is_wikilinkable` is what keeps the rule from demanding an impossible edit.
     --
@@ -205,38 +171,23 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
     -- collapsed model, which is its Title in the UI (SingleModelTitles.md). Suggesting the
     -- model there would name the exact link audit_wrong_grain_link reports as an error, so
     -- the suggestion is resolved to the Title through the predicate both rules read.
-    SELECT s.subject_type AS target_type, s.subject_id AS target_id,
-           CASE WHEN c.id IS NOT NULL THEN 'title'    ELSE s.subject_type END AS suggest_type,
-           CASE WHEN c.id IS NOT NULL THEN c.title_id ELSE s.subject_id   END AS suggest_id,
+    SELECT n.entity_type AS target_type, n.entity_id AS target_id,
+           CASE WHEN c.id IS NOT NULL THEN 'title'    ELSE n.entity_type END AS suggest_type,
+           CASE WHEN c.id IS NOT NULL THEN c.title_id ELSE n.entity_id   END AS suggest_id,
            CASE WHEN c.id IS NOT NULL THEN 'title:' || c.title_slug
-                ELSE s.subject_type || ':' || s.subject_public_id END AS suggest_link,
+                ELSE n.entity_type || ':' || n.public_id END AS suggest_link,
            name_norm(n.name) AS match_key
-    FROM entity_subjects s
-    JOIN entity_registry r ON r.entity_type = s.subject_type
-    JOIN names n ON n.entity_type = s.subject_type AND n.entity_id = s.subject_id
+    FROM entity_names n
+    JOIN entity_registry r ON r.entity_type = n.entity_type
     -- Only a collapsed model joins, so every CASE above falls through for an uncollapsed
     -- model and for each of the other twenty types alike.
-    LEFT JOIN _collapsed_models c ON s.subject_type = 'model' AND c.id = s.subject_id
-    -- entity_subjects and entity_aliases are not live-filtered, so liveness is applied here.
-    WHERE is_live(s.subject_status) AND n.name IS NOT NULL AND r.is_wikilinkable
+    LEFT JOIN collapsed_models c ON n.entity_type = 'model' AND c.id = n.entity_id
+    WHERE r.is_wikilinkable
   ),
-  -- Markup stripped first, so an already-linked name contributes no span at all. Quoted
-  -- runs go with it: a name inside quotation marks is prose quoting a wording, not naming
-  -- a record, so it must not seed a span. Straight and curly doubles alike; the run is
-  -- bounded and single-line so an unbalanced quote can swallow at most 80 characters of
-  -- one line, never the rest of the description.
-  words AS (
-    SELECT entity_type, entity_id, public_id, field,
-           str_split(trim(regexp_replace(
-             strip_accents(regexp_replace(
-               regexp_replace(text, '\[\[[^\]]*\]\]', ' ', 'g'),
-               '["“”][^"“”\n]{0,80}["“”]', ' ', 'g')),
-             '[^\p{L}\p{N}]+', ' ', 'g')), ' ') AS w
-    FROM entity_prose WHERE text IS NOT NULL
-  ),
-  -- One row per span OCCURRENCE — lo/hi are word positions, kept so an occurrence can be
-  -- judged by where it sits (inside an own-name occurrence, below). The report's unit
-  -- stays the span TEXT: occurrences regroup in the final aggregate.
+  -- One row per span OCCURRENCE in the shared tokenization (prose_words, which is what
+  -- keeps quoted wordings from seeding spans) — lo/hi are word positions, kept so an
+  -- occurrence can be judged by where it sits (inside an own-name occurrence, below).
+  -- The report's unit stays the span TEXT: occurrences regroup in the final aggregate.
   -- The floor is the precision rule above; the ceiling bounds the span count, and a name
   -- longer than it is found by a shorter prefix or not at all.
   spans AS (
@@ -247,7 +198,7 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
                                'lo': i, 'hi': i + n - 1}
                               for i in range(1, len(w) + 1) if i + n - 1 <= len(w)]
                              for n in range(2, 6)])) AS s
-      FROM words)
+      FROM prose_words)
   ),
   -- Every normalized spelling of the record's own identity, at BOTH grains of a collapsed
   -- pair — a Title and the model it collapses into are one thing in the UI, so each owns
@@ -260,13 +211,13 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
     SELECT DISTINCT entity_type, entity_id, nn FROM (
       SELECT entity_type, entity_id, UNNEST([name_norm(name), name_key(name)]) AS nn
       FROM (
-                  SELECT entity_type, entity_id, name FROM names
+                  SELECT entity_type, entity_id, name FROM entity_names
         UNION ALL SELECT 'model', cm.id, n.name
-                  FROM _collapsed_models cm
-                  JOIN names n ON n.entity_type = 'title' AND n.entity_id = cm.title_id
+                  FROM collapsed_models cm
+                  JOIN entity_names n ON n.entity_type = 'title' AND n.entity_id = cm.title_id
         UNION ALL SELECT 'title', cm.title_id, n.name
-                  FROM _collapsed_models cm
-                  JOIN names n ON n.entity_type = 'model' AND n.entity_id = cm.id))
+                  FROM collapsed_models cm
+                  JOIN entity_names n ON n.entity_type = 'model' AND n.entity_id = cm.id))
   ),
   -- Word ranges where the prose spells the record's own name — through the word array,
   -- not the span machinery, because a name longer than the span ceiling ("Teenage Mutant
@@ -278,7 +229,7 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
              UNNEST([{'lo': j, 'hi': j + o.k - 1}
                      for j in range(1, len(wd.w) - o.k + 2)
                      if name_norm(array_to_string(wd.w[j : j + o.k - 1], ' ')) = o.nn]) AS r
-      FROM words wd
+      FROM prose_words wd
       JOIN (SELECT entity_type, entity_id, nn, len(str_split(nn, ' ')) AS k
             FROM own_names WHERE nn LIKE '% %') o
         ON o.entity_type = wd.entity_type AND o.entity_id = wd.entity_id)
@@ -310,7 +261,7 @@ CREATE OR REPLACE VIEW audit_unlinked_mention AS
            -- Title.
            (c.entity_type = p.target_type  AND c.entity_id = p.target_id)
              OR (c.entity_type = p.suggest_type AND c.entity_id = p.suggest_id)
-             OR EXISTS (SELECT 1 FROM _collapsed_models cm
+             OR EXISTS (SELECT 1 FROM collapsed_models cm
                         WHERE c.entity_type = 'model' AND cm.id = c.entity_id
                           AND p.target_type = 'title' AND p.target_id = cm.title_id) AS is_self,
            -- Linked anywhere in this record's prose, not only at this span: one link
@@ -682,17 +633,8 @@ COMMENT ON VIEW audit_uncarried_link IS
 -- Both sides of a collision are reported, since either may be the one to merge away.
 CREATE OR REPLACE VIEW audit_duplicate_name AS
   WITH keys AS (
-              SELECT s.subject_type AS entity_type, s.subject_id AS entity_id,
-                     s.subject_public_id AS public_id, s.subject_name AS text,
-                     name_norm(s.subject_name) AS k, 'name' AS kind
-              FROM entity_subjects s
-              WHERE is_live(s.subject_status) AND s.subject_name IS NOT NULL
-    UNION ALL SELECT a.entity_type, a.entity_id, s.subject_public_id, a.alias,
-                     name_norm(a.alias), 'alias'
-              FROM entity_aliases a
-              JOIN entity_subjects s ON s.subject_type = a.entity_type
-                                    AND s.subject_id = a.entity_id
-              WHERE is_live(s.subject_status) AND a.alias IS NOT NULL
+    SELECT entity_type, entity_id, public_id, name AS text, name_norm(name) AS k, kind
+    FROM entity_names
   ),
   shared AS (
     SELECT entity_type, k FROM keys

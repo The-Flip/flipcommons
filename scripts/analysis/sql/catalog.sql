@@ -994,6 +994,34 @@ CREATE OR REPLACE VIEW titles AS
 COMMENT ON VIEW titles IS
   'One row per LIVE Title — identity, franchise/series grouping and n_models. A Title with no live models stays, at n_models = 0.';
 
+-- collapsed_models — one row per model that its Title collapses into: the model a reader
+-- reaches by the Title's URL, because the Title page renders its detail inline instead of
+-- a model list (SingleModelTitles.md).
+--
+-- This is the product's rule, not an approximation of it: `titles.py` collapses when the
+-- Title has exactly one active NON-VARIANT model and that model has no live variants.
+-- `title_size` cannot express it. That column counts every live model in the Title,
+-- variants included, so it answers a different question in both directions — a Title whose
+-- sole model is a variant of a model in ANOTHER Title reads as size 1 while the product
+-- shows a model list, and a Title holding one model plus its variants reads as size 3
+-- while the product still refuses to collapse.
+--
+-- Reach for this whenever the question is which PAGE a link or mention lands on — a
+-- collapsed model and its Title are one thing in the UI, and consumers that resolve one
+-- grain to the other must all do it through this predicate or they will disagree.
+CREATE OR REPLACE VIEW collapsed_models AS
+  SELECT m.id, m.slug, m.name, m.title_id, m.title_slug
+  FROM models m
+  WHERE m.variant_of_id IS NULL
+    -- Live variants only, which `models` already guarantees: a soft-deleted variant does
+    -- not stop the product collapsing, so it must not stop this either.
+    AND NOT EXISTS (SELECT 1 FROM models v WHERE v.variant_of_id = m.id)
+    AND NOT EXISTS (SELECT 1 FROM models o
+                    WHERE o.title_id = m.title_id AND o.variant_of_id IS NULL
+                      AND o.id <> m.id);
+COMMENT ON VIEW collapsed_models IS
+  'One row per model whose Title collapses into it — the product rule from titles.py (one active non-variant model, itself without live variants), not the title_size = 1 approximation. The pair are one page in the UI, so resolve link/mention grain through this view.';
+
 -- model_number_collisions — one row per (manufacturer, model number) that more than one
 -- live model claims, so an analysis matching a source's model number can see up front
 -- whether its key resolves. `n_titles` is the cheap discriminator: 1 means the collision is
@@ -1169,6 +1197,32 @@ CREATE OR REPLACE VIEW title_abbreviations AS
 COMMENT ON VIEW title_abbreviations IS
   'One row per community abbreviation of a live Title — the Title-grain twin of model_abbreviations.';
 
+-- entity_names — every string that names a live record, canonical names and aliases as
+-- ONE pool. That pool is how name matching must be done — most records have no alias row,
+-- so searching aliases alone resolves almost nothing — and before this view existed every
+-- consumer wrote the same two-branch union by hand, which is how copies drift.
+--
+-- Live-filtered, unlike entity_subjects and entity_aliases, because a matching pool that
+-- resolves prose or source wording to a deleted record hands back a link nobody can
+-- follow. Values as entered; choose normalization locally (name_norm / name_key).
+-- Abbreviations are deliberately absent: community shorthand is not an alternate name,
+-- which is why the abbreviation views name their column differently.
+CREATE OR REPLACE VIEW entity_names AS
+            SELECT s.subject_type      AS entity_type,
+                   s.subject_id        AS entity_id,
+                   s.subject_public_id AS public_id,
+                   s.subject_name      AS name,
+                   'name'              AS kind
+            FROM entity_subjects s
+            WHERE is_live(s.subject_status) AND s.subject_name IS NOT NULL
+  UNION ALL SELECT a.entity_type, a.entity_id, s.subject_public_id, a.alias, 'alias'
+            FROM entity_aliases a
+            JOIN entity_subjects s ON s.subject_type = a.entity_type
+                                  AND s.subject_id = a.entity_id
+            WHERE is_live(s.subject_status) AND a.alias IS NOT NULL;
+COMMENT ON VIEW entity_names IS
+  'One row per string that names a LIVE record — canonical names and aliases as one pool (kind tells them apart), keyed (entity_type, entity_id) with the public id carried. The pool to match prose or source wording against; values as entered, so normalize locally. Abbreviations are shorthand, not names, and are not here.';
+
 -- ═══ §110 THE WIKILINK GRAPH ════════════════════════════════════════════════
 -- record_references — the `[[type:public-id]]` wikilink graph, one row per stored edge.
 -- Django materializes it on every save (core.RecordReference, synced by
@@ -1212,6 +1266,44 @@ CREATE OR REPLACE VIEW record_references AS
   WHERE is_live(s.subject_status);
 COMMENT ON VIEW record_references IS
   'One row per stored wikilink edge from a LIVE record, both ends decoded to (entity_type, public id, name). Django materializes this on save, so ANY question about what prose links is a join here, never a regex over entity_prose.text. Live on the source only — target_status is carried, because an edge to a soft-deleted record is a broken link worth finding. An inline [[cite:N]] is a row whose target_entity_type IS NULL; filter it or count it deliberately.';
+
+-- ═══ §115 PROSE TEXT — the corpus as matching material ══════════════════════
+-- entity_prose is the raw authored corpus. These views are its mention-bearing reading:
+-- what the prose says in its OWN voice, with wikilink markup and quoted wordings
+-- separated out rather than left to each consumer's regex.
+
+-- The one definition of a quoted run, shared by the view that extracts them and the view
+-- that excludes them — two copies would disagree about which text is which. Straight and
+-- curly doubles alike; bounded and single-line so an unbalanced quote can swallow at
+-- most 80 characters of one line, never the rest of the description.
+CREATE OR REPLACE MACRO _quoted_run() AS '["“”][^"“”\n]{0,80}["“”]';
+
+-- prose_quotes — the wordings prose QUOTES rather than says: a machine's nickname, a
+-- feature name as a source spelled it, a marketing slogan. A name in here is legitimately
+-- unwikilinked, which is exactly why these runs are absent from prose_words.
+CREATE OR REPLACE VIEW prose_quotes AS
+  SELECT entity_type, entity_id, public_id, field,
+         UNNEST([regexp_replace(q, '^["“”]|["“”]$', '', 'g')
+                 for q in regexp_extract_all(text, _quoted_run())]) AS quote
+  FROM entity_prose WHERE text IS NOT NULL;
+COMMENT ON VIEW prose_quotes IS
+  'One row per double-quoted run in a live record''s prose (straight or curly, marks stripped) — the wordings prose quotes rather than says. The complement of prose_words, which excludes these runs.';
+
+-- prose_words — each prose field as a word array: wikilink markup and quoted runs
+-- removed, accents folded, punctuation collapsed, CASE KEPT so a consumer can still
+-- distinguish the game Pinball from the word pinball. Word position in this array is the
+-- shared coordinate system: every consumer that matches spans against prose reads this
+-- one tokenization, or its positions disagree with its neighbours'.
+CREATE OR REPLACE VIEW prose_words AS
+  SELECT entity_type, entity_id, public_id, field,
+         str_split(trim(regexp_replace(
+           strip_accents(regexp_replace(
+             regexp_replace(text, '\[\[[^\]]*\]\]', ' ', 'g'),
+             _quoted_run(), ' ', 'g')),
+           '[^\p{L}\p{N}]+', ' ', 'g')), ' ') AS w
+  FROM entity_prose WHERE text IS NOT NULL;
+COMMENT ON VIEW prose_words IS
+  'One row per prose field of a live record — the text as a word array, wikilink markup and quoted runs removed, accents folded, case kept. The shared tokenization: match spans against this so word positions agree across consumers; quoted wordings live in prose_quotes instead.';
 
 -- ═══ §120 DOMAIN VOCABULARY — what a slug MEANS ═════════════════════════════
 -- The catalog's controlled vocabularies (game formats, cabinets, production statuses, …)

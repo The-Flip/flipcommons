@@ -326,7 +326,11 @@ CREATE OR REPLACE VIEW foundation_summary AS
     UNION ALL SELECT 'entity_subjects'     FROM entity_subjects
     UNION ALL SELECT 'entity_prose'        FROM entity_prose
     UNION ALL SELECT 'entity_aliases'      FROM entity_aliases
+    UNION ALL SELECT 'entity_names'        FROM entity_names
+    UNION ALL SELECT 'collapsed_models'    FROM collapsed_models
     UNION ALL SELECT 'record_references'   FROM record_references
+    UNION ALL SELECT 'prose_words'         FROM prose_words
+    UNION ALL SELECT 'prose_quotes'        FROM prose_quotes
     UNION ALL SELECT 'claims'              FROM claims
     UNION ALL SELECT 'model_claims'        FROM model_claims
     UNION ALL SELECT 'claim_identity_parts' FROM claim_identity_parts
