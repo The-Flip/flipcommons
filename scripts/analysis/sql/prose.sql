@@ -56,12 +56,13 @@ COMMENT ON VIEW record_references IS
 -- that excludes them — two copies would disagree about which text is which. Straight and
 -- curly doubles alike.
 --
--- EXCLUDING \n IS THE CONTAINMENT: an unbalanced mark can never reach past its own
--- paragraph. The length cap only bounds the damage inside that line, which is why it sits
--- well above the longest quote anyone writes (229 characters in the corpus today). A cap
--- set below a genuine quote is the harmful direction, and it fails twice over: the quote
--- drops out of prose_quotes AND stays in prose_words, seeding exactly the spurious
--- mentions the exclusion exists to prevent.
+-- A SHORT-RUN HEURISTIC, not a complete quote finder — the bounds are what keep a mark
+-- this misreads from doing much harm, and both are tuned for that rather than for recall.
+-- \n stops a run at its own paragraph; the 80-character cap stops it well short of even
+-- that. A long quotation is therefore NOT found here, deliberately: extending the reach
+-- to cover one also extends every misread, and text wrongly deleted from prose_words is
+-- invisible — a mention that never fires raises nothing anywhere, while a quoted wording
+-- left in raises at most one reviewable warning. The bounds fail toward the visible side.
 --
 -- AN OPENING MARK IS NEVER FOLLOWED BY A SPACE, which is what separates a quote from an
 -- INCH MARK: `a 3" flipper` reads as an opening mark to anything matching on the mark
@@ -70,7 +71,7 @@ COMMENT ON VIEW record_references IS
 -- anywhere. Nothing local distinguishes a CLOSING mark from an inch mark (both sit after
 -- a non-space and before a break, and a genuine quote may end on a digit), so the rule
 -- is stated on the opening end, where the distinction actually exists.
-CREATE OR REPLACE MACRO _quoted_run() AS '["“”][^\s"“”][^"“”\n]{0,299}["“”]';
+CREATE OR REPLACE MACRO _quoted_run() AS '["“”][^\s"“”][^"“”\n]{0,79}["“”]';
 
 -- prose_quotes — the wordings prose QUOTES rather than says: a machine's nickname, a
 -- feature name as a source spelled it, a marketing slogan. A name in here is legitimately
@@ -81,7 +82,7 @@ CREATE OR REPLACE VIEW prose_quotes AS
                  for q in regexp_extract_all(text, _quoted_run())]) AS quote
   FROM entity_prose WHERE text IS NOT NULL;
 COMMENT ON VIEW prose_quotes IS
-  'One row per double-quoted run in a live record''s prose (straight or curly, marks stripped) — the wordings prose quotes rather than says. The complement of prose_words, which excludes these runs. A run must open and close on one line and within 300 characters; a mark left unclosed yields no row rather than swallowing the paragraph.';
+  'One row per SHORT double-quoted run in a live record''s prose (straight or curly, marks stripped) — the wordings prose quotes rather than says. Defines the exclusion prose_words applies, and is bounded for that job rather than for recall: a run must open and close on one line within 80 characters, so a long quotation is absent by design and this is not a complete inventory of what the corpus quotes.';
 
 -- prose_words — each prose field as a word array: wikilink markup and quoted runs
 -- removed, accents folded, punctuation collapsed, CASE KEPT so a consumer can still

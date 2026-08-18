@@ -321,9 +321,10 @@ CREATE OR REPLACE VIEW foundation_checks AS
         IS DISTINCT FROM ['"The Machine"']
      -- curly doubles are the same run
      OR regexp_extract_all('a “Curly Name” here', _quoted_run()) IS DISTINCT FROM ['“Curly Name”']
-     -- a long quote is still a quote; a cap below one drops it from prose_quotes AND
-     -- leaves it in prose_words, which is the direction that fabricates mentions
-     OR len(regexp_extract_all('"' || repeat('x', 229) || '"', _quoted_run())) IS DISTINCT FROM 1
+     -- a LONG run is out of scope by design: reaching far enough to cover a whole
+     -- quotation reaches equally far on every mark this misreads, and text wrongly
+     -- deleted from prose_words is the invisible failure
+     OR len(regexp_extract_all('"' || repeat('x', 229) || '"', _quoted_run())) IS DISTINCT FROM 0
      -- an unclosed mark yields nothing rather than swallowing the line below it
      OR len(regexp_extract_all('say "unclosed' || chr(10) || 'next line', _quoted_run())) IS DISTINCT FROM 0
      -- the exclusion direction, which is what prose_words applies
