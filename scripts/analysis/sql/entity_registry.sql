@@ -112,7 +112,7 @@ CREATE OR REPLACE VIEW entity_prose AS
     UNION ALL SELECT 'title'                   , id, slug, 'description', description FROM _staging('raw.catalog_title')
   ) AS t(entity_type, entity_id, public_id, field, text);
 COMMENT ON VIEW entity_prose IS
-  'One row per LIVE entity per markdown field, of ANY entity type — the authored-prose corpus. For questions that SPAN entity types; a question about one type reads that entity view, which carries description already. text IS NULL where the field is unset, and every MarkdownField is a row, so predicate on `field` rather than assuming description.';
+  'One row per live entity per markdown field, of ANY entity type — the authored-prose corpus. For questions that SPAN entity types; a question about one type reads that entity view, which carries description already. text IS NULL where the field is unset, and every MarkdownField is a row, so predicate on `field` rather than assuming description.';
 
 -- entity_aliases — every alternate name, of any entity type, in one relation.
 -- Driven from the engine's alias registry, which already resolved each alias

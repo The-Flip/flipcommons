@@ -1,9 +1,5 @@
 -- Data patch analysis foundation — the patch lens on claims, changesets and citations.
 --
--- `.read` by catalog.sql at its tail, after provenance.sql, whose `claims`, `changesets`
--- and `citation_instances` it is built from. It reads no other source: everything here
--- is a projection of what a patch already wrote into THIS database.
---
 -- WHAT THIS ANSWERS. provenance.sql answers "who said so" for every actor alike. This
 -- file narrows to one of them — the data patches authored in the sister flippatch repo —
 -- because a patch is the only actor whose assertions are also an editable artifact. That

@@ -182,7 +182,7 @@ def _prose_view(rows: list[EntityRow]) -> list[str]:
     lines += [
         "  ) AS t(entity_type, entity_id, public_id, field, text);",
         "COMMENT ON VIEW entity_prose IS",
-        "  'One row per LIVE entity per markdown field, of ANY entity type — the"
+        "  'One row per live entity per markdown field, of ANY entity type — the"
         " authored-prose corpus. For questions that SPAN entity types; a question about"
         " one type reads that entity view, which carries description already. text IS"
         " NULL where the field is unset, and every MarkdownField is a row, so predicate"

@@ -1,9 +1,10 @@
 -- Provenance self-test — the invariants for provenance.sql.
 --
--- Not a standalone analysis: catalog_checks.sql `.read`s this and folds
--- `_provenance_checks` into `foundation_checks`, so there is ONE gate and one mutation
--- harness entry point. Private (`_` prefix) for that reason — a public `*_checks` view
--- would ALSO be discovered by the runner's sweep and every failure would report twice.
+-- Not a standalone analysis: analytics.sql loads this after the layers, and
+-- foundation_checks.sql folds `_provenance_checks` into `foundation_checks`, so there
+-- is ONE gate and one mutation harness entry point. Private (`_` prefix) for that
+-- reason — a public `*_checks` view would ALSO be discovered by the runner's sweep and
+-- every failure would report twice.
 --
 -- Same contract as the rest of the self-test: a row means something broke, empty means
 -- healthy, and every check_name here needs a line in catalog_mutations.tsv proving it

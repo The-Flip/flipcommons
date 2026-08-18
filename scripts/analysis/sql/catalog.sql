@@ -13,83 +13,9 @@
 --     session takes the slug.
 --
 
--- Execution context: this file runs at snapshot BUILD time, inside the catalog the
--- runner is building (see `ensure_snapshot` in scripts/analysis/analysis). Three
--- schemas, all names CATALOG-RELATIVE — nothing here may ATTACH or name a catalog,
--- because the same files must load into the snapshot, a scratch copy or an in-memory
--- session unchanged:
---   raw  — the imported Django tables, already there before this runs. Reads nothing.
---   stg  — the staging views, created here. Read only raw.
---   main — the public surface (and its _underscore private helpers), the default.
-CREATE SCHEMA IF NOT EXISTS stg;
-
--- ═══ §210 LIVENESS — how to hide soft-deleted records ═══════════════════════
-CREATE OR REPLACE MACRO is_live(status) AS status IS DISTINCT FROM 'deleted';
-COMMENT ON MACRO is_live IS
-  'is_live(status) — the liveness rule as a scalar, for a view that carries a status column instead of being live-filtered. Never retype the predicate.';
-
--- ═══ §220 STAGING LAYER — the live rows of a table ════════
--- These private views drop soft-deleted rows and bookkeeping columns, spell absence one way.
--- One `stg.x` view per lifecycle table. No joins, no derived columns, no measures, so
--- nothing here has an outgoing edge and no cycle can run through it.
--- An entity view carries measures over the models beneath it (`titles.n_models`), so
--- reaching through one for a neighbour's slug drags its aggregate along — `models` joining
--- `titles` would close a loop. Hence the rule: join the STAGING view to decode an
--- identity, the ENTITY view to read a measure.
--- A table read from ONE place gets none — `cabinets` IS `_staging('raw.catalog_cabinet')`.
-
--- The `::VARCHAR` cast is inside the comparison, not around the value, so this is safe to
--- apply to every column at once: `NULLIF(COLUMNS(*), '')` fails with a conversion error on
--- the first integer, while CASE returns the column untouched and preserves its type.
--- Apply BY NAME, never by testing whether a table has the columns for it: '' is a real
--- value in citation_citationsourcerootdomain.path_prefix, where it means "whole host".
-CREATE OR REPLACE MACRO _blanks_null(tbl) AS TABLE
-  SELECT CASE WHEN COLUMNS(*)::VARCHAR = '' THEN NULL ELSE COLUMNS(*) END
-  FROM query_table(tbl);
-COMMENT ON MACRO TABLE _blanks_null IS
-  '_blanks_null(''raw.x'') — every column of a table with '''' folded to NULL, types preserved. The source read for a table with no lifecycle; _staging() already includes it.';
-
--- A claim value is a JSONField, so `"500"` and `500` are different values and both are in
--- the data: of the 73 claims asserting production_quantity 500, `value = '500'` finds one.
--- The OBJECT/ARRAY guard: json_extract_string serializes a member payload back to
--- `{"exists":true,…}`, which would read as a scalar on rows that have none.
-CREATE OR REPLACE MACRO _json_scalar_text(v) AS
-  CASE WHEN json_type(v) NOT IN ('OBJECT', 'ARRAY')
-       THEN NULLIF(json_extract_string(v, '$'), '')
-  END;
-COMMENT ON MACRO _json_scalar_text IS
-  '_json_scalar_text(value) — a JSON scalar as text, with "500" and 500 folded to the same value and '''' folded to NULL. NULL for an object or array, which have no scalar to report.';
-
--- _staging('raw.catalog_x') is how analytics reads source tables.
--- Drops soft-deleted rows and bookkeeping columns, spells absence one way.
---
--- Use it for the SOURCE read only — joins through the joined entity's own view.
--- Fails loudly (Binder Error on `status`) against a table with no lifecycle.
-CREATE OR REPLACE MACRO _staging(tbl) AS TABLE
-  SELECT * EXCLUDE (status, created_at, updated_at)
-  FROM _blanks_null(tbl)
-  WHERE is_live(status);
-COMMENT ON MACRO TABLE _staging IS
-  '_staging(''raw.catalog_x'') — the live rows of a lifecycle table minus status/created_at/updated_at, with '''' folded to NULL. The source read for every entity view; joins use the joined entity''s view instead.';
-
-CREATE OR REPLACE VIEW stg.machine_model     AS SELECT * FROM _staging('raw.catalog_machinemodel');
-CREATE OR REPLACE VIEW stg.title             AS SELECT * FROM _staging('raw.catalog_title');
-CREATE OR REPLACE VIEW stg.corporate_entity  AS SELECT * FROM _staging('raw.catalog_corporateentity');
-CREATE OR REPLACE VIEW stg.manufacturer      AS SELECT * FROM _staging('raw.catalog_manufacturer');
-CREATE OR REPLACE VIEW stg.reward_type       AS SELECT * FROM _staging('raw.catalog_rewardtype');
-CREATE OR REPLACE VIEW stg.series            AS SELECT * FROM _staging('raw.catalog_series');
-CREATE OR REPLACE VIEW stg.person            AS SELECT * FROM _staging('raw.catalog_person');
-CREATE OR REPLACE VIEW stg.credit_role       AS SELECT * FROM _staging('raw.catalog_creditrole');
-CREATE OR REPLACE VIEW stg.tag               AS SELECT * FROM _staging('raw.catalog_tag');
-CREATE OR REPLACE VIEW stg.theme             AS SELECT * FROM _staging('raw.catalog_theme');
-CREATE OR REPLACE VIEW stg.gameplay_feature  AS SELECT * FROM _staging('raw.catalog_gameplayfeature');
-
--- ═══ ENTITY VOCABULARY — what this layer calls each kind of thing ═══════════
--- entity_registry (entity_type ↔ content-type label ↔ table), entity_subjects (the
--- polymorphic subject resolver) and entity_prose (the authored-prose corpus), GENERATED by
--- `manage.py export_entity_registry` (`make codegen`) — `machinemodel` → `model` is a
--- declaration on the model class, and SQL cannot iterate table names.
-.read scripts/analysis/sql/entity_registry.sql
+-- ═══ §100 ENTITY VOCABULARY — what this layer calls each kind of thing ═════
+-- entity_registry, entity_subjects and entity_prose come from the generated
+-- entity_registry.sql, loaded ahead of this file; its header says why they are codegen.
 
 -- Key on the physical table, not the public spelling: a view emitting a subject type has
 -- already joined that table, while the spelling can move under it.
@@ -122,7 +48,7 @@ CREATE OR REPLACE MACRO name_key(s) AS name_norm(name_strip_paren(s));
 COMMENT ON MACRO name_key IS
   'name_norm(name_strip_paren(s)) — the name comparison key for the common case. Use name_norm alone when a trailing parenthetical distinguishes the records.';
 
--- ═══ §80 DIMENSIONS — what a model points at ════════════════════════════════
+-- ═══ §80 MODEL DIMENSIONS — what a model points at ════════════════════════════════
 -- locations — one row per live geographic Location.
 --   location_path : the stable key ('usa/il/chicago') and the one to join on. `slug` is
 --             unique only WITHIN a parent — there is more than one 'victoria' in the
@@ -360,7 +286,7 @@ CREATE OR REPLACE VIEW models AS
   LEFT JOIN cabinets                   cab ON cab.id = m.cabinet_id
   LEFT JOIN production_statuses        ps  ON ps.id  = m.production_status_id;
 COMMENT ON VIEW models IS
-  'One row per LIVE MachineModel — THE spine; build analyses on this. Soft-deleted models are not here and are not anywhere: read `claims` for the history of one.';
+  'One row per live MachineModel.';
 
 -- ═══ §40 MANUFACTURERS AND CORPORATE ENTITIES ═══════════════════════════════
 -- presumed_producing — the still-producing verdict the SITE publishes, which is not
@@ -564,7 +490,7 @@ CREATE OR REPLACE VIEW model_reward_names AS
   JOIN stg.reward_type rt ON rt.id = mr.reward_type_id
   GROUP BY mr.model_id;
 COMMENT ON VIEW model_reward_names IS
-  'One row per LIVE model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
+  'One row per live model with any — sorted reward-type NAMES for display, keyed model_id. Pure enrichment; carries no reward-type ids or slugs.';
 
 -- ─── Theme vocabulary ───────────────────────────────────────────────────────
 -- Four views per multi-valued vocabulary, the gameplay-feature block below mirroring them:
@@ -642,7 +568,7 @@ CREATE OR REPLACE VIEW model_theme_names AS
   JOIN stg.theme t ON t.id = mt.theme_id
   GROUP BY mt.model_id;
 COMMENT ON VIEW model_theme_names IS
-  'One row per LIVE model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, themes for questions about the vocabulary itself.';
+  'One row per live model with any — sorted theme NAMES for display, keyed model_id. Use model_themes to predicate on a theme, themes for questions about the vocabulary itself.';
 
 -- The only reader of the tag through table.
 CREATE OR REPLACE VIEW model_tags AS
@@ -943,14 +869,14 @@ CREATE OR REPLACE VIEW model_edges_bidir AS
 COMMENT ON VIEW model_edges_bidir IS
   'Two rows per resolved edge, one per end — the CONNECTEDNESS view, with a direction column. relationship_type is always the edge AS STATED, so read it with direction. Never aggregate here: every edge is counted twice.';
 
--- ═══ §30 TITLES AND MODEL NUMBERS ═══════════════════════════════════════════
--- franchises / series — the two Title-grouping vocabularies at entity grain, for which
--- groupings EXIST and which are used by nothing. Both flat and both curator-maintained, so
+-- ═══ §85 TITLE DIMENSIONS ═══════════════════════════════════════════
+-- franchises / series: Title-grouping vocabularies at entity grain, for which groupings
+-- EXIST and which are used by nothing. Both flat and both curator-maintained, so
 -- `n_titles = 0` is the interesting row rather than a defect — a grouping someone created
 -- and never attached, invisible from `titles` alone.
--- The Title side stays a _staging() read: `titles` decodes franchise and series onto each
--- Title, so composing it here would close a cycle. Hence also the position ahead of
--- `titles` — views bind at CREATE.
+--
+-- The Title side reads from staging: `titles` decodes franchise and series onto each
+-- Title, so composing it here would close a cycle.
 CREATE OR REPLACE VIEW franchises AS
   SELECT f.*,
          count(t.id) AS n_titles
@@ -968,6 +894,9 @@ CREATE OR REPLACE VIEW series AS
   GROUP BY ALL;
 COMMENT ON VIEW series IS
   'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
+
+
+-- ═══ §15 TITLES ═══════════════════════════════════════════
 
 -- titles — one row per live Title: the entity grain behind `models.title_*`. Reach for it
 -- when the Title itself is the subject.
@@ -992,7 +921,35 @@ CREATE OR REPLACE VIEW titles AS
   LEFT JOIN franchises f     ON f.id  = t.franchise_id
   LEFT JOIN series se        ON se.id = t.series_id;
 COMMENT ON VIEW titles IS
-  'One row per LIVE Title — identity, franchise/series grouping and n_models. A Title with no live models stays, at n_models = 0.';
+  'One row per live Title — identity, franchise/series grouping and n_models. A Title with no live models stays, at n_models = 0.';
+
+-- collapsed_models — one row per model that its Title collapses into: the model a reader
+-- reaches by the Title's URL, because the Title page renders its detail inline instead of
+-- a model list (SingleModelTitles.md).
+--
+-- This is the product's rule, not an approximation of it: `titles.py` collapses when the
+-- Title has exactly one active NON-VARIANT model and that model has no live variants.
+-- `title_size` cannot express it. That column counts every live model in the Title,
+-- variants included, so it answers a different question in both directions — a Title whose
+-- sole model is a variant of a model in ANOTHER Title reads as size 1 while the product
+-- shows a model list, and a Title holding one model plus its variants reads as size 3
+-- while the product still refuses to collapse.
+--
+-- Reach for this whenever the question is which PAGE a link or mention lands on — a
+-- collapsed model and its Title are one thing in the UI, and consumers that resolve one
+-- grain to the other must all do it through this predicate or they will disagree.
+CREATE OR REPLACE VIEW collapsed_models AS
+  SELECT m.id, m.slug, m.name, m.title_id, m.title_slug
+  FROM models m
+  WHERE m.variant_of_id IS NULL
+    -- Live variants only, which `models` already guarantees: a soft-deleted variant does
+    -- not stop the product collapsing, so it must not stop this either.
+    AND NOT EXISTS (SELECT 1 FROM models v WHERE v.variant_of_id = m.id)
+    AND NOT EXISTS (SELECT 1 FROM models o
+                    WHERE o.title_id = m.title_id AND o.variant_of_id IS NULL
+                      AND o.id <> m.id);
+COMMENT ON VIEW collapsed_models IS
+  'One row per model whose Title collapses into it — the product rule from titles.py (one active non-variant model, itself without live variants), not the title_size = 1 approximation. The pair are one page in the UI, so resolve link/mention grain through this view.';
 
 -- model_number_collisions — one row per (manufacturer, model number) that more than one
 -- live model claims, so an analysis matching a source's model number can see up front
@@ -1169,49 +1126,31 @@ CREATE OR REPLACE VIEW title_abbreviations AS
 COMMENT ON VIEW title_abbreviations IS
   'One row per community abbreviation of a live Title — the Title-grain twin of model_abbreviations.';
 
--- ═══ §110 THE WIKILINK GRAPH ════════════════════════════════════════════════
--- record_references — the `[[type:public-id]]` wikilink graph, one row per stored edge.
--- Django materializes it on every save (core.RecordReference, synced by
--- `sync_references`), so a link question is an indexed join and never a regex over prose.
+-- entity_names — every string that names a live record, canonical names and aliases as
+-- ONE pool. That pool is how name matching must be done — most records have no alias row,
+-- so searching aliases alone resolves almost nothing — and before this view existed every
+-- consumer wrote the same two-branch union by hand, which is how copies drift.
 --
--- LIVE ON THE SOURCE, not on the target, hence a target_status and no source_status. A
--- soft-deleted record's prose is not catalog content, so it is filtered here once. An edge
--- POINTING AT a soft-deleted record is the opposite — it is what a broken-link audit exists
--- to find, and dropping it would report the source as linkless instead.
---
--- THE TRAP: an inline `[[cite:N]]` is also a row here, and its target is a CitationInstance
--- — not a catalog entity, so it resolves to no entity_subjects row. `target_entity_type IS
--- NULL` marks them (target_django_label says which non-entity kind it was), so anything
--- counting a record's outbound links MUST decide whether cites count before it filters.
--- Hence the LEFT target joins, along with a second reason: a GenericForeignKey has no
--- on_delete, so a hard-deleted target leaves a dangling edge, which belongs here as a NULL
--- target rather than a vanished row.
--- The SOURCE join is INNER because `is_live()` reads a NULL status as live, so a LEFT join
--- would admit a hard-deleted source as a row with no identity.
-CREATE OR REPLACE VIEW record_references AS
-  SELECT
-    src.entity_type          AS source_entity_type,
-    r.source_id,
-    s.subject_public_id      AS source_public_id,
-    s.subject_name           AS source_name,
-    tgt.entity_type          AS target_entity_type,
-    r.target_id,
-    t.subject_public_id      AS target_public_id,
-    t.subject_name           AS target_name,
-    t.subject_status         AS target_status,
-    tct.app_label || '.' || tct.model AS target_django_label
-  FROM raw.core_recordreference r
-  JOIN raw.django_content_type sct ON sct.id = r.source_type_id
-  JOIN raw.django_content_type tct ON tct.id = r.target_type_id
-  JOIN entity_registry src ON src.django_label = sct.app_label || '.' || sct.model
-  LEFT JOIN entity_registry tgt ON tgt.django_label = tct.app_label || '.' || tct.model
-  JOIN entity_subjects s
-    ON s.subject_type = src.entity_type AND s.subject_id = r.source_id
-  LEFT JOIN entity_subjects t
-         ON t.subject_type = tgt.entity_type AND t.subject_id = r.target_id
-  WHERE is_live(s.subject_status);
-COMMENT ON VIEW record_references IS
-  'One row per stored wikilink edge from a LIVE record, both ends decoded to (entity_type, public id, name). Django materializes this on save, so ANY question about what prose links is a join here, never a regex over entity_prose.text. Live on the source only — target_status is carried, because an edge to a soft-deleted record is a broken link worth finding. An inline [[cite:N]] is a row whose target_entity_type IS NULL; filter it or count it deliberately.';
+-- Live-filtered, unlike entity_subjects and entity_aliases, because a matching pool that
+-- resolves prose or source wording to a deleted record hands back a link nobody can
+-- follow. Values as entered; choose normalization locally (name_norm / name_key).
+-- Abbreviations are deliberately absent: community shorthand is not an alternate name,
+-- which is why the abbreviation views name their column differently.
+CREATE OR REPLACE VIEW entity_names AS
+            SELECT s.subject_type      AS entity_type,
+                   s.subject_id        AS entity_id,
+                   s.subject_public_id AS public_id,
+                   s.subject_name      AS name,
+                   'name'              AS kind
+            FROM entity_subjects s
+            WHERE is_live(s.subject_status) AND s.subject_name IS NOT NULL
+  UNION ALL SELECT a.entity_type, a.entity_id, s.subject_public_id, a.alias, 'alias'
+            FROM entity_aliases a
+            JOIN entity_subjects s ON s.subject_type = a.entity_type
+                                  AND s.subject_id = a.entity_id
+            WHERE is_live(s.subject_status) AND a.alias IS NOT NULL;
+COMMENT ON VIEW entity_names IS
+  'One row per string that names a LIVE record — canonical names and aliases as one pool (kind tells them apart), keyed (entity_type, entity_id) with the public id carried. The pool to match prose or source wording against; values as entered, so normalize locally. Abbreviations are shorthand, not names, and are not here.';
 
 -- ═══ §120 DOMAIN VOCABULARY — what a slug MEANS ═════════════════════════════
 -- The catalog's controlled vocabularies (game formats, cabinets, production statuses, …)
@@ -1260,43 +1199,3 @@ CREATE OR REPLACE VIEW domain_vocab AS
                   FROM duckdb_tables() WHERE database_name = current_database() AND schema_name = 'raw');
 COMMENT ON VIEW domain_vocab IS
   'One row per controlled-vocabulary term defined in docs/DomainModel.md — dim, slug and the prose definition, parsed from the doc at query time. Join it to a vocabulary view to read what a slug MEANS; the doc stays the only place domain semantics are written.';
-
--- ═══ §230 RUN WATERMARK ═════════════════════════════════════════════════════
--- analysis_context — the input watermark for a run, printed by every runner above the
--- results. Enough identity to tell "same query, newer catalog" apart from a broken
--- reproduction: a query is reproducible, but its RESULTS only are when this row matches.
---   migrations_applied / latest_migration : the schema point — count + newest name, not
---       the raw max(id) insertion sequence (which is neither a head nor comparable).
---   latest_patch / patch_fingerprint : the newest SUCCESSFULLY-applied data patch and its
---       content hash, filtered to status='success' with a non-null patch_id so a
---       failed/running/interactive ingest can't misreport it.
---   latest_changeset : catches interactive edits — the drift a patch id can't see.
---   snapshot_imported_at : when `fc` was last imported from db.sqlite3. Every other field
---       here is read THROUGH that import, so it dates all of them.
--- `provenance_context` carries that layer's counts and does not restate these; read the two
--- together.
-CREATE OR REPLACE VIEW analysis_context AS
-  SELECT
-    version()                                    AS duckdb_version,
-    (SELECT count(*) FROM models)                AS live_models,
-    (SELECT count(*) FROM raw.django_migrations)  AS migrations_applied,
-    (SELECT app || '.' || name FROM raw.django_migrations ORDER BY id DESC LIMIT 1) AS latest_migration,
-    (SELECT patch_id FROM raw.provenance_ingestrun
-       WHERE status = 'success' AND patch_id IS NOT NULL ORDER BY id DESC LIMIT 1) AS latest_patch,
-    (SELECT input_fingerprint FROM raw.provenance_ingestrun
-       WHERE status = 'success' AND patch_id IS NOT NULL ORDER BY id DESC LIMIT 1) AS patch_fingerprint,
-    (SELECT max(id) FROM raw.provenance_changeset) AS latest_changeset,
-    (SELECT imported_at FROM raw._import_stamp)    AS snapshot_imported_at;
-COMMENT ON VIEW analysis_context IS
-  'One row — the input watermark: DuckDB version, live model count, migration point, latest successful patch + fingerprint, latest changeset id, and when the catalog was imported. Printed by every analysis run.';
-
--- ═══ PROVENANCE — who said so (provenance.sql) ══════════════════════════════
--- The attribution and citation layer — claims, ingest sources, ingest runs, citation
--- sources. Its own file, `.read` here so "the foundation" stays ONE `.read` line for every
--- consumer, sister repos included.
-.read scripts/analysis/sql/provenance.sql
-
--- ═══ DATA PATCHES — what our own patches did (data_patches.sql) ═════════════
--- The patch lens on the provenance layer: which patch asserted a fact, which retracted
--- one, and what evidence each data patch entry recorded.
-.read scripts/analysis/sql/data_patches.sql

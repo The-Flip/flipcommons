@@ -70,7 +70,7 @@ Before maintaining a manual mapping, check the alias views. They map source word
 
 For a question that spans entity types, `entity_aliases` is the same content in one relation, keyed `(entity_type, entity_id)` to match `entity_subjects` — generated from the engine's alias registry, so a new `AliasModel` joins it with no SQL edit. It is not live-filtered and carries no parent name; join `entity_subjects` for liveness, public id and the canonical name. Reach for a per-type view when the question is about one type, since those decode the parent slug.
 
-Match canonical names and aliases as one pool — most records have no alias row, so searching aliases alone resolves almost nothing. Alias views contain one row per alias of a live parent, keyed by parent ID and its stable key. `location_aliases` uses `location_path` because a location slug is unique only within its parent; abbreviation views name their value column `abbreviation` because shorthand is not an alternate name. Values are stored as entered, so choose normalization locally and count distinct target records before accepting a match.
+Match canonical names and aliases as one pool — most records have no alias row, so searching aliases alone resolves almost nothing. `entity_names` is that pool as a view: one row per string that names a live record, canonical names and aliases together with `kind` telling them apart, so a matcher joins it rather than hand-writing the union. The per-type alias views remain the lens when the question is about one type: one row per alias of a live parent, keyed by parent ID and its stable key. `location_aliases` uses `location_path` because a location slug is unique only within its parent; abbreviation views name their value column `abbreviation` because shorthand is not an alternate name. Values are stored as entered, so choose normalization locally and count distinct target records before accepting a match.
 
 Found a phrasing the catalog lacks? Add it with a [data patch](../../docs/DataPatches.md), not a lookup table in your analysis.
 
@@ -143,7 +143,7 @@ Findings are catalog content and are deliberately **not** what `audit_checks` ga
 
 ## Analysis files
 
-An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`catalog_checks.sql`](sql/catalog_checks.sql) is a local worked example.
+An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`foundation_checks.sql`](sql/foundation_checks.sql) is a local worked example of the summary/checks contract.
 
 The runner loads an analysis file into an in-memory catalog on top of the foundation: the file's own `CREATE`s land in memory, unqualified reads (`FROM models`) fall through to the foundation, and nothing is `.read` from the analysis file itself — a `.read scripts/analysis/sql/catalog.sql` line is at best a slow no-op. Raw Django tables, which an analysis should rarely reach for, are spelled `fc.raw.catalog_person` from an analysis file.
 

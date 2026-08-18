@@ -1,12 +1,34 @@
--- The analytics schema, one entry point — everything `ensure_snapshot` bakes into
--- db.analytics.duckdb. The runner never loads this per-query; it loads once per build,
--- which is why a change to any file under scripts/analysis/sql/ triggers a rebuild.
+-- The analytics schema.
 --
--- Order matters only as far as the `.read` chains express it: catalog_checks.sql pulls
--- in the foundation (catalog.sql and the layers it reads) before defining the self-test,
--- and audit.sql re-reads catalog.sql, which is idempotent — every definition is CREATE
--- OR REPLACE — and costs a moment at build time, never at query time.
--- relation_index.sql is last because it indexes the catalog every earlier file built.
+-- README.md to do analysis; EDITING.md to change this file.
+--
+-- Schemas, all named catalog-relative:
+--   raw  — the imported Django tables, already there before this runs.
+--   stg  — the staging views (staging.sql). Read only raw.
+--   main — the public surface.
+
+-- ── layers ──────────────────────────────────────────────────────────────────
+.read scripts/analysis/sql/staging.sql
+.read scripts/analysis/sql/entity_registry.sql
+.read scripts/analysis/sql/catalog.sql
+.read scripts/analysis/sql/prose.sql
+.read scripts/analysis/sql/shared_hosts.sql
+.read scripts/analysis/sql/provenance.sql
+.read scripts/analysis/sql/data_patches.sql
+
+-- ── self-test ───────────────────────────────────────────────────────────────
 .read scripts/analysis/sql/catalog_checks.sql
+.read scripts/analysis/sql/prose_checks.sql
+.read scripts/analysis/sql/provenance_checks.sql
+.read scripts/analysis/sql/data_patches_checks.sql
+.read scripts/analysis/sql/foundation_checks.sql
+
+-- ── audit ───────────────────────────────────────────────────────────────────
+-- Lint rules over the live catalog. Its findings are catalog content, not checks
 .read scripts/analysis/sql/audit.sql
+
+-- ── run watermark ───────────────────────────────────────────────────────────
+.read scripts/analysis/sql/run_context.sql
+
+-- ── reference index ─────────────────────────────────────────────────────────
 .read scripts/analysis/sql/relation_index.sql
