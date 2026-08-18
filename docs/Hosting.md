@@ -31,7 +31,11 @@ The web container runs three long-lived processes:
 - **Django/Gunicorn** on `127.0.0.1:8000`
 - **SvelteKit Node SSR** on `127.0.0.1:3000`
 
-The entrypoint is [`scripts/start-production`](../scripts/start-production); it starts all three and keeps the container alive while they are all healthy. Supervision is intentionally simple: there is no in-container restart policy, so if a child process exits the container exits shortly after and Railway restarts it. A deliberate bootstrap-phase choice — simple and fails closed, but not a full supervisor. Stronger hardening later would mean a dedicated supervision layer such as `s6-overlay`.
+The entrypoint is [`scripts/start-production`](../scripts/start-production); it starts all three and keeps the container alive while they are all healthy. Supervision is intentionally simple: there is no in-container restart policy, so when any child exits, the entrypoint kills the other two and the container exits with it. A deliberate bootstrap-phase choice — simple and fails closed, but not a full supervisor.
+
+**Do not assume Railway restarts the container after that.** On 2026-08-17 the SSR process died on an uncatchable assertion inside Node's bundled undici — raised from a socket event handler while reading a response from Django, so no application `try`/`catch` could intercept it — the container exited, and the deployment stayed down for hours. The service was already configured `ON_FAILURE` with 10 retries at the time. Treat a single process crash as a full outage of indeterminate length until that changes.
+
+Changing it means giving each process its own restart domain. The shape that fits the platform is one process per service — Caddy holding the public domain and reverse-proxying to Django and the SSR server over private networking — since Railway restarts a single-process service natively and has no path-based routing across services on one domain, which is why the proxy has to be a service rather than a platform setting. Keeping everything in one container instead means adopting a real supervision layer such as `s6-overlay`, which also reaps the orphaned processes that a shell entrypoint running as PID 1 leaves as zombies. What does not work is hand-rolling the supervision in that shell script: the failure modes it has to handle — draining on `SIGTERM`, distinguishing a crash loop from a flaky child, reaping grandchildren that still hold a listening socket — are the ones an init system exists to solve.
 
 #### Build & deploy lifecycle
 
