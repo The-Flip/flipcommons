@@ -2,8 +2,8 @@
 --
 --     scripts/analysis/audit 0240   -- the report; `audit` alone for per-rule counts
 --
---     scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_findings;"
---     scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_since(240);"
+--     scripts/analysis/analysis query "FROM audit_findings;"
+--     scripts/analysis/analysis query "FROM audit_since(240);"
 --
 -- One view per rule, named `audit_<rule>`, each emitting the same five columns —
 -- severity, entity_type, entity_id, public_id, message — and `audit_findings` unions
@@ -15,7 +15,7 @@
 -- `audit_checks`. Only the second gates. `analysis run` and `--check` fail on a row from
 -- any `*_checks` view, so a standing backlog of catalog defects put there would exit
 -- nonzero forever and the gate would stop meaning anything.
-.read scripts/analysis/catalog.sql
+.read scripts/analysis/sql/catalog.sql
 
 -- ─── shared: the collapsed model ───────────────────────────────────────────
 -- One row per model that its Title collapses into — the model a reader reaches by the
@@ -546,7 +546,13 @@ COMMENT ON VIEW audit_shared_cdn_bare_host IS
 -- ─── findings ──────────────────────────────────────────────────────────────
 -- Columns listed rather than `*`: every column but entity_id is VARCHAR, so a rule that
 -- reordered its own SELECT could swap message into severity without a type error.
-CREATE OR REPLACE VIEW audit_findings AS
+--
+-- A TABLE, not a view: this file runs at snapshot build time, so the union of every
+-- rule is evaluated once per build instead of once per query — and it cannot go stale,
+-- because the catalog data it reads only changes on the rebuild that re-runs it. The
+-- rule views stay views; they are the per-rule lens and the freshness question never
+-- arises for them separately.
+CREATE OR REPLACE TABLE audit_findings AS
             SELECT 'self-link'             AS rule, severity, entity_type, entity_id, public_id, message FROM audit_self_link
   UNION ALL SELECT 'wrong-grain-link',          severity, entity_type, entity_id, public_id, message FROM audit_wrong_grain_link
   UNION ALL SELECT 'linkless-description',      severity, entity_type, entity_id, public_id, message FROM audit_linkless_description
@@ -555,8 +561,8 @@ CREATE OR REPLACE VIEW audit_findings AS
   UNION ALL SELECT 'duplicate-name',            severity, entity_type, entity_id, public_id, message FROM audit_duplicate_name
   UNION ALL SELECT 'broken-link',               severity, entity_type, entity_id, public_id, message FROM audit_broken_link
   UNION ALL SELECT 'shared-cdn-bare-host',      severity, entity_type, entity_id, public_id, message FROM audit_shared_cdn_bare_host;
-COMMENT ON VIEW audit_findings IS
-  'One row per catalog defect across every rule — rule, severity, the record it is about and a human-readable message. Catalog content, not a health gate.';
+COMMENT ON TABLE audit_findings IS
+  'One row per catalog defect across every rule — rule, severity, the record it is about and a human-readable message. Catalog content, not a health gate. Materialized at build; the per-rule audit_* views are the live spelling.';
 
 -- ─── scoping ───────────────────────────────────────────────────────────────
 --   FROM audit_since(240);

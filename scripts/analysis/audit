@@ -4,7 +4,6 @@ set -eu
 
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 runner=$dir/analysis
-plan=$dir/audit.sql
 
 usage() {
   cat <<'EOF'
@@ -36,7 +35,7 @@ esac
 # broken detector is reported as broken instead of as a clean catalog. It does not gate on
 # findings: audit.sql keeps those out of *_checks precisely so a standing backlog cannot
 # make this exit nonzero forever.
-[ $# -eq 1 ] || exec "$runner" query "$plan" "FROM audit_summary;" --format table --check audit
+[ $# -eq 1 ] || exec "$runner" query "FROM audit_summary;" --format table --check audit
 
 # Cut at the first non-digit so a full patch stem works, then strip leading zeros —
 # patch_number is an integer and a leading zero is not how SQL spells one.
@@ -47,4 +46,4 @@ n=$(printf '%s' "${1%%[!0-9]*}" | sed 's/^0*\([0-9]\)/\1/')
   exit 2
 }
 
-exec "$runner" query "$plan" "FROM audit_report($n);" --format lines --check audit
+exec "$runner" query "FROM audit_report($n);" --format lines --check audit

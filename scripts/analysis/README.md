@@ -12,7 +12,7 @@ This is how to use our DuckDB analytics layer to explore the Flipcommons localho
 
 ```bash
 # Do a query
-scripts/analysis/analysis query scripts/analysis/catalog.sql "FROM models WHERE year = 1977 ORDER BY name;" # takes `--format json|csv|table|lines` default `table`
+scripts/analysis/analysis query "FROM models WHERE year = 1977 ORDER BY name;" # takes `--format json|csv|table|lines` default `table`
 
 # Describe every public view and macro
 scripts/analysis/analysis describe
@@ -23,16 +23,18 @@ scripts/analysis/analysis describe edge         # Otherwise, list all partial ma
 
 # How full is a view? Per column: rows, NULLs, empty strings
 scripts/analysis/analysis columns models         # every column of one view
-scripts/analysis/analysis columns --all          # sweep, showing only columns worth a look (~7s)
+scripts/analysis/analysis columns --all          # sweep, showing only columns worth a look
 
 # Get the map — what areas exist, when you don't have a term yet
-grep '═══' scripts/analysis/catalog.sql scripts/analysis/provenance.sql scripts/analysis/data_patches.sql
+grep '═══' scripts/analysis/sql/catalog.sql scripts/analysis/sql/provenance.sql scripts/analysis/sql/data_patches.sql
 
 # Get the block comment for one view — grain, liveness rule, the plausible wrong answer
-grep -B12 'CREATE OR REPLACE VIEW model_edges AS' scripts/analysis/catalog.sql   # Widen -B if the block runs long
+grep -B12 'CREATE OR REPLACE VIEW model_edges AS' scripts/analysis/sql/catalog.sql   # Widen -B if the block runs long
 ```
 
-In `catalog.sql`, two headings say where to start: `MODELS — the spine; start here` and `MODEL-TO-MODEL RELATIONSHIPS — start with model_edges`.
+In `sql/catalog.sql`, two headings say where to start: `MODELS — the spine; start here` and `MODEL-TO-MODEL RELATIONSHIPS — start with model_edges`.
+
+The schema is **baked**: the runner builds `backend/db.analytics.duckdb` from `db.sqlite3` plus every file under `scripts/analysis/sql/`, rebuilds it only when one of those changes, and every query just opens the result read-only. Any DuckDB client can do the same — `duckdb -readonly backend/db.analytics.duckdb` is the whole foundation, audit views included.
 
 `query` and `describe` put only data on stdout; diagnostics go to stderr. `query --check` is silent when the gate passes, so its output can be consumed directly.
 
@@ -122,15 +124,15 @@ Two mechanisms cross the foundation's edge, both documented where they are defin
 
 ## Catalog audit
 
-[`audit.sql`](audit.sql) is an analysis file that lints the live catalog for data defects — prose linking itself, a link at the wrong grain, a link to a deleted record, a parenthetical year the record contradicts, a name mentioned but never linked, prose with no links at all, two records answering to the same name, a shared CDN host registered with no tenant path.
+[`sql/audit.sql`](sql/audit.sql) is the audit layer, baked into the foundation like everything else — it lints the live catalog for data defects: prose linking itself, a link at the wrong grain, a link to a deleted record, a parenthetical year the record contradicts, a name mentioned but never linked, prose with no links at all, two records answering to the same name, a shared CDN host registered with no tenant path. `audit_findings` is materialized as a table at build, so reading it costs nothing.
 
 ```bash
 scripts/analysis/audit 0240   # the report: findings on records patch 0240 and later touched
 scripts/analysis/audit        # per-rule finding counts across the whole catalog
 
-# or query the views directly
-scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_findings WHERE severity = 'error';"
-scripts/analysis/analysis query scripts/analysis/audit.sql "FROM audit_since(240);"
+# or query the views directly — the audit is baked into the foundation
+scripts/analysis/analysis query "FROM audit_findings WHERE severity = 'error';"
+scripts/analysis/analysis query "FROM audit_since(240);"
 ```
 
 One view per rule, named `audit_<rule>`, each emitting `severity, entity_type, entity_id, public_id, message`; `audit_findings` unions them. Adding a rule is a view plus one line in that union, and one in `audit_summary`.
@@ -143,12 +145,13 @@ Findings are catalog content and are deliberately **not** what `audit_checks` ga
 
 An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`catalog_checks.sql`](catalog_checks.sql) is a local worked example.
 
-An analysis file has the following sections; only the third is shaped by the question:
+The runner loads an analysis file into an in-memory catalog on top of the baked foundation: the file's own `CREATE`s land in memory, unqualified reads (`FROM models`) fall through to the foundation, and nothing is `.read` from the analysis file itself — a `.read scripts/analysis/sql/catalog.sql` line is at best a slow no-op. Raw Django tables, which an analysis should rarely reach for, are spelled `base.fc.catalog_person` from an analysis file.
 
-1. **Foundation** — `.read scripts/analysis/catalog.sql`. One line.
-2. **Reference** — analysis-local hand-maintained lookups: adjective maps, exception lists, constant vocab. Not derived from the DB. Often empty; that's fine.
-3. **Analysis** — the actual work. A candidate hunt might run _detect → assemble → enrich → review_; a different question might _classify_, _aggregate_ or _diff_.
-4. **Summary & checks** — the `<prefix>_summary` and `<prefix>_checks` views. The summary computes every headline number the analysis publishes. The checks express invariants so that an empty result means healthy. Three useful check classes are:
+An analysis file has the following sections; only the second is shaped by the question:
+
+1. **Reference** — analysis-local hand-maintained lookups: adjective maps, exception lists, constant vocab. Not derived from the DB. Often empty; that's fine.
+2. **Analysis** — the actual work. A candidate hunt might run _detect → assemble → enrich → review_; a different question might _classify_, _aggregate_ or _diff_.
+3. **Summary & checks** — the `<prefix>_summary` and `<prefix>_checks` views. The summary computes every headline number the analysis publishes. The checks express invariants so that an empty result means healthy. Three useful check classes are:
    - **Structural** — joins preserve grain; a classification is complete and mutually exclusive; the detector set covers the candidates with nothing left over.
    - **Vocabulary** — a parsed or reviewed value belongs to a closed set.
    - **Anchors** — a known example still triggers each heuristic. This is the only class that catches a whole detector going dark when, for example, a regex rots or a column is renamed. Anchors are essential for free-text detectors.
@@ -157,8 +160,6 @@ Start with this shape and keep the file beside its campaign or planning doc:
 
 ```sql
 -- <purpose>
-.read scripts/analysis/catalog.sql
-
 CREATE OR REPLACE VIEW my_finding AS
   SELECT id, name, label FROM models WHERE /* … */;
 
@@ -172,13 +173,14 @@ CREATE OR REPLACE VIEW my_analysis_checks AS
 
 ## Runner
 
-The runner is location-independent: the analysis-file path resolves against your current directory, while its relative `.read`s resolve against flipcommons. This is what lets a data patch campaign in Flippatch consume the foundation without copying it.
+The runner is location-independent: the analysis-file path resolves against your current directory. This is what lets a data patch campaign in Flippatch consume the foundation without copying it. The `<analysis>.sql` argument is optional everywhere it appears below — without it, the command works over the baked foundation alone.
 
 ```bash
 # describe: the view reference — every public view with its one-line description
 scripts/analysis/analysis describe <analysis>.sql  # include an analysis file's views
 
-# run: context + <prefix>_summary, then fail nonzero if any *_checks view has rows
+# run: context + <prefix>_summary, then fail nonzero on any failing *_checks — the
+# stored build-time verdicts plus the analysis file's own, evaluated live
 scripts/analysis/analysis run <analysis>.sql <prefix>
 
 # render the summary as Markdown for a planning doc or campaign README
@@ -191,7 +193,8 @@ scripts/analysis/analysis query <analysis>.sql "FROM my_finding;" --format json 
 scripts/analysis/analysis ui <analysis>.sql
 
 # Desktop GUI: freeze every public view and table into a standalone database for TablePlus,
-# DBeaver, Beekeeper Studio or another DuckDB client
+# DBeaver, Beekeeper Studio or another DuckDB client. Bare, it prints the snapshot path —
+# the baked database itself is openable directly.
 scripts/analysis/analysis browse <analysis>.sql
 
 # snapshot: freeze selected views as real tables into a standalone <analysis>.duckdb
@@ -204,7 +207,7 @@ What's reproducible are _queries_, not _results_: the catalog is a live, moving 
 
 The **gate is not limited to that pair**: `run` discovers every public `*_checks` view in the session and fails on a row from any of them, and prints every public `*_context` view alongside `analysis_context`. Any SQL file the analysis `.read`s therefore contributes its own invariants and watermark automatically. Private `_underscore` views are excluded from both sweeps, so an intermediate helper can be named `_foo_checks` without joining the gate.
 
-For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate as `run` executes before any data is emitted. The runner is a convenience: raw `duckdb -init <analysis>.sql :memory: "FROM my_finding LIMIT 20;"` from the repo root still works — but it reads whatever the last import produced, since only the runner re-imports `db.sqlite3` when it changes. `analysis_context.snapshot_imported_at` is how old that is.
+For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate as `run` executes before any data is emitted. A bare `query` without `--check` still surfaces a broken foundation — one warning line on stderr from the stored verdicts — but never blocks, because querying is how you diagnose the break. The runner is a convenience: `duckdb -readonly backend/db.analytics.duckdb` is the whole baked foundation for any client — but it reads whatever the last build produced, since only the runner rebuilds when `db.sqlite3` or the sql/ files change. `analysis_context.snapshot_imported_at` is how old that is.
 
 `browse` writes `<analysis>.browse.duckdb` beside the analysis file and replaces it atomically on every run. It discovers and materializes every public relation — both views and deliberately materialized tables — including relations contributed by the foundation or another `.read` file, while excluding private `_underscore` helpers. Macros do not travel: a view comment pointing you at `citation_root_for_host()` describes something only the live session has. The result is static: disconnect the desktop client, rerun `browse`, then reconnect whenever the localhost catalog or analysis changes. Any edits made through the client are disposable and disappear on the next rebuild.
 
@@ -212,7 +215,7 @@ For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate
 
 ## Conventions
 
-- **The runner works from anywhere; raw `duckdb` commands must run from the repo root.** Only the runner does the path resolution described above.
+- **The runner works from anywhere, and so does opening the snapshot directly** — `backend/db.analytics.duckdb` is self-contained. Only the runner keeps it fresh.
 - **`_underscore` = private helper view; unprefixed = public.** Public views are the ones a document quotes and other analyses build on. Keep intermediate parsing private.
 - **Published numbers come from `<prefix>_summary`, never hand-counted.** The query is the source of truth, the prose a rendering of it. When the numbers move, update the prose.
 - **Predicate on stable keys, display names.** Filter and join on `slug` / `*_id` / `game_format_slug`; use `name` / `manufacturer_name` / `game_format_name` only for output. A renamed value silently zeroes a count with no error; a slug or id doesn't.

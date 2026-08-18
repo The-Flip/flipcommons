@@ -474,7 +474,7 @@ COMMENT ON VIEW changesets IS
 -- declaration with no database row behind it, so no runtime read could reach it.
 -- Read here, ahead of the section: DuckDB binds a macro's table references at CREATE,
 -- and _shared_cdn_host below reads this view.
-.read scripts/analysis/shared_hosts.sql
+.read scripts/analysis/sql/shared_hosts.sql
 
 -- The EVIDENCE side. A citation source is a two-level tree: a ROOT (the work — a book,
 -- a periodical, a website) and its children (the specific cited item — IPDB page #5235).

@@ -1,4 +1,4 @@
-"""Generate scripts/analysis/entity_registry.sql from linkable models.
+"""Generate scripts/analysis/sql/entity_registry.sql from linkable models.
 
 The analytics layer's copy of the entity registry. Two DuckDB objects:
 
@@ -34,7 +34,7 @@ from apps.core.models import LifecycleStatusModel, LinkableModel
 from apps.core.wikilinks import WikilinkableModel
 from apps.provenance.models import ClaimControlledModel
 
-OUTPUT_PATH = "scripts/analysis/entity_registry.sql"
+OUTPUT_PATH = "scripts/analysis/sql/entity_registry.sql"
 
 
 class EntityRow(NamedTuple):

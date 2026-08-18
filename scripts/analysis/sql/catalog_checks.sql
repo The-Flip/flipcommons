@@ -1,22 +1,23 @@
--- Foundation self-test — run this after editing catalog.sql to confirm it still
--- holds its invariants. NOT part of the foundation (no check logic lives in catalog.sql);
--- this is a separate consumer that .reads it, exactly like an analysis file, with the
--- same summary/checks contract the runner gates on.
+-- Foundation self-test. NOT part of the foundation (no check logic lives in
+-- catalog.sql); this is a separate consumer that .reads it, with the same
+-- summary/checks contract the runner gates on. It runs at snapshot BUILD time —
+-- every edit to a sql/ file triggers a rebuild, and the rebuild evaluates every
+-- checks view and stores the verdicts — so there is no separate self-test step:
+--
+--     scripts/analysis/analysis run foundation
+--
+-- prints foundation_summary (row count per view — a health readout) and the stored
+-- verdicts, failing nonzero on any failing check. EMPTY foundation_checks = healthy.
 --
 -- Adding or changing a check? Read scripts/analysis/EDITING.md first — every check
 -- here needs a mutation in catalog_mutations.tsv proving it fires, and check-mutations
 -- enforces that in both directions.
---
---     scripts/analysis/analysis run scripts/analysis/catalog_checks.sql foundation
---
--- Prints foundation_summary (row count per view — a health readout), then fails
--- nonzero if foundation_checks returns any row. EMPTY foundation_checks = healthy.
 -- Three classes:
 --   structural — data-independent invariants; a row means the SQL logic broke, not
 --                that the catalog changed. These make evolving the foundation safe.
 --   coverage   — meta-checks that fail when a new entity, alias table or view is added
 --                without the exposure the layer promises.
-.read scripts/analysis/catalog.sql
+.read scripts/analysis/sql/catalog.sql
 
 -- ─── Check-only scaffolding ─────────────────────────────────────────────────
 -- Private views that exist ONLY so a check has something to read. They live here
@@ -47,7 +48,7 @@ CREATE OR REPLACE VIEW _ce_location_n AS
 -- SQL can see it. Feeds `unexposed_alias_table`.
 CREATE OR REPLACE VIEW _alias_tables AS
   SELECT table_name FROM duckdb_tables()
-  WHERE database_name = 'fc'
+  WHERE database_name = current_database() AND schema_name = 'fc'
     AND (table_name LIKE 'catalog\_%alias' ESCAPE '\'
       OR table_name LIKE 'catalog\_%abbreviation' ESCAPE '\');
 
@@ -166,7 +167,7 @@ CREATE OR REPLACE VIEW _live_dim_vocab AS
 -- database and cannot see the attached `fc`.
 CREATE OR REPLACE VIEW _entity_table AS
   SELECT table_name FROM duckdb_columns()
-  WHERE database_name = 'fc' AND table_name LIKE 'catalog\_%' ESCAPE '\'
+  WHERE database_name = current_database() AND schema_name = 'fc' AND table_name LIKE 'catalog\_%' ESCAPE '\'
   GROUP BY table_name
   HAVING bool_or(column_name = 'slug') AND bool_or(column_name = 'status');
 
@@ -355,13 +356,13 @@ CREATE OR REPLACE VIEW foundation_summary AS
 -- check-mutations scans from the first checks view to end-of-file for declared check
 -- names, so anything read in earlier would put foundation_summary's view-name literals
 -- inside that range and invent check names that don't exist.
-.read scripts/analysis/provenance_checks.sql
+.read scripts/analysis/sql/provenance_checks.sql
 
 -- The patch layer's own invariants, `_data_patch_checks`, on the same terms and read
 -- inside the same range. Its own file rather than a tail on provenance_checks.sql
 -- because it binds `_patch_acts` from data_patches.sql, which sits ABOVE provenance.sql
 -- — see the note at the top of it.
-.read scripts/analysis/data_patches_checks.sql
+.read scripts/analysis/sql/data_patches_checks.sql
 
 -- foundation_checks — invariants. EMPTY = healthy; any row is a violation with a
 -- check_name and a diagnostic detail.
@@ -723,7 +724,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   SELECT 'entity_view_leaks_bookkeeping', c.table_name || '.' || c.column_name
   FROM duckdb_columns() c
   JOIN _entity_view e ON e.view_name = c.table_name
-  WHERE c.database_name = 'memory'
+  WHERE c.database_name = current_database()
     AND c.column_name IN ('status', 'created_at', 'updated_at')
     -- provenance entities have no lifecycle and carry these legitimately
     -- Lifecycle entities only. Not "the source has a status column": provenance_ingestrun
@@ -737,7 +738,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'entity_view_not_live_filtered', e.view_name
   FROM _entity_view e
-  JOIN duckdb_views() v ON v.view_name = e.view_name AND v.database_name = 'memory'
+  JOIN duckdb_views() v ON v.view_name = e.view_name AND v.database_name = current_database()
   WHERE e.entity_table IN (SELECT table_name FROM _entity_table)
     -- A TEXT match, with the limit that implies: it catches a view that forgot to filter,
     -- not one that mentions _staging() or a _stg_* leaf without reading through it. Naming
@@ -758,7 +759,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'staging_view_not_flat', v.view_name
   FROM duckdb_views() v
-  WHERE v.database_name = 'memory'
+  WHERE v.database_name = current_database()
     AND starts_with(v.view_name, '_stg_')
     AND (v.sql ILIKE '%join%' OR v.sql ILIKE '%group by%')
 
@@ -841,7 +842,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'uncovered_model_dim', column_name
   FROM duckdb_columns()
-  WHERE database_name = 'fc' AND table_name = 'catalog_machinemodel'
+  WHERE database_name = current_database() AND schema_name = 'fc' AND table_name = 'catalog_machinemodel'
     AND column_name LIKE '%\_id' ESCAPE '\'
     AND column_name NOT IN (SELECT DISTINCT dim FROM _dim_status)
     AND column_name NOT IN (
@@ -1143,37 +1144,46 @@ CREATE OR REPLACE VIEW foundation_checks AS
     ) r WHERE r.v = e.v AND r.slug = e.p AND r.c = e.slug
   )
 
-  -- A public foundation view missing from `foundation_summary` — the same coverage
-  -- claim the entity and alias coverage checks make, for the other hand-list. It
-  -- drifted the first time it could: a whole layer's five views went unsummarized, so
-  -- the health readout silently stopped describing the foundation while the self-test
-  -- stayed green. The two *_context watermarks are excluded on purpose — their NULLs
-  -- are legitimate (no successful patch yet, an empty provenance table on a fresh DB).
+  -- A public view missing from every `*_summary` — the same coverage claim the entity
+  -- and alias coverage checks make, for the other hand-list. It drifted the first time
+  -- it could: a whole layer's five views went unsummarized, so the health readout
+  -- silently stopped describing the foundation while the self-test stayed green. Every
+  -- layer in the session carries its own summary (foundation_summary, audit_summary),
+  -- so the claim is "counted in SOME public summary", not in one named view. The
+  -- summary / checks / context families are excluded by suffix — a summary does not
+  -- summarize itself, and a watermark's NULLs are legitimate on a fresh DB.
   --
   -- Matched against the summary's own SQL rather than by selecting from it, the way
   -- `unexposed_alias_table` matches view text. Reading `SELECT view_name FROM
   -- foundation_summary` would be the direct statement and costs ~1.7s — it evaluates
-  -- every count in the summary — on a checks run that is ~8s. This claim is structural
-  -- and shouldn't be paying for row counts to make it.
+  -- every count in the summary. This claim is structural and shouldn't be paying for
+  -- row counts to make it.
   --
   -- BOTH the quoted label and the FROM clause, because neither is exact alone. The
   -- label is quote-delimited so a short view name cannot match inside a longer one; the FROM
   -- test is a bare prefix so `FROM model_edges` does match inside `FROM
   -- model_edges_bidir`. ANDing them takes the label's exactness and adds the assertion
-  -- that the view is actually COUNTED rather than merely named.
+  -- that the view is actually COUNTED rather than merely named. The label has a second
+  -- accepted spelling, taken only from the summary sharing the view's prefix: audit_summary
+  -- labels `audit_wrong_grain_link` as 'wrong-grain-link' — the prefix dropped, hyphens for
+  -- underscores — and only the layer's own summary may vouch for a view that way.
   UNION ALL
   SELECT 'unsummarized_view', v.table_name
   FROM information_schema.tables v
   WHERE v.table_schema = 'main' AND v.table_type = 'VIEW'
     AND v.table_name NOT LIKE '\_%' ESCAPE '\'
-    AND v.table_name NOT IN ('foundation_summary', 'foundation_checks',
-                             'analysis_context', 'provenance_context')
+    AND NOT ends_with(v.table_name, '_summary')
+    AND NOT ends_with(v.table_name, '_checks')
+    AND NOT ends_with(v.table_name, '_context')
     AND NOT EXISTS (
       SELECT 1 FROM duckdb_views() s
-      WHERE s.database_name = 'memory' AND s.schema_name = 'main'
-        AND s.view_name = 'foundation_summary'
-        AND s.sql LIKE '%''' || v.table_name || '''%'
+      WHERE s.database_name = current_database() AND s.schema_name = 'main'
+        AND ends_with(s.view_name, '_summary')
+        AND NOT starts_with(s.view_name, '_')
         AND s.sql LIKE '%FROM ' || v.table_name || '%'
+        AND (s.sql LIKE '%''' || v.table_name || '''%'
+             OR (s.view_name = split_part(v.table_name, '_', 1) || '_summary'
+                 AND s.sql LIKE '%''' || replace(regexp_replace(v.table_name, '^[a-z0-9]+_', ''), '_', '-') || '''%'))
     )
 
   -- ── every first-class entity is exposed or exempted on the record ──
@@ -1190,7 +1200,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   SELECT 'stale_entity_view', e.entity_table
   FROM _entity_view e
   WHERE NOT EXISTS (SELECT 1 FROM duckdb_tables()
-                    WHERE database_name = 'fc' AND table_name = e.entity_table)
+                    WHERE database_name = current_database() AND schema_name = 'fc' AND table_name = e.entity_table)
 
   UNION ALL
   SELECT 'missing_entity_view',
@@ -1235,7 +1245,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'dim_not_liveness_checked', column_name
   FROM duckdb_columns()
-  WHERE database_name = 'memory' AND table_name = '_model_dim_wide'
+  WHERE database_name = current_database() AND table_name = '_model_dim_wide'
     AND column_name <> 'model_id'
     AND column_name NOT IN (SELECT DISTINCT dim FROM _dim_status)
   UNION ALL
@@ -1243,7 +1253,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   FROM (SELECT DISTINCT dim FROM _dim_status) d
   WHERE d.dim NOT IN (
     SELECT column_name FROM duckdb_columns()
-    WHERE database_name = 'memory' AND table_name = '_model_dim_wide'
+    WHERE database_name = current_database() AND table_name = '_model_dim_wide'
       AND column_name <> 'model_id')
 
   -- ── domain vocabulary: DomainModel.md and the catalog must agree ──
@@ -1296,7 +1306,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'undocumented_view', view_name
   FROM duckdb_views()
-  WHERE database_name = 'memory' AND schema_name = 'main'
+  WHERE database_name = current_database() AND schema_name = 'main'
     AND NOT starts_with(view_name, '_')
     AND view_name NOT IN ('foundation_summary', 'foundation_checks')
     AND comment IS NULL
@@ -1307,7 +1317,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT DISTINCT 'undocumented_macro', function_name
   FROM duckdb_functions()
-  WHERE database_name = 'memory' AND schema_name = 'main'
+  WHERE database_name = current_database() AND schema_name = 'main'
     AND NOT internal AND NOT starts_with(function_name, '_')
     AND comment IS NULL
 

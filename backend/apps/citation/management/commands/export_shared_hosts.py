@@ -1,4 +1,4 @@
-"""Generate scripts/analysis/shared_hosts.sql from the shared-host table.
+"""Generate scripts/analysis/sql/shared_hosts.sql from the shared-host table.
 
 The analytics layer's copy of :data:`~apps.citation.shared_hosts.SHARED_HOSTS`.
 One DuckDB view, ``shared_hosts``: the declared host and its platform label.
@@ -24,7 +24,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.citation.shared_hosts import SHARED_HOSTS
 
-OUTPUT_PATH = "scripts/analysis/shared_hosts.sql"
+OUTPUT_PATH = "scripts/analysis/sql/shared_hosts.sql"
 
 
 def _sql_str(value: str) -> str:
