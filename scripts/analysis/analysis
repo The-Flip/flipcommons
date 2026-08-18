@@ -1,62 +1,57 @@
 #!/usr/bin/env sh
 # Runner for DuckDB analyses over the Flipcommons database.
 #
-# Wraps the `duckdb` CLI so the discipline in scripts/analysis/README.md happens
-# automatically: every `run` prints the input watermark and the summary, then
-# GATES on the checks views — exiting nonzero if any of them returns a row.
+# The analytics schema is BAKED: `ensure_snapshot` builds backend/db.analytics.duckdb
+# from db.sqlite3 plus every file under scripts/analysis/sql/, and rebuilds it when
+# either changes. A query session never re-creates a view — it opens the snapshot
+# (read-only) and runs. An analysis FILE (a campaign or planning-doc program) loads
+# into an in-memory catalog on top, with the snapshot attached as `fc` and the
+# search path set so unqualified names resolve to the foundation.
 #
 # Location-independent: it finds its own flipcommons root and cd's there before
-# invoking DuckDB, so it can be called from anywhere — including a sister repo
-# whose analysis file `.read`s scripts/analysis/catalog.sql. The path you pass is
-# resolved against YOUR current directory; everything the analysis file reads
-# (scripts/analysis/catalog.sql, backend/db.sqlite3) resolves against flipcommons.
+# invoking DuckDB. The analysis-file path you pass is resolved against YOUR current
+# directory, so a sister repo can keep its campaign SQL beside its campaign.
 #
-# It is a convenience, not the only way in: `duckdb -init <analysis>.sql :memory:`
-# from the flipcommons root still works for ad-hoc querying.
-#
+#   scripts/analysis/analysis query [<analysis.sql>] "<sql>" [--format json|csv|table|lines] [--check <prefix>]
+#   scripts/analysis/analysis run [<analysis.sql>] <prefix> [--markdown]
 #   scripts/analysis/analysis describe [<analysis.sql>] [<view>|<macro>|<term>]
-#   scripts/analysis/analysis run <analysis.sql> <prefix> [--markdown]
-#   scripts/analysis/analysis browse <analysis.sql>
-#   scripts/analysis/analysis ui  <analysis.sql>
-#   scripts/analysis/analysis snapshot <analysis.sql> <view> [<view>...]
-#   scripts/analysis/analysis query <analysis.sql> "<sql>" [--format json|csv|table] [--check <prefix>]
 #   scripts/analysis/analysis columns [<analysis.sql>] <view> | --all
+#   scripts/analysis/analysis browse [<analysis.sql>]
+#   scripts/analysis/analysis ui  [<analysis.sql>]
+#   scripts/analysis/analysis snapshot <analysis.sql> <view> [<view>...]
 #
-# <prefix> names the analysis file's own summary/checks pair: `export` ->
-# export_summary, export_checks. Both must exist. But the gate is not limited to
-# that one view: `run` DISCOVERS every public `*_checks` view in the session and
-# fails on a row from any of them, and likewise prints every public `*_context`
-# view alongside analysis_context. That is what lets a shared module an analysis
-# file `.read`s ship its own invariants and its own watermark without every
-# analysis having to remember to fold them in — a dropped `UNION ALL` is exactly
-# the kind of silent hole this layer exists to close.
-# `query` prints pure data on stdout (diagnostics on stderr) for generators;
-# `--check <prefix>` runs that same gate first, so a generator never reads from
-# an analysis whose invariants are failing.
-# `describe` is the reference: bare, it lists every public view with its COMMENT ON
-# VIEW one-liner, then every public macro with its signature and COMMENT ON MACRO;
-# named, it adds the live column list for a view, or prints the one-liner for a macro.
-# A term matching nothing exactly is a SEARCH: every view and macro whose name or
-# one-liner contains it, so "does the catalog know about X" answers with the views
-# instead of an error. A term matching nothing at all still exits nonzero.
-# Given an analysis file, its OWN views and macros are listed first under the file's
-# name and the foundation follows. Only foundation objects are prompted for a missing
-# comment — an analysis's are working views and owe nobody a description.
-# Both read the session itself, so neither can drift the way a prose table did.
-# Both args are optional and order-free — anything ending in .sql is the analysis
-# file (default: the foundation), anything else is a view or macro name or a term.
+# Without an <analysis.sql>, every command works over the baked foundation alone:
+# `query` runs against the snapshot directly, `describe` lists the foundation,
+# `run <prefix>` prints the context, a baked summary and the stored check verdicts.
+#
+# CHECKS run at BUILD time, not query time: the build evaluates every public
+# `*_checks` view and stores one row per view in `raw._check_results`. A failing check
+# never blocks the build — querying is how you diagnose one — but the GATE still
+# gates: `run` and `query --check <prefix>` exit nonzero on a stored failing check or
+# on a row from a live analysis `*_checks` view, while a bare `query` only warns on
+# stderr. `--check` is the mode a generator wants: it keeps a patch from being
+# emitted out of an analysis whose invariants are failing, which a warning on stderr
+# cannot do. <prefix> names the analysis's own summary/checks pair (`export` ->
+# export_summary, export_checks); both must exist, and the gate still covers every
+# other public `*_checks` view — stored and live — so an analysis cannot quietly opt
+# out of a module's invariants.
+# `describe` is the reference: bare, it lists every public relation with its COMMENT
+# one-liner, grouped under its `═══ §N` source section and ordered by that rank (the
+# spine first, the audit and self-test last), then every macro; named, it adds
+# the live column list for a relation, or prints the one-liner for a macro. A term
+# matching nothing exactly is a SEARCH over names and one-liners. Given an analysis file, its OWN
+# objects are listed first under the file's name and the foundation follows; only
+# foundation objects are prompted for a missing comment.
 # `columns` is measurement where `describe` is reference: per column, how many rows,
-# how many NULL and how many empty string. Named, it prints every column of one view.
-# `--all` sweeps every public view and shows only the columns worth a look — any holding
-# '' (absence spelled the wrong way; the layer's rule is that absent is NULL) and any
-# entirely NULL (a facet the catalog does not hold yet, or a decode that broke). Run it
-# after editing a view that reads a physical table. It is a command rather than a check
-# because the same measurement as a gate needs an exemption list — 38 of 68 views carry a
-# bare `fc.` reference, and `path_prefix` is legitimately '' — and that list is the
-# maintenance burden, not the coverage. ~7s for a full sweep, seconds for one view.
-# `browse` materializes every public relation (view or table) into
-# <analysis>.browse.duckdb, a static, disposable database that desktop clients such
-# as TablePlus can open directly.
+# how many NULL and how many empty string. `--all` sweeps every public relation and
+# shows only the columns worth a look. `browse` materializes every public relation
+# into <analysis>.browse.duckdb for desktop clients; bare, it prints the snapshot
+# path, which any DuckDB client can open (read-only) directly.
+#
+# Raw duckdb still works — `duckdb -readonly backend/db.analytics.duckdb` from
+# anywhere is the whole foundation — but it reads whatever the last build produced;
+# only the runner rebuilds on a change. `analysis_context.snapshot_imported_at` says
+# how old that is.
 set -eu
 
 # flipcommons root = two dirs up from this script (…/scripts/analysis/analysis).
@@ -64,22 +59,14 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 
 need() { command -v duckdb >/dev/null 2>&1 || { echo "duckdb not on PATH" >&2; exit 127; }; }
 
-# The catalog is IMPORTED into DuckDB's own storage, not read out of SQLite in place,
-# and `ensure_snapshot` is what keeps that invisible: it re-imports only when
-# backend/db.sqlite3 has actually changed, which in practice means after a prod import
-# or `make ingest-patches`. The import is under a second for the whole database; the
-# staleness test is one stat. Nobody has to ask for a rebuild.
-#
-# Importing rather than ATTACHing the SQLite file is a CORRECTNESS decision first.
-# DuckDB's sqlite scanner collapses two branches of one query that aggregate over
-# different attached tables when the pushed-down projection and filter match — and
-# `WHERE status IS DISTINCT FROM 'deleted'` makes them match across every simple view
-# here. It silently gave `foundation_summary` one vocabulary's count for another's, and
-# left `_anchor_scan` reporting one view's liveness for three others. Both defects
-# vanish against native storage; see EDITING.md. Speed is the second reason and much
-# the smaller one (the self-test roughly halves).
 source_db="$root/backend/db.sqlite3"
 snapshot="$root/backend/db.analytics.duckdb"
+sqldir="$root/scripts/analysis/sql"
+entry="scripts/analysis/sql/analytics.sql"
+
+# Bump when the build steps below change shape (what is materialized, where the stamp
+# lives), so an existing snapshot from the older recipe rebuilds instead of half-working.
+build_format=2
 
 # mtime+size, BSD and GNU stat. Size is in there because mtime alone has one-second
 # granularity, and an ingest that rewrites the file inside the same second as the last
@@ -88,43 +75,98 @@ source_stamp() {
   stat -f '%m %z' "$source_db" 2>/dev/null || stat -c '%Y %s' "$source_db"
 }
 
+# One value over every file under sql/ — name, mtime, size — so an edit, an addition
+# or a deletion all change it. cksum because it is POSIX; this is a change detector,
+# not a content hash.
+sql_stamp() {
+  { find "$sqldir" -type f -exec stat -f '%N %m %z' {} + 2>/dev/null ||
+    find "$sqldir" -type f -exec stat -c '%n %Y %s' {} +; } |
+    LC_ALL=C sort | cksum | tr ' ' '-'
+}
+
+# The snapshot is the WHOLE analytics system: the raw Django tables (imported into
+# schema `raw`), every view and macro from scripts/analysis/sql/, the materialized
+# tables, and the stored check results. Rebuilt when db.sqlite3 OR any sql/ file
+# changes; the staleness test is a couple of stats. Nobody has to ask for a rebuild.
+#
+# Importing rather than ATTACHing the SQLite file is a CORRECTNESS decision first.
+# DuckDB's sqlite scanner collapses two branches of one query that aggregate over
+# different attached tables when the pushed-down projection and filter match — and
+# `WHERE status IS DISTINCT FROM 'deleted'` makes them match across every simple view
+# here. It silently gave `foundation_summary` one vocabulary's count for another's, and
+# left `_anchor_scan` reporting one view's liveness for three others. Both defects
+# vanish against native storage; see EDITING.md. Speed is the second reason and much
+# the smaller one.
 ensure_snapshot() {
   need
   [ -f "$source_db" ] || {
     echo "no catalog database at $source_db — run 'make bootstrap' first" >&2; exit 2; }
-  want=$(source_stamp)
+  want="$(source_stamp) $(sql_stamp) $build_format"
   if [ -f "$snapshot" ]; then
-    # A snapshot written by an older DuckDB fails to open. That is a rebuild, not an
-    # error, so the read is allowed to fail and falls through to the import below.
-    have=$(duckdb "$snapshot" -noheader -list \
-             "SELECT source_mtime || ' ' || source_size FROM _import_stamp" 2>/dev/null) || have=
+    # A snapshot written by an older DuckDB fails to open, and one written by an older
+    # build recipe has no stamp to read. Both are a rebuild, not an error, so the read
+    # is allowed to fail and falls through to the build below.
+    have=$(duckdb -readonly "$snapshot" -noheader -list \
+             "SELECT source_mtime || ' ' || source_size || ' ' || sql_stamp || ' ' || build_format
+              FROM raw._import_stamp" 2>/dev/null) || have=
     [ "$have" = "$want" ] && return 0
   fi
-  printf 'importing catalog into DuckDB (source changed)… ' >&2
+  printf 'building analytics database (source or schema changed)… ' >&2
+
+  # Build beside the target and rename, so a concurrent reader never sees a half-built
+  # snapshot and a failed build leaves the previous one intact.
+  tmp="$snapshot.tmp.$$"
+  rm -f "$tmp" "$tmp.wal"
+
+  # ── raw import ──
   # Table by table rather than COPY FROM DATABASE, which refuses on the partial indexes
-  # Django creates. Indexes are not copied at all: DuckDB does not use them.
+  # Django creates. Indexes are not copied at all: DuckDB does not use them. Into schema
+  # `raw`, which is what lets every `raw.catalog_*` reference in the sql/ files resolve
+  # as a schema of THIS catalog — the same files load into any catalog unchanged.
   copy_stmts=$(duckdb :memory: -noheader -list "
     INSTALL sqlite; LOAD sqlite;
     ATTACH '$source_db' AS src (TYPE sqlite, READ_ONLY);
-    SELECT 'CREATE TABLE out.\"' || table_name || '\" AS SELECT * FROM src.\"' || table_name || '\";'
+    SELECT 'CREATE TABLE out.raw.\"' || table_name || '\" AS SELECT * FROM src.\"' || table_name || '\";'
     FROM duckdb_tables() WHERE database_name = 'src' ORDER BY table_name;")
-  # Build beside the target and rename, so a concurrent reader never sees a half-written
-  # snapshot and a failed import leaves the previous one intact.
-  tmp="$snapshot.tmp.$$"
-  rm -f "$tmp" "$tmp.wal"
+  src_stamp=$(source_stamp)
   duckdb :memory: "
     INSTALL sqlite; LOAD sqlite;
     ATTACH '$source_db' AS src (TYPE sqlite, READ_ONLY);
     ATTACH '$tmp' AS out;
+    CREATE SCHEMA out.raw;
     $copy_stmts
-    CREATE TABLE out._import_stamp AS
-      SELECT ${want%% *}::BIGINT AS source_mtime, ${want##* }::BIGINT AS source_size,
+    CREATE TABLE out.raw._import_stamp AS
+      SELECT ${src_stamp%% *}::BIGINT AS source_mtime, ${src_stamp##* }::BIGINT AS source_size,
+             '$(sql_stamp)' AS sql_stamp, $build_format AS build_format,
              now() AS imported_at;" >/dev/null
+
+  # ── schema ──
+  # analytics.sql runs with the new snapshot as the DEFAULT catalog, so every CREATE
+  # lands in its main schema and every `fc.` reference resolves to the raw import.
+  # Relative .read paths resolve against the flipcommons root; callers cd there first.
+  duckdb "$tmp" -c ".read $entry" >/dev/null
+
+  # ── checks ──
+  # Evaluate every public *_checks view once and store the verdicts. Counts only: the
+  # views stay queryable in the snapshot, and the rows behind a count cannot drift from
+  # it — both only change on the next build. A failing check does not fail the build.
+  checks=$(duckdb -readonly "$tmp" -noheader -list \
+    "SELECT view_name FROM duckdb_views()
+     WHERE database_name = current_database() AND schema_name = 'main'
+       AND NOT starts_with(view_name, '_') AND ends_with(view_name, '_checks')
+     ORDER BY view_name;")
+  counts_sql=
+  for v in $checks; do
+    counts_sql=${counts_sql:+"$counts_sql UNION ALL "}"SELECT '$v' AS checks_view, count(*) AS n FROM $v"
+  done
+  duckdb "$tmp" "CREATE TABLE raw._check_results AS $counts_sql;
+                 COMMENT ON TABLE raw._check_results IS
+                   'One row per public *_checks view with its row count at build time. The stored gate: run and query --check fail on n > 0.';" >/dev/null
+
   mv "$tmp" "$snapshot"
   rm -f "$tmp.wal"
   echo "done" >&2
 }
-
 
 usage() {
   # The whole header comment, less the shebang: everything down to `set -eu`.
@@ -133,91 +175,149 @@ usage() {
   exit 2
 }
 
+# ── session shape ──────────────────────────────────────────────────────────────
+# Two session shapes. Foundation mode opens the snapshot itself read-only, so it IS
+# the default catalog and even macro expansion resolves in it. Analysis mode is an
+# in-memory catalog with the snapshot attached as `fc` and the search path set: the
+# analysis's CREATEs land in memory, its unqualified reads fall through to the
+# foundation, and raw tables are spelled `fc.raw.catalog_person`.
+analysis_file=
+# Where the stored check verdicts are, from THIS session's point of view.
+check_results="raw._check_results"
+# Where the baked reference index is, likewise.
+rel_index="raw._relation_index"
+
+# session "<output flags>" -c "<sql>" [-c "<sql>"…] — one DuckDB invocation with the
+# right context ahead of the caller's commands. The flag string is one argument,
+# word-split on purpose; pass '' for defaults.
+session() {
+  flags=$1; shift
+  if [ -n "$analysis_file" ]; then
+    set -- :memory: \
+      -c "ATTACH '$snapshot' AS fc (READ_ONLY); SET search_path = 'memory,fc';" \
+      -c ".read \"$analysis_file\"" "$@"
+  else
+    set -- -readonly "$snapshot" "$@"
+  fi
+  # shellcheck disable=SC2086
+  duckdb $flags "$@"
+}
+
 # Resolve an analysis-file path (relative to the CALLER's cwd) to absolute,
-# validate it, then cd to the flipcommons root so its relative reads resolve.
+# validate it, then cd to the flipcommons root and ensure the snapshot is fresh.
+# Call with no argument for foundation mode.
 resolve_and_cd() {
-  case "$1" in
-    *.sql) : ;;
-    *) echo "expected a .sql analysis file, got: $1" >&2; exit 2 ;;
-  esac
-  [ -f "$1" ] || { echo "no such file: $1" >&2; exit 2; }
-  analysis_file=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")
+  if [ $# -ge 1 ] && [ -n "$1" ]; then
+    case "$1" in
+      *.sql) : ;;
+      *) echo "expected a .sql analysis file, got: $1" >&2; exit 2 ;;
+    esac
+    [ -f "$1" ] || { echo "no such file: $1" >&2; exit 2; }
+    analysis_file=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")
+    case "$analysis_file" in
+      "$sqldir"/*)
+        echo "$1 is part of the baked foundation — drop the file argument; the snapshot already holds it" >&2
+        exit 2 ;;
+    esac
+    check_results="fc.raw._check_results"
+    rel_index="fc.raw._relation_index"
+    fnd_db="'fc'"
+  fi
   cd "$root"
   ensure_snapshot
 }
 
-# Public = a view in the session's own catalog (`memory`), not the read-only `fc`
-# attachment, and not an _underscore private helper. One definition, shared by
-# `describe` and by the discovery below, so the three places that mean "public
-# view" cannot come to disagree about it.
-pub_where="WHERE database_name = 'memory' AND schema_name = 'main'
-           AND NOT starts_with(view_name, '_')"
-
-# Public tables use the same naming convention. Analysis files sometimes materialize
-# an expensive intermediate as a TABLE so downstream views do not recompute it; browse
-# must carry those relations too or a campaign export is incomplete.
-pub_table_where="WHERE database_name = 'memory' AND schema_name = 'main'
-                 AND NOT starts_with(table_name, '_')"
-
-# The same idea for MACROS, which are reference surface too — a view comment can tell
-# you to call citation_root_for_host(), and describe has to be able to answer what that
-# is. `internal` excludes DuckDB's own built-ins, leaving the ones this layer defines.
-pub_macro_where="WHERE database_name = 'memory' AND schema_name = 'main'
-                 AND NOT internal AND NOT starts_with(function_name, '_')"
-
-# The public views whose name ends in <suffix>, one per line. This is how `run`
-# finds the checks to gate on and the contexts to print, rather than taking the
-# analysis's word for it: a layer it `.read`s gets picked up without the analysis
-# mentioning it, and an analysis cannot quietly opt out of a module's checks.
-public_views_ending() {
-  duckdb -init "$analysis_file" -noheader -list :memory: \
-    "SELECT view_name FROM duckdb_views() $pub_where
-       AND ends_with(view_name, '$1') ORDER BY view_name;"
+# ── public-object predicates ───────────────────────────────────────────────────
+# Public = not an _underscore helper, in the main schema of the right catalog. In
+# foundation mode that catalog is the snapshot itself (current_database()); in analysis
+# mode the analysis's objects are in `memory` and the foundation's in `fc`. One
+# definition per group, shared by describe, columns, browse and the gate discovery, so
+# the places that mean "public" cannot come to disagree about it.
+own_db="'memory'"
+fnd_db="current_database()"
+pub_views()  { printf "FROM duckdb_views() WHERE database_name = %s AND schema_name = 'main' AND NOT starts_with(view_name, '_')" "$1"; }
+pub_tables() { printf "FROM duckdb_tables() WHERE database_name = %s AND schema_name = 'main' AND NOT starts_with(table_name, '_')" "$1"; }
+pub_macros() { printf "SELECT DISTINCT function_name AS n, function_name || '(' || array_to_string(parameters, ', ') || ')' AS sig, comment, function_oid AS oid
+               FROM duckdb_functions() WHERE database_name = %s AND schema_name = 'main' AND NOT internal AND NOT starts_with(function_name, '_')" "$1"; }
+# Public relations (views + tables) of one catalog, as a subquery keeping oid order.
+# Tables are in there because the build materializes some relations (audit_findings)
+# as tables; a reference that hid them would read as "the audit has no findings view".
+pub_relations() {
+  printf "(SELECT view_name AS relation_name, view_oid AS relation_oid, comment %s
+           UNION ALL
+           SELECT table_name, table_oid, comment %s)" "$(pub_views "$1")" "$(pub_tables "$1")"
 }
 
-# The gate: require the analysis's own <prefix>_checks, then fail on a row in ANY
-# public *_checks view. Shared by `run` and by `query --check`, so a generator
-# reading a view out of an analysis gets the SAME verdict a run does. One
-# discovery, one definition of clean — a second copy is how the two would drift
-# apart, and a generator trusting a weaker gate would emit from a failing one.
+# ── the gate ───────────────────────────────────────────────────────────────────
+# Stored verdicts for everything baked, live rows for an analysis file's own checks.
+# The two are one gate: `run` renders it, `query --check` enforces it before the data
+# a generator is about to trust.
+
+# Require the analysis's own <prefix>_checks among stored + live checks. Without this
+# the failure mode is an analysis that defines <prefix>_summary and drops
+# <prefix>_checks — the exact omission README warns is easiest to make when copying —
+# passing green because discovery finds only the module checks and reports them clean.
+gate_require() {
+  found=$(session '-noheader -list' -c \
+    "SELECT count(*) FROM (
+       SELECT checks_view AS v FROM $check_results
+       UNION ALL SELECT view_name $(pub_views "$own_db") AND ends_with(view_name, '_checks')
+     ) WHERE v = '$1_checks';")
+  [ "$found" -ge 1 ] || {
+    printf '✗ analysis defines no %s_checks view\n' "$1" >&2; exit 2; }
+}
+
+# One row per checks view with its count — stored verdicts plus, in analysis mode, a
+# live count per analysis-file checks view, computed in one query.
+gate_counts() {
+  live=$(session '-noheader -list' -c \
+    "SELECT view_name $(pub_views "$own_db") AND ends_with(view_name, '_checks') ORDER BY view_name;")
+  live_sql=
+  for v in $live; do
+    live_sql="$live_sql UNION ALL SELECT '$v', count(*) FROM $v"
+  done
+  session '-noheader -list' -c \
+    "SELECT checks_view || ' ' || n FROM (
+       SELECT checks_view, n FROM $check_results $live_sql
+     ) ORDER BY 1;"
+}
+
+# The readout: one ✓ or ✗ per checks view, and the rows behind every ✗. Every view is
+# reported, not just the first failure — when a module and the analysis both break,
+# seeing one of them is a misleading half-picture. Failing rows come from querying the
+# view live: a stored count and the live rows cannot disagree, since both only move on
+# a rebuild.
 #
-# $1 = prefix. $2 = where the passing ✓ lines go: `stdout` for `run`, whose job
-# is to report, or `stderr` for `query`, whose stdout must stay pure data.
-# FAILURES always go to stderr regardless.
-gate() {
-  gate_prefix=$1; gate_ok=$2
-  checks=$(public_views_ending _checks)
-
-  # The analysis's own pair is still required. Without this the failure mode is
-  # one that defines <prefix>_summary and drops <prefix>_checks — the exact
-  # omission README warns is easiest to make when copying — passing green,
-  # because discovery would find only the foundation's or a module's checks
-  # and report them clean.
-  case "
-$checks
-" in
-    *"
-${gate_prefix}_checks
-"*) ;;
-    *) printf '✗ analysis defines no %s_checks view\n' "$gate_prefix" >&2; exit 2 ;;
-  esac
-
-  # Every view is reported, not just the first failure: when a shared module
-  # and the analysis both break, seeing one of them is a misleading half-picture.
+# $1 = where the passing ✓ lines go: `stdout` for `run`, whose job is to report, or
+# `silent` for a caller whose stdout must stay pure data. FAILURES always go to stderr.
+# Returns nonzero when any view is dirty; the caller decides what that means.
+gate_report() {
   bad=0
-  for v in $checks; do
-    n=$(duckdb -init "$analysis_file" -noheader -list :memory: "SELECT count(*) FROM $v;")
+  counts=$(gate_counts)
+  # A here-doc rather than a pipe, so $bad survives the loop.
+  while read -r v n; do
+    [ -n "$v" ] || continue
     if [ "$n" -ne 0 ]; then
       printf '\n✗ %s returned %s row(s):\n' "$v" "$n" >&2
-      duckdb -init "$analysis_file" :memory: "FROM $v;" >&2
+      session '' -c "FROM $v;" >&2
       bad=$((bad + 1))
-    elif [ "$gate_ok" = stdout ]; then
+    elif [ "$1" = stdout ]; then
       printf '\n✓ %s clean\n' "$v"
-    else
-      printf '\n✓ %s clean\n' "$v" >&2
     fi
-  done
-  [ "$bad" -eq 0 ] || exit 1
+  done <<EOF
+$counts
+EOF
+  [ "$bad" -eq 0 ]
+}
+
+# The bare-query warning: stored failures only, one stderr line, never fatal. What
+# keeps a broken foundation visible during the diagnosis it cannot be allowed to block.
+warn_stored() {
+  dirty=$(duckdb -readonly "$snapshot" -noheader -list \
+    "SELECT coalesce(string_agg(checks_view || ' (' || n || ')', ', ' ORDER BY checks_view), '')
+     FROM raw._check_results WHERE n > 0;" 2>/dev/null) || dirty=
+  [ -z "$dirty" ] ||
+    echo "⚠ failing checks from the last build: $dirty — 'analysis query \"FROM <view>;\"' shows the rows" >&2
 }
 
 [ $# -ge 1 ] || usage
@@ -226,8 +326,10 @@ cmd=$1; shift
 
 case "$cmd" in
   run)
-    [ $# -ge 2 ] || usage
-    sql=$1; prefix=$2; shift 2
+    [ $# -ge 1 ] || usage
+    sql=; case "$1" in *.sql) sql=$1; shift ;; esac
+    [ $# -ge 1 ] || usage
+    prefix=$1; shift
     fmt=box
     [ "${1:-}" = "--markdown" ] && fmt=markdown
     resolve_and_cd "$sql"
@@ -235,23 +337,69 @@ case "$cmd" in
     # The catalog watermark first, then any companion layer's — a run should
     # certify ALL of its inputs, and a source corpus can be staler than the DB.
     printf '\n— context —\n'
-    duckdb -init "$analysis_file" -"$fmt" :memory: "FROM analysis_context;"
-    for v in $(public_views_ending _context); do
-      [ "$v" = analysis_context ] && continue
+    session "-$fmt" -c "FROM analysis_context;"
+    contexts=$(session '-noheader -list' -c \
+      "SELECT v FROM (
+         SELECT view_name AS v, 0 AS grp, view_oid AS oid $(pub_views "$own_db") AND ends_with(view_name, '_context')
+         UNION ALL
+         SELECT view_name, 1, view_oid $(pub_views "$fnd_db") AND ends_with(view_name, '_context')
+       ) WHERE v <> 'analysis_context' ORDER BY grp, oid;")
+    for v in $contexts; do
       printf '\n— %s —\n' "$v"
-      duckdb -init "$analysis_file" -"$fmt" :memory: "FROM $v;"
+      session "-$fmt" -c "FROM $v;"
     done
 
     printf '\n— %s_summary —\n' "$prefix"
-    duckdb -init "$analysis_file" -"$fmt" :memory: "FROM ${prefix}_summary;"
+    session "-$fmt" -c "FROM ${prefix}_summary;"
 
-    # Gate: a row in ANY public *_checks view fails the run.
-    gate "$prefix" stdout
+    # Gate: a stored failing check or a row in any live *_checks view fails the run.
+    gate_require "$prefix"
+    gate_report stdout || exit 1
+    ;;
+
+  query)
+    [ $# -ge 1 ] || usage
+    sql=; case "$1" in *.sql) sql=$1; shift ;; esac
+    [ $# -ge 1 ] || usage
+    query=$1; shift
+    fmt=table; check=
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --format)
+          case "${2:-}" in
+            json|csv|table|lines) fmt=$2; shift 2 ;;
+            *) echo "--format must be json, csv, table or lines" >&2; exit 2 ;;
+          esac ;;
+        --check)
+          [ -n "${2:-}" ] || { echo "--check needs a <prefix>" >&2; exit 2; }
+          check=$2; shift 2 ;;
+        *) echo "unknown query option: $1" >&2; exit 2 ;;
+      esac
+    done
+    resolve_and_cd "$sql"
+
+    if [ -n "$check" ]; then
+      # The gate ahead of the data, so a generator never reads a view out of an
+      # analysis whose invariants are failing. Stored verdicts are a table read; only
+      # the analysis file's own checks are evaluated live.
+      gate_require "$check"
+      gate_report silent || exit 1
+    else
+      warn_stored
+    fi
+
+    # Pure data on stdout; DuckDB's own diagnostics already go to stderr.
+    # `lines` emits each row verbatim with no header, box or quoting — for a query whose
+    # single column IS the rendered output. The other three formats all mangle prose:
+    # csv quotes any value holding a comma, json escapes it, table pads it out to the
+    # widest row and wraps. Meant for one column; with several, -list joins them on '|'.
+    if [ "$fmt" = lines ]; then flags='-noheader -list'; else flags="-$fmt"; fi
+    session "$flags" -c "$query"
     ;;
 
   describe)
     # Both args optional and order-free: *.sql is the file, anything else a view.
-    sql=scripts/analysis/catalog.sql; view=
+    sql=; view=
     for a in "$@"; do
       case "$a" in
         *.sql) sql=$a ;;
@@ -260,118 +408,98 @@ case "$cmd" in
     done
     resolve_and_cd "$sql"
 
-    pub="FROM duckdb_views() $pub_where"
-    # DISTINCT because an overloaded macro has a row per signature.
-    pub_macro="SELECT DISTINCT function_name AS n,
-                 function_name || '(' || array_to_string(parameters, ', ') || ')' AS sig,
-                 comment, function_oid AS oid
-               FROM duckdb_functions() $pub_macro_where"
-
-    # Which names the FOUNDATION defines, found by loading it on its own — everything
-    # else in the session belongs to the analysis file. The two are held to different
-    # standards and conflating them is what made `describe <campaign>.sql` tell a
-    # campaign to document its working views: a foundation view is reference surface
-    # other analyses build on and `undocumented_view` obliges it to carry a comment,
-    # while a campaign's views are scratch for one question and owe nothing.
-    # Skipped when the analysis IS the foundation, where the split is meaningless.
-    fviews=; fmacros=
-    if [ "$analysis_file" != "$root/scripts/analysis/catalog.sql" ]; then
-      fviews=$(duckdb -init scripts/analysis/catalog.sql -noheader -list :memory: \
-        "SELECT coalesce(string_agg('''' || view_name || '''', ','), '''''') $pub;")
-      fmacros=$(duckdb -init scripts/analysis/catalog.sql -noheader -list :memory: \
-        "SELECT coalesce(string_agg('''' || n || '''', ','), '''''') FROM ($pub_macro);")
-    fi
-    # Predicates naming the analysis's OWN objects; empty when describing the foundation.
-    # The macro half is a BARE condition, its WHERE supplied at each use: the two callers
-    # below build different queries around it, and a second WHERE-carrying spelling is
-    # one an edit could update alone.
-    own_v=; found_v=; own_m=true; found_m=true
-    # Naming one object by name doesn't say which group it is in, so the placeholder
-    # becomes conditional: nag for a foundation object, stay silent for the analysis's.
+    # The analysis's objects and the foundation's are the CATALOG split — memory holds
+    # one, base the other — and they are held to different standards: a foundation
+    # relation is reference surface other analyses build on and owes a comment, while
+    # an analysis's views are scratch for one question and owe nothing.
     nag_v="'(undocumented — add a COMMENT ON VIEW)'"
     nag_m="'(undocumented — add a COMMENT ON MACRO)'"
-    if [ -n "$fviews" ]; then
-      own_v="AND view_name NOT IN ($fviews)";   found_v="AND view_name IN ($fviews)"
-      own_m="n NOT IN ($fmacros)";             found_m="n IN ($fmacros)"
-      nag_v="CASE WHEN view_name IN ($fviews) THEN $nag_v ELSE '' END"
-      nag_m="CASE WHEN n IN ($fmacros) THEN $nag_m ELSE '' END"
-    fi
 
     if [ -z "$view" ]; then
-      # The analysis's own objects FIRST — describing a campaign, they are the subject
-      # and the foundation is the backdrop. A comment is shown when there is one and
-      # simply omitted when there isn't: no obligation, so no placeholder nagging for
-      # one. Suppressed entirely when describing the foundation, which has none.
-      if [ -n "$own_v" ]; then
+      if [ -n "$analysis_file" ]; then
+        # The analysis's own objects FIRST — describing a campaign, they are the
+        # subject and the foundation is the backdrop. A comment is shown when there is
+        # one and simply omitted when there isn't.
         printf '— %s —\n' "$(basename "$analysis_file")"
-        duckdb -init "$analysis_file" -noheader -list :memory: \
-          "SELECT view_name || coalesce(chr(10) || '    ' || comment, '')
-           $pub $own_v ORDER BY view_oid;"
-        duckdb -init "$analysis_file" -noheader -list :memory: \
+        session '-noheader -list' -c \
+          "SELECT relation_name || coalesce(chr(10) || '    ' || comment, '')
+           FROM $(pub_relations "$own_db") ORDER BY relation_oid;"
+        session '-noheader -list' -c \
           "SELECT sig || coalesce(chr(10) || '    ' || comment, '')
-           FROM ($pub_macro) WHERE $own_m ORDER BY oid;"
+           FROM ($(pub_macros "$own_db")) ORDER BY oid;"
         printf '\n— foundation —\n'
       fi
       # Index. Rendered as name + indented prose rather than a box table: the
       # comments are sentences, and a box would blow past any terminal width.
-      duckdb -init "$analysis_file" -noheader -list :memory: \
-        "SELECT view_name || chr(10) || '    ' ||
-                coalesce(comment, '(undocumented — add a COMMENT ON VIEW)')
-         $pub $found_v ORDER BY view_oid;"
+      # Grouped and ordered by the baked index, NOT by oid: a reopened database hands
+      # back oids in name order, which would lead with the audit and bury the spine.
+      # Anything the index missed lands under UNGROUPED, where it cannot be mistaken
+      # for a section of its own.
+      session '-noheader -list' -c \
+        "SELECT CASE WHEN grp_label IS DISTINCT FROM lag(grp_label) OVER (ORDER BY ord, relation_name)
+                     THEN chr(10) || '═══ ' || grp_label || chr(10) ELSE '' END
+                || relation_name || chr(10) || '    ' || coalesce(comment, $nag_v)
+         FROM (SELECT r.relation_name, r.comment,
+                      coalesce(g.grp_label, 'UNGROUPED') AS grp_label,
+                      coalesce(g.ord, 999999) AS ord
+               FROM $(pub_relations "$fnd_db") r
+               LEFT JOIN $rel_index g USING (relation_name))
+         ORDER BY ord, relation_name;"
       # Macros last and labelled, because they are CALLED rather than selected from.
+      # Same index order, so a macro sits beside the views it belongs with, but without
+      # headers: the list is short enough that they would cost more than they explain.
       echo
       echo "— macros —"
-      duckdb -init "$analysis_file" -noheader -list :memory: \
-        "SELECT sig || chr(10) || '    ' ||
-                coalesce(comment, '(undocumented — add a COMMENT ON MACRO)')
-         FROM ($pub_macro) WHERE $found_m ORDER BY oid;"
+      session '-noheader -list' -c \
+        "SELECT sig || chr(10) || '    ' || coalesce(comment, $nag_m)
+         FROM ($(pub_macros "$fnd_db")) m LEFT JOIN $rel_index g ON g.relation_name = m.n
+         ORDER BY coalesce(g.ord, 999999), m.n;"
     else
       # Doubled for SQL. A search term is freer-form than a view name, and an apostrophe
       # in one would otherwise be a syntax error rather than simply matching nothing.
       sql_view=$(printf '%s' "$view" | sed "s/'/''/g")
-      n=$(duckdb -init "$analysis_file" -noheader -list :memory: \
-        "SELECT count(*) $pub AND view_name = '$sql_view';")
-      if [ "$n" -eq 0 ]; then
-        # Not a view — try a macro before giving up, so one name lookup covers both.
-        m=$(duckdb -init "$analysis_file" -noheader -list :memory: \
-          "SELECT count(*) FROM ($pub_macro) WHERE n = '$sql_view';")
+      hit=$(session '-noheader -list' -c \
+        "SELECT count(*) FROM (
+           SELECT relation_name AS nm FROM $(pub_relations "$own_db")
+           UNION ALL SELECT relation_name FROM $(pub_relations "$fnd_db")
+         ) WHERE nm = '$sql_view';")
+      if [ "$hit" -eq 0 ]; then
+        # Not a relation — try a macro before giving up, so one name lookup covers both.
+        m=$(session '-noheader -list' -c \
+          "SELECT count(*) FROM (
+             SELECT n FROM ($(pub_macros "$own_db"))
+             UNION ALL SELECT n FROM ($(pub_macros "$fnd_db"))
+           ) WHERE n = '$sql_view';")
         if [ "$m" -eq 0 ]; then
           # Naming nothing exactly is a SEARCH, not a mistake. The question behind such
           # a term — does the catalog know about X — is one this layer can answer, and
           # an error answers it wrong: `abbrev` names no view, yet two views are about
-          # abbreviations. Names and one-liners only. The block prose above each CREATE
+          # abbreviations. Names and one-liners only; the block prose above each CREATE
           # never enters the session, which is what the README's greps are for.
-          match_v="(contains(lower(view_name), lower('$sql_view'))
-                    OR contains(lower(coalesce(comment, '')), lower('$sql_view')))"
-          match_m="(contains(lower(n), lower('$sql_view'))
-                    OR contains(lower(coalesce(comment, '')), lower('$sql_view')))"
-
-          # $1 = the views' group predicate, $2 = the macros'. Views then macros, each in
-          # definition order and rendered exactly as the index above renders them, so a
-          # hit reads the same whether you searched for it or scrolled past it. The
-          # nullif is what drops the indented line entirely for an analysis's own
-          # undocumented object, whose placeholder is the empty string.
+          match="(contains(lower(nm), lower('$sql_view'))
+                  OR contains(lower(coalesce(comment, '')), lower('$sql_view')))"
+          # $1 = the catalog, $2/$3 = the undocumented placeholders for the group —
+          # the empty string for the analysis's own objects, whose nullif then drops
+          # the indented line entirely.
           search() {
-            duckdb -init "$analysis_file" -noheader -list :memory: \
+            session '-noheader -list' -c \
               "SELECT txt FROM (
-                 SELECT view_name || coalesce(chr(10) || '    ' ||
-                          nullif(coalesce(comment, $nag_v), ''), '') AS txt,
-                        0 AS kind, view_oid AS ord
-                 $pub $1 AND $match_v
+                 SELECT relation_name AS nm, comment,
+                        relation_name || coalesce(chr(10) || '    ' ||
+                          nullif(coalesce(comment, $2), ''), '') AS txt,
+                        0 AS kind, relation_oid AS ord
+                 FROM $(pub_relations "$1")
                  UNION ALL
-                 SELECT sig || coalesce(chr(10) || '    ' ||
-                          nullif(coalesce(comment, $nag_m), ''), '') AS txt,
-                        1 AS kind, oid AS ord
-                 FROM ($pub_macro) WHERE $2 AND $match_m
-               ) ORDER BY kind, ord;"
+                 SELECT n, comment,
+                        sig || coalesce(chr(10) || '    ' ||
+                          nullif(coalesce(comment, $3), ''), ''),
+                        1, oid
+                 FROM ($(pub_macros "$1"))
+               ) WHERE $match ORDER BY kind, ord;"
           }
-
-          # A header only where there is something under it: a term hitting one side
-          # prints one list rather than an empty section. An empty own_v means there is
-          # no split to show at all, which is the case when describing the foundation.
           own_hits=
-          [ -n "$own_v" ] && own_hits=$(search "$own_v" "$own_m")
-          found_hits=$(search "$found_v" "$found_m")
+          [ -n "$analysis_file" ] && own_hits=$(search "$own_db" "''" "''")
+          found_hits=$(search "$fnd_db" "$nag_v" "$nag_m")
           [ -n "$own_hits$found_hits" ] ||
             { echo "no such public view or macro: $view" >&2; exit 2; }
           if [ -n "$own_hits" ]; then
@@ -382,31 +510,59 @@ case "$cmd" in
           if [ -n "$found_hits" ]; then printf '%s\n' "$found_hits"; fi
           exit 0
         fi
-        # Same nullif as the search: an own undocumented macro prints its signature
-        # alone, where the view branch below suppresses the row and lets DESCRIBE speak.
-        duckdb -init "$analysis_file" -noheader -list :memory: \
-          "SELECT sig || coalesce(chr(10) || '    ' ||
-                    nullif(coalesce(comment, $nag_m), ''), '')
-           FROM ($pub_macro) WHERE n = '$sql_view';"
+        # A macro: its signature, and its comment when it has one. An analysis's own
+        # undocumented macro prints its signature alone rather than a nag.
+        session '-noheader -list' -c \
+          "SELECT sig || coalesce(chr(10) || '    ' || nullif(coalesce(comment,
+                    CASE WHEN grp = 1 THEN $nag_m ELSE '' END), ''), '')
+           FROM (
+             SELECT sig, comment, 0 AS grp, n FROM ($(pub_macros "$own_db"))
+             UNION ALL SELECT sig, comment, 1, n FROM ($(pub_macros "$fnd_db"))
+           ) WHERE n = '$sql_view';"
         exit 0
       fi
       # The WHERE keeps an undocumented analysis view from printing a blank line.
-      duckdb -init "$analysis_file" -noheader -list :memory: \
-        "SELECT coalesce(comment, $nag_v)
-         $pub AND view_name = '$sql_view' AND coalesce(comment, $nag_v) <> '';"
-      duckdb -init "$analysis_file" :memory: "DESCRIBE $view;"
+      session '-noheader -list' -c \
+        "SELECT coalesce(comment, CASE WHEN grp = 1 THEN $nag_v ELSE '' END)
+         FROM (
+           SELECT comment, 0 AS grp, relation_name FROM $(pub_relations "$own_db")
+           UNION ALL SELECT comment, 1, relation_name FROM $(pub_relations "$fnd_db")
+         ) WHERE relation_name = '$sql_view'
+           AND coalesce(comment, CASE WHEN grp = 1 THEN $nag_v ELSE '' END) <> '';"
+      session '' -c "DESCRIBE $view;"
     fi
     ;;
 
   ui)
-    [ $# -ge 1 ] || usage
-    resolve_and_cd "$1"
-    duckdb -ui -init "$analysis_file" :memory:
+    sql=; case "${1:-}" in *.sql) sql=$1; shift ;; esac
+    resolve_and_cd "$sql"
+    if [ -n "$analysis_file" ]; then
+      # -init, not -c: -c runs its commands and exits, where -ui needs the session to
+      # stay up. The attach and search path ride in a generated init file for the same
+      # reason. The startup banner is fine here — this one is interactive.
+      init_file="${TMPDIR:-/tmp}/analysis-ui.$$.sql"
+      trap 'rm -f "$init_file"' EXIT
+      {
+        printf "ATTACH '%s' AS fc (READ_ONLY);\nSET search_path = 'memory,fc';\n" "$snapshot"
+        printf '.read "%s"\n' "$analysis_file"
+      } > "$init_file"
+      duckdb -ui -init "$init_file" :memory:
+    else
+      duckdb -ui -readonly "$snapshot"
+    fi
     ;;
 
   browse)
-    [ $# -eq 1 ] || usage
-    resolve_and_cd "$1"
+    sql=; case "${1:-}" in *.sql) sql=$1; shift ;; esac
+    [ $# -eq 0 ] || usage
+    resolve_and_cd "$sql"
+    if [ -z "$analysis_file" ]; then
+      # The snapshot IS the browsable database now. Print where it is; any DuckDB
+      # client opens it read-only, and a rebuild swaps the file atomically underneath —
+      # reconnect to pick up a fresh one.
+      echo "$snapshot"
+      exit 0
+    fi
     out="${analysis_file%.sql}.browse.duckdb"
     tmp="${out}.tmp.$$"
     cleanup_browse() { rm -f "$tmp"; }
@@ -414,16 +570,16 @@ case "$cmd" in
     trap 'exit 1' HUP INT TERM
     rm -f "$tmp"
 
-    relations=$(duckdb -init "$analysis_file" -noheader -list :memory: \
-      "SELECT relation_name
-       FROM (
-         SELECT view_name AS relation_name, view_oid AS relation_oid
-         FROM duckdb_views() $pub_where
+    # Every public relation the session can see — the analysis's own and the
+    # foundation's — copied as real tables into one static, disposable database that
+    # desktop clients such as TablePlus can open directly. Comments ride along; macros
+    # do not travel.
+    relations=$(session '-noheader -list' -c \
+      "SELECT relation_name FROM (
+         SELECT relation_name, 0 AS grp, relation_oid FROM $(pub_relations "$own_db")
          UNION ALL
-         SELECT table_name AS relation_name, table_oid AS relation_oid
-         FROM duckdb_tables() $pub_table_where
-       )
-       ORDER BY relation_oid;")
+         SELECT relation_name, 1, relation_oid FROM $(pub_relations "$fnd_db")
+       ) ORDER BY grp, relation_oid;")
     [ -n "$relations" ] || {
       echo "analysis defines no public views or tables: $analysis_file" >&2
       exit 2
@@ -435,33 +591,30 @@ case "$cmd" in
     while IFS= read -r relation; do
       [ -n "$relation" ] || continue
       sql_relation=$(printf '%s' "$relation" | sed 's/"/""/g')
-      stmts="$stmts CREATE TABLE browse.\"$sql_relation\" AS FROM main.\"$sql_relation\";"
+      stmts="$stmts CREATE TABLE browse.\"$sql_relation\" AS FROM \"$sql_relation\";"
       n=$((n + 1))
     done <<EOF
 $relations
 EOF
 
     # CREATE TABLE … AS carries rows and types, not the COMMENT, so the comments must be
-    # re-attached explicitly. Not folded into the loop above: comments are multi-line, so
-    # there is no line-oriented read of them. Views become tables here, so COMMENT ON
-    # TABLE is right for both. The count rides along on one query to avoid a fourth run.
-    comments=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+    # re-attached explicitly. Views become tables here, so COMMENT ON TABLE is right for
+    # both. The count rides along on one query to avoid an extra run.
+    comments=$(session '-noheader -list' -c \
       "SELECT count(*) || '|' || coalesce(string_agg(
                 'COMMENT ON TABLE browse.\"' || replace(relation_name, '\"', '\"\"')
                 || '\" IS ''' || replace(comment, '''', '''''') || ''';',
                 ' ' ORDER BY relation_oid), '')
        FROM (
-         SELECT view_name AS relation_name, view_oid AS relation_oid, comment
-         FROM duckdb_views() $pub_where AND comment IS NOT NULL
+         SELECT relation_name, relation_oid, comment FROM $(pub_relations "$own_db")
          UNION ALL
-         SELECT table_name AS relation_name, table_oid AS relation_oid, comment
-         FROM duckdb_tables() $pub_table_where AND comment IS NOT NULL
-       );")
+         SELECT relation_name, relation_oid, comment FROM $(pub_relations "$fnd_db")
+       ) WHERE comment IS NOT NULL;")
 
     documented=${comments%%|*}
     comment_stmts=${comments#*|}
 
-    duckdb -init "$analysis_file" :memory: "$stmts $comment_stmts"
+    session '' -c "$stmts $comment_stmts" >/dev/null
     mv -f "$tmp" "$out"
     trap - EXIT HUP INT TERM
     noun=relations
@@ -469,37 +622,9 @@ EOF
     printf 'wrote %s (%s public %s, %s documented)\n' "$out" "$n" "$noun" "$documented"
     ;;
 
-  query)
-    [ $# -ge 2 ] || usage
-    sql=$1; query=$2; shift 2
-    fmt=table; check=
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --format)
-          case "${2:-}" in
-            json|csv|table) fmt=$2; shift 2 ;;
-            *) echo "--format must be json, csv or table" >&2; exit 2 ;;
-          esac ;;
-        --check)
-          [ -n "${2:-}" ] || { echo "--check needs a <prefix>" >&2; exit 2; }
-          check=$2; shift 2 ;;
-        *) echo "unknown query option: $1" >&2; exit 2 ;;
-      esac
-    done
-    resolve_and_cd "$sql"
-    # --check runs the same gate `run` does, BEFORE emitting a row. This is the
-    # mode a generator wants: reading a view out of an ungated analysis is how a
-    # patch gets emitted from an analysis whose invariants are failing, and the
-    # emitted YAML looks perfectly well-formed either way. Gate output goes to
-    # stderr so stdout stays pure data.
-    [ -n "$check" ] && gate "$check" stderr
-    # Pure data on stdout; DuckDB's own diagnostics already go to stderr.
-    duckdb -init "$analysis_file" -"$fmt" :memory: "$query"
-    ;;
-
   columns)
     # Both args order-free, like describe: *.sql is the file, anything else a view.
-    sql=scripts/analysis/catalog.sql; view=; all=
+    sql=; view=; all=
     for a in "$@"; do
       case "$a" in
         --all) all=1 ;;
@@ -510,22 +635,15 @@ EOF
     [ -n "$view" ] || [ -n "$all" ] || { echo "columns needs a <view> or --all" >&2; exit 2; }
     resolve_and_cd "$sql"
 
-    # The relation list is derived HERE, in the shell, and that is the whole reason this
-    # is a command and not a check. A SQL view cannot iterate relations — query_table()
-    # takes literals only — so the same measurement written as a check needs one
-    # hand-written UNION branch per relation plus a meta-check to keep that list honest.
-    # See EDITING.md.
-    # TABLES as well as views, on `browse`'s reasoning: an analysis materializes an
-    # expensive intermediate as a table so downstream views don't recompute it, and those
-    # are the big relations where a stray '' is least likely to be caught by eye. Sweeping
-    # only views would under-report exactly there, and silently.
-    views=$(duckdb -init "$analysis_file" -noheader -list :memory: \
-      "SELECT view_name AS rel FROM duckdb_views() $pub_where
-         ${view:+AND view_name = '$view'}
-       UNION ALL
-       SELECT table_name FROM duckdb_tables() $pub_table_where
-         ${view:+AND table_name = '$view'}
-       ORDER BY rel;")
+    # The relation list is derived HERE, in the shell — a SQL view cannot iterate
+    # relations, since query_table() takes literals only. TABLES as well as views: the
+    # build materializes some relations, and those are the big ones where a stray '' is
+    # least likely to be caught by eye.
+    views=$(session '-noheader -list' -c \
+      "SELECT relation_name FROM (
+         SELECT relation_name FROM $(pub_relations "$own_db")
+         UNION ALL SELECT relation_name FROM $(pub_relations "$fnd_db")
+       ) ${view:+WHERE relation_name = '$view'} ORDER BY relation_name;")
     [ -n "$views" ] || { echo "no such public view or table: $view" >&2; exit 2; }
 
     branches=
@@ -538,20 +656,17 @@ EOF
     # rather than a defect. Filtered when sweeping so the output stays readable; a named
     # view prints every column, because there you asked about that view specifically.
     filter=; [ -n "$all" ] && [ -z "$view" ] && filter="WHERE n_blank > 0 OR n_null = n_rows"
-    duckdb -box :memory: -f /dev/stdin <<SQL
-.read $analysis_file
+    session '-box' -c "
 -- n_blank cannot see a blank INSIDE a list element: ['a',''] casts to [a, ], never ''.
--- Zero such values today; the gap is latent, and list-typed facets are exactly where a
--- reader would assume coverage.
-CREATE OR REPLACE MACRO _colstats(vn) AS TABLE
+-- TEMP: the session may be a read-only snapshot, and temp objects live outside it.
+CREATE OR REPLACE TEMP MACRO _colstats(vn) AS TABLE
   WITH n AS (UNPIVOT (SELECT count(*) FILTER (COLUMNS(*) IS NULL) FROM query_table(vn))
                ON COLUMNS(*) INTO NAME col VALUE n_null),
        b AS (UNPIVOT (SELECT count(*) FILTER (COLUMNS(*)::VARCHAR = '') FROM query_table(vn))
                ON COLUMNS(*) INTO NAME col VALUE n_blank)
   SELECT n.col, (SELECT count(*) FROM query_table(vn)) AS n_rows, n.n_null, b.n_blank
   FROM n JOIN b USING (col);
-SELECT * FROM ($branches) $filter ORDER BY n_blank DESC, view_name, col;
-SQL
+SELECT * FROM ($branches) $filter ORDER BY n_blank DESC, view_name, col;"
     ;;
 
   snapshot)
@@ -564,7 +679,7 @@ SQL
     for v in "$@"; do
       stmts="$stmts CREATE TABLE snap.$v AS FROM $v;"
     done
-    duckdb -init "$analysis_file" :memory: "$stmts"
+    session '' -c "$stmts" >/dev/null
     printf 'wrote %s (%s)\n' "$out" "$*"
     ;;
 

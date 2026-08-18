@@ -21,19 +21,25 @@ from apps.core.models import RecordReference
 from apps.core.wikilinks import get_enabled_link_types, get_patterns
 
 
-def sync_references(source: models.Model, content: str) -> None:
-    """Sync RecordReference table based on links found in content.
+def sync_references(source: models.Model) -> None:
+    """Sync the RecordReference rows for every markdown field on *source*.
 
-    Compares current links in content against existing RecordReference rows
-    for this source, then batch-creates/deletes the diff.
+    Compares the links across all of the instance's ``MarkdownField`` content
+    against its existing rows, then batch-creates/deletes the diff. Reads the
+    fields off the instance, so an unsaved edit must be assigned first.
 
-    Args:
-        source: The model instance containing the markdown
-        content: The markdown content in storage format
+    Reconciliation is per SOURCE and cannot be narrowed: a row is keyed
+    ``(source_type, source_id, target_type, target_id)`` and carries no field
+    identity, so anything less than the full content reads the other fields'
+    links as stale and deletes them.
     """
     from django.contrib.contenttypes.models import ContentType
 
-    content = content or ""
+    from apps.core.markdown.field import get_markdown_fields
+
+    content = "\n".join(
+        getattr(source, name, "") or "" for name in get_markdown_fields(type(source))
+    )
 
     # Parse all link IDs from content using registered patterns
     links_by_model: dict[type[Any], set[int]] = {}
@@ -134,4 +140,4 @@ def save_inline_markdown_field(
     with transaction.atomic():
         setattr(instance, field, text)
         instance.save(update_fields=[field, "updated_at", *extra_update_fields])
-        sync_references(instance, text)
+        sync_references(instance)

@@ -36,6 +36,8 @@
 --    entries, not patches. Not `patch_claims`: that misses retraction-only and source-only
 --    patches both.
 
+-- ═══ §180 DATA PATCHES — what our own patches did ══════════════════════════
+
 -- ── Deriving a patch number ──────────────────────────────────────────────────
 -- A patch id is the flippatch filename stem, `NNNN-slug`, and `ingest_patches` stores it
 -- verbatim — so the ordinal is a string parse, not a stored column.
@@ -58,6 +60,7 @@
 -- patches — no error, no NULL, just a wrong ordinal that looks like a right one. The
 -- trailing `-` is what keeps the greedy `+` honest: it stops at the separator the id
 -- format guarantees rather than swallowing digits out of the slug.
+
 CREATE OR REPLACE MACRO patch_number_of(pid) AS
   TRY_CAST(regexp_extract(pid, '^([0-9]+)-', 1) AS INTEGER);
 COMMENT ON MACRO patch_number_of IS

@@ -99,7 +99,7 @@ Wikilinks are what make a description part of an encyclopedia rather than a para
 - **Third person.** Never address the reader, never "we" or "our".
 - **Present tense for what a thing is; past for history.** A defunct firm _was_; a cabinet format _is_.
 - **Foreign words keep their own characters** — São Paulo, Diversões, Günter. Italicise a foreign term you're glossing, gloss it once in plain English, and keep the gloss out of quotes.
-- **Don't name this site, and don't write "the catalog".** The reader can't resolve the referent. Name another site directly when you mean one ("eremeka.net dates this to 1974").
+- **Don't name this site, and don't write "the catalog".** The reader can't resolve the referent. Name another site directly when you mean one, and hyperlink the name in the text — a markdown link, not just a footnote: `[eremeka.net](https://www.eremeka.net) dates this to 1974`. A named site with only a `[[cite:…]]` behind it is not linked; the reader shouldn't have to open a footnote to reach a site the prose itself names.
 - **No internal jargon**: no _entity_, _node_, _namespace_, _taxonomy_, _record_, _vocabulary_, no code identifiers, no model class names. Write in the trade's own words — the firm, the maker, the machine.
 
 ## Guidance for each entity type
@@ -243,7 +243,7 @@ There are multiple registers:
 
 #### A mechanism
 
-(orbits, trap doors, shaker motors, bingo cards) — 1–2 paragraphs, 600–900 chars.
+(orbits, trap doors, shaker motors, bingo cards).
 
 - **Lead** — define the mechanism in one sentence: what it physically is.
 - **Then** — what it does for play → how it differs from the sibling it is most often confused with → the era and makers where it appears, with a named machine or two.
@@ -251,7 +251,7 @@ There are multiple registers:
 
 #### A variant of a mechanism
 
-(2-ball multiball, 6-bank standup targets, left kickback lanes) — 1 paragraph.
+(2-ball multiball, 6-bank standup targets, left kickback lanes).
 
 - **Lead** — define it against its parent.
 - **Then** — only what makes it different: the position, the count, the consequence for play. The parent carries the story.
@@ -259,7 +259,7 @@ There are multiple registers:
 
 #### A manufacturer's branded variant
 
-(InvisiGlass, LumaLift, AURA Lighting, Expression Lighting System) — 1 paragraph.
+(InvisiGlass, LumaLift, AURA Lighting, Expression Lighting System).
 
 #### instructions
 
@@ -283,7 +283,7 @@ Exemplars:
 
 Exemplar:
 
-- none. All 73 described systems came from the seed (`~/dev/pindata/catalog/systems/`), carry no citations, run about 312 characters, and fifteen are built around the "Notable games include" list. A new system description will not resemble its neighbours, and that is correct.
+- none. All 73 described systems came from the seed (`~/dev/pindata/catalog/systems/`), carry no citations, run about 312 characters, and 15 are built around the "Notable games include" list. A new system description will not resemble these precedents.
 
 ### Taxonomy
 

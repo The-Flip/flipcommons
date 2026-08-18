@@ -360,7 +360,7 @@ uv run python manage.py ingest_patches --patches-dir ../../flippatch/patches
 After applying, spot-check that the change resolved the way you intended — confirm the winning claim carries the right ingest source, value, cite and note. `rank = 1` is the winner-pick; an active claim is only a contender:
 
 ```bash
-scripts/analysis/analysis query scripts/analysis/catalog.sql "
+scripts/analysis/analysis query "
 SELECT c.ingest_source_slug, c.value, ci.citation_source_name, ci.locator, ci.quote, cs.note
 FROM model_claims c
 JOIN models m ON m.id = c.model_id
