@@ -1,6 +1,6 @@
 # Editing the foundation
 
-For changing [`catalog.sql`](catalog.sql) or its self-test [`catalog_checks.sql`](catalog_checks.sql). If you're writing an analysis on top of the foundation, you want [README.md](README.md) instead — this file is about the foundation itself.
+For changing [`catalog.sql`](sql/catalog.sql) or its self-test [`catalog_checks.sql`](sql/catalog_checks.sql). If you're writing an analysis on top of the foundation, you want [README.md](README.md) instead — this file is about the foundation itself.
 
 ## What this layer is
 
@@ -8,7 +8,7 @@ For changing [`catalog.sql`](catalog.sql) or its self-test [`catalog_checks.sql`
 
 **Join the live-filtered view, never re-filter the physical table.** `AND x.status IS DISTINCT FROM 'deleted'` on a join is a second copy of the liveness rule, which belongs inside `_staging()` and nowhere else. There are no exceptions left: `catalog.sql` spells that predicate exactly once, in the macro.
 
-**Which view you join is a layer question: the staging view to decode an identity, the entity view to read a measure.** An entity view carries both the entity and measures over the models beneath it (`manufacturers.n_models`, `titles.n_models`, `themes.n`). Identity points sideways, measures point down at `models` — so joining an entity view for a neighbour's slug drags its aggregate along, and that is what used to make `models` joining `titles` circular. The `_stg_*` staging layer exists to break that: a bare read of one table, no joins, no measures, no outgoing edge, so nothing that reads one can be part of a cycle. `staging_view_not_flat` asserts the shape, because a join added to a staging view fails silently — the view still returns the right rows, and the cycle only surfaces later in whatever unrelated view next tries to compose.
+**Which view you join is a layer question: the staging view to decode an identity, the entity view to read a measure.** An entity view carries both the entity and measures over the models beneath it (`manufacturers.n_models`, `titles.n_models`, `themes.n`). Identity points sideways, measures point down at `models` — so joining an entity view for a neighbour's slug drags its aggregate along, and that is what used to make `models` joining `titles` circular. The `stg` schema exists to break that: a bare read of one table, no joins, no measures, no outgoing edge, so nothing that reads one can be part of a cycle. `staging_view_not_flat` asserts the shape, because a join added to a staging view fails silently — the view still returns the right rows, and the cycle only surfaces later in whatever unrelated view next tries to compose.
 
 A staging view is for a table **more than one view reads**. `cabinets` IS `_staging('raw.catalog_cabinet')` and a `stg.cabinet` would be pure indirection; the layer makes a shared read shared, it doesn't wrap every table.
 
@@ -51,13 +51,13 @@ Alias lookups are the exception to demand-driven promotion: expose every concret
 
 ## The provenance layer
 
-`catalog.sql` `.read`s [`provenance.sql`](provenance.sql) at its tail; `catalog_checks.sql` `.read`s [`provenance_checks.sql`](provenance_checks.sql) and folds `_provenance_checks` into `foundation_checks`.
+`catalog.sql` `.read`s [`provenance.sql`](sql/provenance.sql) at its tail; `catalog_checks.sql` `.read`s [`provenance_checks.sql`](sql/provenance_checks.sql) and folds `_provenance_checks` into `foundation_checks`.
 
 - **The agreement checks are the price of the `rank` column.** It reimplements the winner-pick, so the only thing keeping it honest is comparing it against what the resolver materialized — `gameplay_feature_resolution_disagrees`, `theme_resolution_disagrees`, `year_resolution_disagrees`, covering both the membership and scalar register shapes. A fourth register in the ranking needs a fourth agreement check; dropping one drops the justification for the column.
 - **Derive the member/scalar split structurally.** A `|` in the `claim_key` means identity parts, which means a relationship member. The value shape can't be used — `claim_presence.py` documents that a claim-controlled JSON scalar may itself be a dict with an `exists` key. `member_claim_nondict_value` and `scalar_claim_exists_flag` assert both directions.
 - **`value_text` is the column to predicate on; `value` is the raw JSON.** JSON keeps `"500"` apart from `500` and both write paths are in the data, so of the 73 claims asserting `production_quantity = 500`, `value = '500'` finds one and `value = '"500"'` finds 72. `value_text` folds both, then folds `''` to NULL as `_blanks_null` does. NULL on members and list claims: `json_extract_string` would otherwise serialize a member payload back to `{"exists":true,…}`, reading as a scalar on 58,178 rows that have none. It lives in the `_json_scalar_text` macro so `_fx_claim_value` can state it against input we control.
 - **`_provenance_checks` is private** so the runner's sweep doesn't report every provenance failure twice, once on its own and once through `foundation_checks`.
-- **`.read provenance_checks.sql` sits immediately above `foundation_checks`.** `check-mutations` collects declared check names from the first checks view to end-of-file; read it any earlier and `foundation_summary`'s view-name literals land in that range as check names that don't exist.
+- **Declared check names live in `*_checks.sql` files, below each file's first checks view.** `check-mutations` collects them per `sql/*_checks.sql` file, from that file's first `CREATE OR REPLACE VIEW …checks` to end-of-file — so a check declared in a non-checks file is invisible to the coverage sweep, and a view-name literal placed above a file's first checks view stays out of it.
 - **Views bind at `CREATE`**, so `citation_roots` must follow the views it aggregates.
 - **`changesets` is built on `raw.provenance_changeset`, and must stay that way.** Deriving it from `claims` would be shorter and is wrong: 739 changesets wrote no claim at all — they only retracted — and `claims.changeset_id` names only changesets that wrote, so every one of them would vanish. That is the gap the view exists to close, and it closes silently if someone "simplifies" the FROM clause. `changeset_rows_dropped` compares the view against the physical count, and `inert_changeset` asserts the other half (a changeset that neither wrote nor retracted did nothing at all). The same reasoning applies to anything else built on top: aggregate from `changesets`, not from `claims` grouped by `changeset_id`.
 - **An actor is an ingest source XOR a user, and `actors` is where that is stated.** `actor_name`/`actor_slug` coalesce across the two kinds so nothing downstream branches on `actor_kind` to attribute a claim — which is only safe while the XOR holds, hence `actor_backing_unresolved` (exactly one backing row) and `actor_slug_collision` (the two namespaces share `actor_slug`). `_claim_actor` is a projection of `actors` rather than a second decode, so the two cannot drift; keep it that way, and keep the count columns out of it so a `claims` scan doesn't pay for them.
@@ -66,7 +66,7 @@ Alias lookups are the exception to demand-driven promotion: expose every concret
 
 ## The data patch layer
 
-`catalog.sql` `.read`s [`data_patches.sql`](data_patches.sql) after `provenance.sql`; `catalog_checks.sql` `.read`s [`data_patches_checks.sql`](data_patches_checks.sql) beside `provenance_checks.sql` and folds `_data_patch_checks` into `foundation_checks`. Same private-view arrangement, same reasons.
+`catalog.sql` `.read`s [`data_patches.sql`](sql/data_patches.sql) after `provenance.sql`; `catalog_checks.sql` `.read`s [`data_patches_checks.sql`](sql/data_patches_checks.sql) beside `provenance_checks.sql` and folds `_data_patch_checks` into `foundation_checks`. Same private-view arrangement, same reasons.
 
 - **It is a projection of provenance, not a second source.** Every view here reads `claims`, `changesets` or `citation_instances`. It reads nothing from `fc` directly and must stay that way — the patch lens narrowing to a different population than the provenance layer describes is the drift this ordering exists to prevent.
 - **The read order is a three-link chain now.** `data_patches.sql` binds provenance views, which bind `models`. Views bind at `CREATE`, so a reorder fails loudly — but a layer added on top of this one inherits the whole chain, not just the last link.
@@ -98,7 +98,7 @@ Private `_underscore` helpers take no `COMMENT ON`; they aren't reference surfac
 
 They do have a placement rule, because `_` covers three different things and only the first is a layer:
 
-- **Staging layer** — the `_stg_*` block, one per lifecycle table read from more than one view. No dependencies, so it sits ahead of everything.
+- **Staging layer** — the `stg` schema, one view per lifecycle table read from more than one view. No dependencies, so it sits ahead of everything.
 - **Shared helper** — a collapse or a pre-aggregate several views join (`_ce_location`, `_mfr_status`, `_model_target`). Goes at the head of the section whose public views it feeds, not next to whichever one happens to read it first.
 - **Local step** — one consumer, a few lines above it (`_dm_lines` into `_dm_marked` into `domain_vocab`). Stays adjacent; hoisting it would only separate it from the thing that explains it.
 
@@ -112,11 +112,11 @@ Analyses outside this repo rely on the surfaces below — Flippatch's data patch
 
 - **Public view and column names.** `models`, `model_edges`, `target_*` and the rest. Treat a rename the way you'd treat one in an API: it needs the consumers updated in the same breath, not discovered later by a campaign that returns zero rows.
 - **The `patch_*` views specifically.** They were promoted out of a campaign-local layer in flippatch, which deleted its copy in the same breath. The campaign that drove the promotion (0189, print citations) has since finished, so as of 2026-08-13 there is no known live consumer — but the general hazard stands: a column dropped here surfaces as a campaign emitting nothing, in the other repo, with nothing in this one failing. Re-check who is reading them before treating that as freedom; "no consumer" is a claim with a date on it.
-- **ATTACH aliases.** `catalog.sql` owns **`fc`** (the read-only catalog) and `snapshot` owns **`snap`** (its output file). Those two are reserved; everything else in the `ATTACH` namespace belongs to the layers above, which claim their own — Flippatch's evidence bridge takes `ev` for pinexplore's web-scrape cache. Don't add a third foundation attachment without checking it against what the consumers have already claimed, and don't assume an alias is free because nothing in this repo uses it.
+- **ATTACH aliases.** The runner owns **`fc`** (the baked snapshot, attached read-only into every analysis session) and `snapshot` owns **`snap`** (its output file). Those two are reserved; everything else in the `ATTACH` namespace belongs to the layers above, which claim their own — Flippatch's evidence bridge takes `ev` for pinexplore's web-scrape cache. The sql/ files themselves may never ATTACH or name a catalog: their names stay catalog-relative so the same files build the snapshot, a scratch copy or an in-memory session. Don't add a foundation attachment without checking it against what the consumers have already claimed, and don't assume an alias is free because nothing in this repo uses it.
 
 The runner discovers public `*_checks` and `*_context` views by name, so those suffixes are load-bearing across repos. A foundation view that happened to end in `_checks` would silently join every consumer's gate.
 
-`snapshot` copies tables into its attached output file, so the `.duckdb` holds plain tables — not the session's views, which reference the `fc` attachment and would dangle once it's gone. For the same reason the analytical views stay non-`TEMP`: the DuckDB UI runs each query cell on its own connection, and `TEMP` views aren't visible across connections. Don't "tidy" them to `TEMP`.
+`snapshot` copies tables into its attached output file, so the `.duckdb` holds plain tables — not the session's views, which reference catalogs the output file will not have once detached. For the same reason the analytical views stay non-`TEMP`: the DuckDB UI runs each query cell on its own connection, and `TEMP` views aren't visible across connections. Don't "tidy" them to `TEMP`.
 
 ## Domain semantics belong to DomainModel.md, not here
 
@@ -140,7 +140,7 @@ Coverage of the liveness filter is generated rather than trusted: the dim list `
 
 ## Why the catalog is imported rather than attached
 
-`fc` is `backend/db.analytics.duckdb`, an import of `backend/db.sqlite3` into DuckDB's own storage, refreshed by the runner whenever the source changes. It would be simpler to `ATTACH` the SQLite file directly, and that is what this layer did until it produced two silent wrong answers.
+The `raw` schema of `backend/db.analytics.duckdb` is an import of `backend/db.sqlite3` into DuckDB's own storage, rebuilt by the runner whenever the source — or any sql/ file — changes. It would be simpler to `ATTACH` the SQLite file directly, and that is what this layer did until it produced two silent wrong answers.
 
 DuckDB's sqlite scanner gets the following wrong, and the liveness predicate is what makes the shape common enough to matter.
 
@@ -170,13 +170,15 @@ Per column: rows, NULLs, empty strings. Two things it catches, both of which a r
 
 One blind spot to know: `n_blank` cannot see a blank inside a list element — `['a','']` casts to `[a, ]`, never `''`. Zero such values today, so it is latent, and list-typed facets are exactly where a reader would assume coverage.
 
-## Editing the foundation? Run its self-test
+## Editing the foundation? The rebuild runs its self-test
+
+Every edit to a sql/ file triggers a rebuild on the next runner invocation, and the rebuild evaluates every checks view and stores the verdicts — so the self-test runs whether or not you ask for it, and a bare `query` warns on stderr when something is failing. The readout is:
 
 ```bash
-scripts/analysis/analysis run scripts/analysis/catalog_checks.sql foundation
+scripts/analysis/analysis run foundation
 ```
 
-Prints a row-count-per-view health readout, then fails if any invariant broke — two classes: data-independent structural checks (union integrity, grain, the live filter, the `model_edges` license/source contract, subject + target resolution) and coverage meta-checks that fail when a new entity, alias table or view is added without the exposure the layer promises. It has the same shape as a reusable analysis file, so no check logic leaks into `catalog.sql`.
+Prints a row-count-per-view health readout, then fails if any invariant broke — two classes: data-independent structural checks (union integrity, grain, the live filter, the `model_edges` license/source contract, subject + target resolution) and coverage meta-checks that fail when a new entity, alias table or view is added without the exposure the layer promises. No check logic leaks into `catalog.sql`; the checks live in the `*_checks.sql` files beside it.
 
 ## Editing the checks? Mutation-test them
 

@@ -21,7 +21,7 @@ flippatch/
       README.md                       # the narrative: signal, totals, dead-end searches
 ```
 
-**`<name>.sql` is where the thinking lives.** It is a DuckDB analysis file over the shared catalog foundation — see [scripts/analysis/README.md](../scripts/analysis/README.md) for the four-section shape and the runner. Candidate detection, the false-positive gate, the human-judgment lookups and the verbatim quote extraction all belong here, in SQL, next to the data they reason about. It ends in the `<prefix>_summary` / `<prefix>_checks` pair the runner gates on, so the campaign's invariants are executable rather than described.
+**`<name>.sql` is where the thinking lives.** It is a DuckDB analysis file over the shared catalog foundation — see [scripts/analysis/README.md](../scripts/analysis/README.md) for the analysis-file shape and the runner. Candidate detection, the false-positive gate, the human-judgment lookups and the verbatim quote extraction all belong here, in SQL, next to the data they reason about. It ends in the `<prefix>_summary` / `<prefix>_checks` pair the runner gates on, so the campaign's invariants are executable rather than described.
 
 Iterate on it with the runner, from the flippatch checkout:
 

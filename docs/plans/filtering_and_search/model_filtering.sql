@@ -10,7 +10,6 @@
 --   * otherwise each matching Model cards, EXCEPT a Variant whose parent matches
 -- Title-only dimensions (franchise, series) are absent here on purpose: they bind
 -- their Models rather than partitioning them, so they never split a Title.
-.read scripts/analysis/catalog.sql
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ANALYSIS

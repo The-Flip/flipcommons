@@ -25,6 +25,10 @@ scripts/analysis/analysis describe edge         # Otherwise, list all partial ma
 scripts/analysis/analysis columns models         # every column of one view
 scripts/analysis/analysis columns --all          # sweep, showing only columns worth a look
 
+# Lint for data defects
+scripts/analysis/audit           # per-rule lint finding counts
+scripts/analysis/audit 0240      # lint findings on records patch 0240 and later touched
+
 # Get the map — what areas exist, when you don't have a term yet
 grep '═══' scripts/analysis/sql/catalog.sql scripts/analysis/sql/provenance.sql scripts/analysis/sql/data_patches.sql
 
@@ -124,7 +128,7 @@ Two mechanisms cross the foundation's edge, both documented where they are defin
 
 ## Catalog audit
 
-[`sql/audit.sql`](sql/audit.sql) is the audit layer, baked into the foundation like everything else — it lints the live catalog for data defects: prose linking itself, a link at the wrong grain, a link to a deleted record, a parenthetical year the record contradicts, a name mentioned but never linked, prose with no links at all, two records answering to the same name, a shared CDN host registered with no tenant path. `audit_findings` is materialized as a table at build, so reading it costs nothing.
+[`sql/audit.sql`](sql/audit.sql) lints the live catalog for data defects such as two records answering to the same name, prose linking itself etc.
 
 ```bash
 scripts/analysis/audit 0240   # the report: findings on records patch 0240 and later touched
@@ -143,7 +147,7 @@ Findings are catalog content and are deliberately **not** what `audit_checks` ga
 
 ## Analysis files
 
-An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`catalog_checks.sql`](catalog_checks.sql) is a local worked example.
+An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`catalog_checks.sql`](sql/catalog_checks.sql) is a local worked example.
 
 The runner loads an analysis file into an in-memory catalog on top of the baked foundation: the file's own `CREATE`s land in memory, unqualified reads (`FROM models`) fall through to the foundation, and nothing is `.read` from the analysis file itself — a `.read scripts/analysis/sql/catalog.sql` line is at best a slow no-op. Raw Django tables, which an analysis should rarely reach for, are spelled `fc.raw.catalog_person` from an analysis file.
 
