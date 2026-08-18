@@ -84,6 +84,16 @@ handle @version_preflight {
 	respond 204
 }
 
+# Never cache the liveness probe. Uptime monitoring has to observe the
+# origin's current state, and a response reaching Bunny without a
+# Cache-Control header inherits the pull zone's 30-day default, which
+# would let an edge PoP answer probes from cache while the app is down.
+# SvelteKit leaves +server.ts endpoints unstamped (see
+# frontend/src/lib/cache-control.server.ts), so the header must come
+# from here.
+@health path /__health
+header @health Cache-Control "no-store"
+
 # XFF rewrite must live inside reverse_proxy: Caddy's reverse_proxy has
 # special handling for X-Forwarded-* headers and overrides any
 # site-level request_header mutations. header_up is proxy-aware and
