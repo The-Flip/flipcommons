@@ -122,7 +122,7 @@ Two mechanisms cross the foundation's edge, both documented where they are defin
 
 ## Catalog audit
 
-[`audit.sql`](audit.sql) is an analysis file that lints the live catalog for data defects — prose linking itself, a link at the wrong grain, a link to a deleted record, a parenthetical year the record contradicts, a name mentioned but never linked, prose with no links at all, two records answering to the same name.
+[`audit.sql`](audit.sql) is an analysis file that lints the live catalog for data defects — prose linking itself, a link at the wrong grain, a link to a deleted record, a parenthetical year the record contradicts, a name mentioned but never linked, prose with no links at all, two records answering to the same name, a shared CDN host registered with no tenant path.
 
 ```bash
 scripts/analysis/audit 0240   # the report: findings on records patch 0240 and later touched

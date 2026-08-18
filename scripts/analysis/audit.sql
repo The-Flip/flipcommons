@@ -519,6 +519,30 @@ CREATE OR REPLACE VIEW audit_duplicate_name AS
 COMMENT ON VIEW audit_duplicate_name IS
   'WARNING — one row per live record whose name or alias also identifies another record of the same type, usually a record created twice. Model, Title and Location are exempt: repeated names are normal for all three.';
 
+-- ─── bare-shared-cdn-host ──────────────────────────────────────────────────
+-- A shared multi-tenant CDN host carries only path-scoped registration rows — on such a
+-- host the path names the tenant, so a bare row would attribute every tenant's files to
+-- one work. The backend's clean() refuses to write one and the recognition macros refuse
+-- to match one (citation_domain_eligible), so a row here slipped in through a validation
+-- bypass and sits inert until it is path-scoped or deleted.
+--
+-- The subject is the citation SOURCE that owns the registration — not a catalog entity,
+-- so this finding never joins entity_subjects and never appears in a patch-scoped report;
+-- the unscoped audit is what surfaces it.
+CREATE OR REPLACE VIEW audit_shared_cdn_bare_host AS
+  SELECT 'error'                   AS severity,
+         'citation-source'         AS entity_type,
+         d.root_citation_source_id AS entity_id,
+         -- The root's stable key, not its slug: a slug is optional on a citation source
+         -- (Facebook's is NULL) while root_identifier_key is the key this layer already
+         -- tells consumers to filter on.
+         d.root_identifier_key     AS public_id,
+         format('registers shared CDN host {} with no tenant path prefix — path-scope or delete the row', d.host) AS message
+  FROM citation_root_domains d
+  WHERE d.path_prefix = '' AND _shared_cdn_host(d.host);
+COMMENT ON VIEW audit_shared_cdn_bare_host IS
+  'ERROR — one row per bare registration of a shared multi-tenant CDN host, on which only a path-scoped row attributes honestly. The row is inert (recognition refuses to match it) until path-scoped or deleted.';
+
 -- ─── findings ──────────────────────────────────────────────────────────────
 -- Columns listed rather than `*`: every column but entity_id is VARCHAR, so a rule that
 -- reordered its own SELECT could swap message into severity without a type error.
@@ -529,7 +553,8 @@ CREATE OR REPLACE VIEW audit_findings AS
   UNION ALL SELECT 'unlinked-mention',          severity, entity_type, entity_id, public_id, message FROM audit_unlinked_mention
   UNION ALL SELECT 'parenthetical-fact',        severity, entity_type, entity_id, public_id, message FROM audit_parenthetical_fact
   UNION ALL SELECT 'duplicate-name',            severity, entity_type, entity_id, public_id, message FROM audit_duplicate_name
-  UNION ALL SELECT 'broken-link',               severity, entity_type, entity_id, public_id, message FROM audit_broken_link;
+  UNION ALL SELECT 'broken-link',               severity, entity_type, entity_id, public_id, message FROM audit_broken_link
+  UNION ALL SELECT 'shared-cdn-bare-host',      severity, entity_type, entity_id, public_id, message FROM audit_shared_cdn_bare_host;
 COMMENT ON VIEW audit_findings IS
   'One row per catalog defect across every rule — rule, severity, the record it is about and a human-readable message. Catalog content, not a health gate.';
 
@@ -586,16 +611,29 @@ CREATE OR REPLACE VIEW audit_checks AS
   FROM f WHERE severity NOT IN ('error', 'warning')
 
   UNION ALL
+  -- A finding's subject vocabulary is closed: catalog entity types, plus the one
+  -- non-entity subject a rule reports on (a citation source, for shared-cdn-bare-host).
+  -- Without this, a typo'd entity_type would skip the liveness test below unnoticed —
+  -- membership in the registry is what routes a finding into it.
+  SELECT 'unknown_entity_type', rule || ' -> ' || entity_type
+  FROM f
+  WHERE entity_type <> 'citation-source'
+    AND entity_type NOT IN (SELECT entity_type FROM entity_registry)
+
+  UNION ALL
   -- Not redundant with the foundation: rules reading entity_subjects and entity_aliases
   -- apply liveness themselves, since those views are not live-filtered. This guards a
-  -- filter the rules own rather than inherit.
+  -- filter the rules own rather than inherit. Registry types only: entity_subjects
+  -- cannot resolve a citation-source subject, whose rule inherits liveness from
+  -- citation_sources instead.
   SELECT 'finding_subject_not_live',
          rule || ' -> ' || entity_type || ':' || entity_id::VARCHAR
   FROM f
-  WHERE NOT EXISTS (
-    SELECT 1 FROM entity_subjects s
-    WHERE s.subject_type = f.entity_type AND s.subject_id = f.entity_id
-      AND is_live(s.subject_status));
+  WHERE entity_type IN (SELECT entity_type FROM entity_registry)
+    AND NOT EXISTS (
+      SELECT 1 FROM entity_subjects s
+      WHERE s.subject_type = f.entity_type AND s.subject_id = f.entity_id
+        AND is_live(s.subject_status));
 COMMENT ON VIEW audit_checks IS
   'The audit layer''s own invariants — a row means the AUDIT is broken, never that the catalog is. Empty is healthy. Catalog defects live in audit_findings and are deliberately not gated.';
 
@@ -610,6 +648,7 @@ CREATE OR REPLACE VIEW audit_summary AS
   UNION ALL SELECT 'parenthetical-fact',       count(*) FROM audit_parenthetical_fact
   UNION ALL SELECT 'duplicate-name',           count(*) FROM audit_duplicate_name
   UNION ALL SELECT 'broken-link',              count(*) FROM audit_broken_link
+  UNION ALL SELECT 'shared-cdn-bare-host',     count(*) FROM audit_shared_cdn_bare_host
   UNION ALL SELECT 'TOTAL errors', count(*) FILTER (severity = 'error') FROM audit_findings
   UNION ALL SELECT 'TOTAL warnings', count(*) FILTER (severity = 'warning') FROM audit_findings
   UNION ALL SELECT 'records affected',
