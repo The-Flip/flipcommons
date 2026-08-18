@@ -15,8 +15,9 @@
 -- `audit_checks`. Only the second gates. `analysis run` and `--check` fail on a row from
 -- any `*_checks` view, so a standing backlog of catalog defects put there would exit
 -- nonzero forever and the gate would stop meaning anything.
-
-.read scripts/analysis/sql/catalog.sql
+--
+-- Loads late (see analytics.sql): the rules read the whole foundation — catalog,
+-- prose and patch layers alike.
 
 -- ═══ §190 AUDIT — lint rules over the live catalog ═════════════════════════
 
@@ -311,13 +312,8 @@ COMMENT ON VIEW audit_unlinked_mention IS
 -- ─── parenthetical-fact ────────────────────────────────────────────────────
 -- The house pattern _[[model:x]]_ (1997, [[manufacturer:williams]]) restates two claims
 -- the catalog already holds, so a disagreement means the prose or the record is wrong.
---
--- A macro rather than the CTE this looks like it wants: the named-group form of
--- regexp_extract requires a CONSTANT pattern, and a column reference is not one.
-CREATE OR REPLACE MACRO paren_pattern() AS
-  '\[\[(model|title):id:(\d+)\]\][^(\[]{0,8}\((\d{4})(?:,\s*\[\[manufacturer:id:(\d+)\]\])?\)';
-COMMENT ON MACRO paren_pattern IS
-  'The house parenthetical, _[[link]]_ (year, [[manufacturer]]), as a regex with four capture groups: link type, link id, year, manufacturer id.';
+-- The parse is prose_parentheticals (prose.sql); this rule owns only the judgment
+-- over it.
 
 -- How well ONE model answers the stated facts: a point for the year, a point for the
 -- maker, and no point for a maker the parenthetical never stated. Both scored on the same
@@ -332,39 +328,8 @@ CREATE OR REPLACE MACRO paren_fit(year, maker, stated_year, stated_maker) AS
 COMMENT ON MACRO paren_fit IS
   'How many of a parenthetical''s stated facts one model carries — 0, 1 or 2. The shared scorer for "does a same-named record fit this parenthetical better than the linked one".';
 
--- Every house parenthetical in the corpus, parsed once. Two rules read it, and a second
--- copy of this parse would drift from the first without either one failing.
---
--- Two passes because regexp_extract_all returns whole matches and no groups: find, then
--- read the groups off each match. Both take the pattern from the macro, since two copies
--- that drift would find a different set of parentheticals than they parse, silently.
---
--- NULLIF is load-bearing: the named-group form of regexp_extract returns '' for a group
--- that did not participate where the group-index form returns NULL. Normalizing once here
--- lets every consumer test IS NULL and mean it.
-CREATE OR REPLACE VIEW _paren_links AS
-  WITH hits AS (
-    SELECT entity_type, entity_id, public_id, field,
-           UNNEST(regexp_extract_all(text, paren_pattern())) AS hit
-    FROM entity_prose WHERE text IS NOT NULL
-  )
-  SELECT entity_type, entity_id, public_id, field,
-         g.link_type,
-         -- TRY_CAST, not ::BIGINT: the id groups are `\d+` with no length bound, so one
-         -- malformed link would otherwise throw and take the whole audit down.
-         TRY_CAST(g.link_id AS BIGINT)                  AS link_id,
-         g.stated_year::BIGINT                          AS stated_year,
-         TRY_CAST(NULLIF(g.stated_maker, '') AS BIGINT) AS stated_maker
-  FROM (
-    SELECT entity_type, entity_id, public_id, field,
-           regexp_extract(hit, paren_pattern(),
-             ['link_type', 'link_id', 'stated_year', 'stated_maker']) AS g
-    FROM hits);
-COMMENT ON VIEW _paren_links IS
-  'One row per house parenthetical _[[link]]_ (year, [[manufacturer]]) in any prose field — the link it names and the facts it states. Parsed once for every rule that reads the pattern.';
-
 CREATE OR REPLACE VIEW audit_parenthetical_fact AS
-  WITH parsed AS (FROM _paren_links),
+  WITH parsed AS (FROM prose_parentheticals),
   -- Both link kinds resolved to one shape: the name, and the years and makers the catalog
   -- allows. Empty lists rather than [NULL], so `len(...) = 0` reads as "the catalog says
   -- nothing here, so nothing is contradicted".

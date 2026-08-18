@@ -143,7 +143,7 @@ Findings are catalog content and are deliberately **not** what `audit_checks` ga
 
 ## Analysis files
 
-An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`catalog_checks.sql`](sql/catalog_checks.sql) is a local worked example.
+An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`foundation_checks.sql`](sql/foundation_checks.sql) is a local worked example of the summary/checks contract.
 
 The runner loads an analysis file into an in-memory catalog on top of the foundation: the file's own `CREATE`s land in memory, unqualified reads (`FROM models`) fall through to the foundation, and nothing is `.read` from the analysis file itself — a `.read scripts/analysis/sql/catalog.sql` line is at best a slow no-op. Raw Django tables, which an analysis should rarely reach for, are spelled `fc.raw.catalog_person` from an analysis file.
 

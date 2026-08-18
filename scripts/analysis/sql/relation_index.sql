@@ -11,8 +11,7 @@
 -- listing ordered by oid is silently ordered alphabetically.
 --
 -- Numbers run in tens so a new section costs one line rather than a renumber. A header
--- with no §N still groups, after every numbered one — that is what a section announcing
--- a `.read` does, owning nothing and never appearing.
+-- with no §N still groups, after every numbered one.
 
 CREATE OR REPLACE TABLE raw._relation_index AS
 WITH
@@ -45,8 +44,9 @@ tagged AS (
            1), '') AS rel
   FROM lines
 ),
--- A header owns every definition below it in the SAME file. `.read` is not followed, so
--- catalog.sql being re-read from audit.sql cannot re-attribute the catalog.
+-- A header owns every definition below it in the SAME file — attribution is per file,
+-- never across the manifest. Two files may share a §N and label, which lists them as
+-- one section.
 labelled AS (
   SELECT rel AS relation_name, file, ln,
          last(nullif(sect['label'], '') IGNORE NULLS) OVER w AS grp_label,

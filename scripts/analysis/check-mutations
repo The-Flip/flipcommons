@@ -12,7 +12,7 @@
 # Exits nonzero if any mutation SURVIVES (the defect went unnoticed) or fires the wrong
 # check. A check already firing at baseline (doc drift, an expired skip) BLOCKS its own
 # mutations without failing the run — see the baseline section below. Run it after
-# touching catalog_checks.sql; the everyday gate stays `analysis run`.
+# touching a *_checks.sql file; the everyday gate stays `analysis run`.
 #
 # Mechanics: the analytics schema is baked into backend/db.analytics.duckdb, and a view
 # redefined in an in-memory session cannot intercept what a baked view reads — a baked
