@@ -116,6 +116,12 @@ ensure_snapshot() {
   # Build beside the target and rename, so a concurrent reader never sees a half-built
   # snapshot and a failed build leaves the previous one intact.
   tmp="$snapshot.tmp.$$"
+  # The signal trap is what makes the EXIT trap run on Ctrl-C: in sh, EXIT fires for a
+  # `set -e` abort but not for an uncaught HUP/INT/TERM, and this build is long enough
+  # that interrupting it is the common case. Both are disarmed after the rename below.
+  cleanup_snapshot() { rm -f "$tmp" "$tmp.wal"; }
+  trap cleanup_snapshot EXIT
+  trap 'exit 1' HUP INT TERM
   rm -f "$tmp" "$tmp.wal"
 
   # ── raw import ──
@@ -165,6 +171,7 @@ ensure_snapshot() {
 
   mv "$tmp" "$snapshot"
   rm -f "$tmp.wal"
+  trap - EXIT HUP INT TERM
   echo "done" >&2
 }
 
@@ -565,10 +572,10 @@ case "$cmd" in
     fi
     out="${analysis_file%.sql}.browse.duckdb"
     tmp="${out}.tmp.$$"
-    cleanup_browse() { rm -f "$tmp"; }
+    cleanup_browse() { rm -f "$tmp" "$tmp.wal"; }
     trap cleanup_browse EXIT
     trap 'exit 1' HUP INT TERM
-    rm -f "$tmp"
+    rm -f "$tmp" "$tmp.wal"
 
     # Every public relation the session can see — the analysis's own and the
     # foundation's — copied as real tables into one static, disposable database that
