@@ -66,7 +66,7 @@ function toModelDef(s: ModelEditSectionDef): CombinedSectionDef {
 /**
  * Single-model ordering (edits both tiers from one menu):
  *   1. title:name        — identity edits land on the Title row
- *   2. model:basics      — manufacturer / year / month
+ *   2. model:basics      — manufacturer / production + project dates
  *   3. model:overview
  *   4. title:franchise
  *   5. model:technology, features, people, related-models, media

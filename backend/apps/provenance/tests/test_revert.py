@@ -24,7 +24,9 @@ def source(db):
 
 @pytest.fixture
 def pm(db, bootstrap_source):
-    pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
+    pm = make_machine_model(
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
+    )
     make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
@@ -69,10 +71,10 @@ def _revert(client, claim_id, note):
 class TestRevertScalar:
     def test_revert_deactivates_claim_and_re_resolves(self, client, user, pm, source):
         """Reverting a user's scalar claim deactivates it; source value surfaces."""
-        make_claim(pm, "year", 1998, ingest_source=source)
-        _make_user_edit(client, user, pm, {"year": 2002})
+        make_claim(pm, "production_year", 1998, ingest_source=source)
+        _make_user_edit(client, user, pm, {"production_year": 2002})
 
-        claim = _get_active_claim(pm, "year", user)
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         resp = _revert(client, claim.pk, "Wrong year")
 
@@ -86,15 +88,15 @@ class TestRevertScalar:
 
     def test_revert_only_user_claim_falls_to_source_or_default(self, client, user, pm):
         """If no source claim exists, field falls to default/null."""
-        _make_user_edit(client, user, pm, {"year": 2005})
+        _make_user_edit(client, user, pm, {"production_year": 2005})
 
-        claim = _get_active_claim(pm, "year", user)
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         resp = _revert(client, claim.pk, "Removing year")
 
         assert resp.status_code == 204
         pm.refresh_from_db()
-        # year default is None on MachineModel
+        # production_year default is None on MachineModel
         assert pm.year is None
 
 
@@ -102,10 +104,10 @@ class TestRevertScalar:
 class TestRevertPredecessor:
     def test_revert_reactivates_predecessor_claim(self, client, user, pm):
         """Reverting a user's latest edit re-activates their previous edit."""
-        _make_user_edit(client, user, pm, {"year": 2001})
-        _make_user_edit(client, user, pm, {"year": 2005})
+        _make_user_edit(client, user, pm, {"production_year": 2001})
+        _make_user_edit(client, user, pm, {"production_year": 2005})
 
-        claim = _get_active_claim(pm, "year", user)
+        claim = _get_active_claim(pm, "production_year", user)
         assert claim.value == 2005
 
         client.force_login(user)
@@ -116,16 +118,16 @@ class TestRevertPredecessor:
         assert pm.year == 2001
 
         # The predecessor is now active and revertable.
-        predecessor = _get_active_claim(pm, "year", user)
+        predecessor = _get_active_claim(pm, "production_year", user)
         assert predecessor.value == 2001
 
     def test_revert_does_not_reactivate_retracted_predecessor(self, client, user, pm):
         """A predecessor that was explicitly retracted should NOT be re-activated."""
-        _make_user_edit(client, user, pm, {"year": 2001})
-        first_claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2001})
+        first_claim = _get_active_claim(pm, "production_year", user)
 
-        _make_user_edit(client, user, pm, {"year": 2005})
-        second_claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        second_claim = _get_active_claim(pm, "production_year", user)
 
         # Manually retract the first claim (simulating an earlier revert).
         cs = user_changeset(user, action=ChangeSetAction.REVERT, note="earlier revert")
@@ -142,26 +144,26 @@ class TestRevertPredecessor:
 
     def test_revert_chain_walks_back_through_edits(self, client, user, pm):
         """Reverting twice walks back through the edit chain."""
-        _make_user_edit(client, user, pm, {"year": 2001})
-        _make_user_edit(client, user, pm, {"year": 2003})
-        _make_user_edit(client, user, pm, {"year": 2005})
+        _make_user_edit(client, user, pm, {"production_year": 2001})
+        _make_user_edit(client, user, pm, {"production_year": 2003})
+        _make_user_edit(client, user, pm, {"production_year": 2005})
 
         # Revert 2005 → surfaces 2003
-        claim = _get_active_claim(pm, "year", user)
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         _revert(client, claim.pk, "Undo 2005")
         pm.refresh_from_db()
         assert pm.year == 2003
 
         # Revert 2003 → surfaces 2001
-        claim = _get_active_claim(pm, "year", user)
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         _revert(client, claim.pk, "Undo 2003")
         pm.refresh_from_db()
         assert pm.year == 2001
 
         # Revert 2001 → no predecessor, drops to default
-        claim = _get_active_claim(pm, "year", user)
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         _revert(client, claim.pk, "Undo 2001")
         pm.refresh_from_db()
@@ -178,18 +180,18 @@ class TestRevertNonWinning:
         hi_source = make_ingest_source(
             name="HiPri", slug="hipri", source_type="database", priority=20000
         )
-        make_claim(pm, "year", 1998, ingest_source=hi_source)
+        make_claim(pm, "production_year", 1998, ingest_source=hi_source)
         from apps.provenance.resolution import resolve_after_mutation
 
-        resolve_after_mutation(pm, field_names=["year"])
+        resolve_after_mutation(pm, field_names=["production_year"])
         pm.refresh_from_db()
         assert pm.year == 1998  # source wins
 
-        _make_user_edit(client, user, pm, {"year": 1997})
+        _make_user_edit(client, user, pm, {"production_year": 1997})
         pm.refresh_from_db()
         assert pm.year == 1998  # source still wins (higher priority)
 
-        claim = _get_active_claim(pm, "year", user)
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         resp = _revert(client, claim.pk, "Not needed")
 
@@ -205,16 +207,16 @@ class TestRevertNonWinning:
 class TestRevertAuth:
     def test_self_revert_with_zero_edits_succeeds(self, client, user, pm):
         """A user can always revert their own claims, even with 0 other edits."""
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         resp = _revert(client, claim.pk, "My mistake")
         assert resp.status_code == 204
 
     def test_revert_others_below_threshold_returns_403(self, client, user, pm, db):
         """Users with <5 edits cannot revert another user's claims."""
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
 
         other = make_user()
         client.force_login(other)
@@ -229,8 +231,8 @@ class TestRevertAuth:
 
     def test_revert_others_above_threshold_succeeds(self, client, user, pm, db):
         """Users with 5+ edits can revert another user's claims."""
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
 
         other = make_user()
         # Create 5 changesets for other user
@@ -252,8 +254,8 @@ class TestRevertAuth:
         must enforce it — `django_auth` covers auth/active but not
         verification, and `execute_revert` only runs the experience-
         required check (and only for others-revert)."""
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
 
         unverified = make_user(email_verified=False)
         # We can't create the claim *as* the unverified user via the
@@ -278,28 +280,28 @@ class TestRevertAuth:
 @pytest.mark.django_db
 class TestRevertValidation:
     def test_empty_note_returns_422(self, client, user, pm):
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         resp = _revert(client, claim.pk, "")
         assert resp.status_code == 422
         assert "note" in resp.json()["detail"].lower()
 
     def test_whitespace_only_note_returns_422(self, client, user, pm):
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         resp = _revert(client, claim.pk, "   ")
         assert resp.status_code == 422
 
     def test_source_claim_returns_422(self, client, user, pm, source):
         """Source-attributed claims cannot be reverted."""
-        make_claim(pm, "year", 1998, ingest_source=source)
+        make_claim(pm, "production_year", 1998, ingest_source=source)
         ct = ContentType.objects.get_for_model(pm)
         src_claim = Claim.objects.get(
             content_type=ct,
             object_id=pm.pk,
-            field_name="year",
+            field_name="production_year",
             actor=source.actor,
             is_active=True,
         )
@@ -310,8 +312,8 @@ class TestRevertValidation:
 
     def test_inactive_claim_returns_422(self, client, user, pm):
         """Already-inactive claims cannot be reverted."""
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
 
         # Deactivate manually
         claim.is_active = False
@@ -332,8 +334,8 @@ class TestRevertValidation:
         """A claim whose target entity row has been hard-deleted returns 404,
         not a 500. Entities are normally soft-deleted, but defend against
         the case where admin/cascade has removed the row."""
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
 
         # Hard-delete the entity (bypassing soft-delete) so the claim's
         # object_id points at nothing.
@@ -353,13 +355,13 @@ class TestRevertValidation:
 class TestRevertMultiUser:
     def test_revert_surfaces_next_winner(self, client, user, pm, source, db):
         """A:1998, C:2001, A:2002 → revert A:2002 → surfaces C:2001."""
-        make_claim(pm, "year", 1998, ingest_source=source)
+        make_claim(pm, "production_year", 1998, ingest_source=source)
 
         user_c = make_user()
-        _make_user_edit(client, user_c, pm, {"year": 2001})
-        _make_user_edit(client, user, pm, {"year": 2002})
+        _make_user_edit(client, user_c, pm, {"production_year": 2001})
+        _make_user_edit(client, user, pm, {"production_year": 2002})
 
-        claim = _get_active_claim(pm, "year", user)
+        claim = _get_active_claim(pm, "production_year", user)
         client.force_login(user)
         resp = _revert(client, claim.pk, "Wrong")
 
@@ -377,8 +379,8 @@ class TestRevertMultiUser:
 class TestRevertInHistory:
     def test_revert_appears_as_changeset_with_retraction(self, client, user, pm):
         """After reverting, edit history includes the revert changeset with retractions."""
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
 
         client.force_login(user)
         _revert(client, claim.pk, "Reverting year")
@@ -393,7 +395,7 @@ class TestRevertInHistory:
         revert_cs = data[0]
         assert revert_cs["note"] == "Reverting year"
         assert len(revert_cs["retractions"]) == 1
-        assert revert_cs["retractions"][0]["field_name"] == "year"
+        assert revert_cs["retractions"][0]["field_name"] == "production_year"
         assert revert_cs["retractions"][0]["old_value"]["raw"] == 2005
 
 
@@ -404,7 +406,7 @@ class TestRevertInHistory:
 class TestEditHistoryClaimMetadata:
     def test_claim_metadata_populated(self, client, user, pm):
         """Edit history includes claim_id, claim_user_id, is_active, is_winning."""
-        _make_user_edit(client, user, pm, {"year": 2005})
+        _make_user_edit(client, user, pm, {"production_year": 2005})
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         data = resp.json()
@@ -417,8 +419,8 @@ class TestEditHistoryClaimMetadata:
 
     def test_reverted_claim_shows_inactive(self, client, user, pm):
         """After revert, the original changeset's claim shows is_active=False."""
-        _make_user_edit(client, user, pm, {"year": 2005})
-        claim = _get_active_claim(pm, "year", user)
+        _make_user_edit(client, user, pm, {"production_year": 2005})
+        claim = _get_active_claim(pm, "production_year", user)
 
         client.force_login(user)
         _revert(client, claim.pk, "Undo")
@@ -426,7 +428,7 @@ class TestEditHistoryClaimMetadata:
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         data = resp.json()
 
-        # Find the original edit changeset (the one with a year change, not the revert)
+        # Find the original edit changeset (the one with a production_year change, not the revert)
         original = next(
             cs
             for cs in data

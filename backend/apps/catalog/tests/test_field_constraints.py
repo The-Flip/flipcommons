@@ -19,8 +19,19 @@ class TestGetFieldConstraints:
 
     def test_machine_model_constraints(self):
         result = get_field_constraints(MachineModel)
-        assert result["year"] == FieldConstraintSchema(min=1800, max=2100, step=1)
-        assert result["month"] == FieldConstraintSchema(min=1, max=12, step=1)
+        assert result["production_year"] == FieldConstraintSchema(
+            min=1800, max=2100, step=1
+        )
+        assert result["production_month"] == FieldConstraintSchema(
+            min=1, max=12, step=1
+        )
+        assert result["project_year"] == FieldConstraintSchema(
+            min=1800, max=2100, step=1
+        )
+        assert result["project_month"] == FieldConstraintSchema(min=1, max=12, step=1)
+        # Derived year/month are generated columns, not claim fields.
+        assert "year" not in result
+        assert "month" not in result
         assert result["flipper_count"] == FieldConstraintSchema(min=0, max=20, step=1)
         assert result["player_count"] == FieldConstraintSchema(min=1, max=20, step=1)
         assert result["ipdb_rating"] == FieldConstraintSchema(min=0, max=10, step=0.01)
@@ -48,7 +59,7 @@ class TestFieldConstraintsEndpoint:
         resp = client.get("/api/field-constraints/model")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["year"] == {"min": 1800, "max": 2100, "step": 1}
+        assert data["production_year"] == {"min": 1800, "max": 2100, "step": 1}
         assert data["flipper_count"] == {"min": 0, "max": 20, "step": 1}
         # Unbounded max must be omitted, not sent as null — the frontend
         # spreads this object directly into a <NumberField max={...} />.

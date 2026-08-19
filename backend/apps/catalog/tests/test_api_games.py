@@ -50,7 +50,7 @@ class TestGamesList:
             name="Medieval Madness",
             slug="medieval-madness",
             corporate_entity=williams_entity,
-            year=1997,
+            production_year=1997,
             title=title,
             extra_data={"opdb.images": SAMPLE_IMAGES},
         )
@@ -58,7 +58,7 @@ class TestGamesList:
             name="Medieval Madness (Remake)",
             slug="medieval-madness-remake",
             corporate_entity=williams_entity,
-            year=2015,
+            production_year=2015,
             title=title,
         )
         return title
@@ -88,14 +88,14 @@ class TestGamesList:
             name="Medieval Madness",
             slug="medieval-madness",
             corporate_entity=williams_entity,
-            year=1997,
+            production_year=1997,
             title=title,
         )
         make_machine_model(
             name="Medieval Madness (Bootleg)",
             slug="medieval-madness-bootleg",
             corporate_entity=stern_entity,
-            year=2001,
+            production_year=2001,
             title=title,
             extra_data={"opdb.images": SAMPLE_IMAGES},
         )
@@ -163,7 +163,7 @@ class TestGamesList:
                 name=f"Scale {i}",
                 slug=f"scale-{i}-m",
                 corporate_entity=williams_entity,
-                year=1990 + i,
+                production_year=1990 + i,
                 title=t,
                 extra_data={"opdb.images": SAMPLE_IMAGES},
             )
@@ -206,8 +206,8 @@ class TestPersonRoles:
         )
         lawlor = _person("lawlor")
         t = _title("Unified", "unified")
-        a = _model(t, "unified-a", name="Unified A", year=1990)
-        b = _model(t, "unified-b", name="Unified B", year=1992)
+        a = _model(t, "unified-a", name="Unified A", production_year=1990)
+        b = _model(t, "unified-b", name="Unified B", production_year=1992)
         Credit.objects.create(model=a, person=lawlor, role=design)
         Credit.objects.create(model=b, person=lawlor, role=art)
         Credit.objects.create(model=b, person=lawlor, role=design)
@@ -246,7 +246,9 @@ class TestPersonRoles:
         translator, _ = CreditRole.objects.get_or_create(
             slug="translation", defaults={"name": "Translation", "display_order": 30}
         )
-        dead = _model(credited, "unified-dead", name="Unified Dead", year=1999)
+        dead = _model(
+            credited, "unified-dead", name="Unified Dead", production_year=1999
+        )
         Credit.objects.create(model=dead, person=_person("lawlor"), role=translator)
         dead.status = "deleted"
         dead.save()

@@ -17,14 +17,18 @@ User = get_user_model()
 
 @pytest.fixture
 def pm(db, bootstrap_source):
-    pm = make_machine_model(name="Black Magic", slug="black-magic", year=1980)
+    pm = make_machine_model(
+        name="Black Magic", slug="black-magic", production_year=1980
+    )
     make_claim(pm, "name", "Black Magic", ingest_source=bootstrap_source)
     return pm
 
 
 @pytest.fixture
 def domestic(db):
-    return make_machine_model(name="Black Magic 4", slug="black-magic-4", year=1980)
+    return make_machine_model(
+        name="Black Magic 4", slug="black-magic-4", production_year=1980
+    )
 
 
 def _country(path: str, name: str) -> Location:
@@ -239,7 +243,7 @@ class TestExportMarkets:
     def test_null_leaves_unchanged(self, client, user, pm, italy):
         client.force_login(user)
         _patch(client, pm.slug, {"export_markets": [{"target_location": "italy"}]})
-        resp = _patch(client, pm.slug, {"fields": {"year": 1981}})
+        resp = _patch(client, pm.slug, {"fields": {"production_year": 1981}})
         assert resp.status_code == 200
         assert _market_rows(pm) == {("italy", "")}
 

@@ -25,7 +25,9 @@ def low_priority_source(db):
 
 @pytest.fixture
 def pm(db, bootstrap_source):
-    pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
+    pm = make_machine_model(
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
+    )
     make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
@@ -35,7 +37,7 @@ class TestPatchClaimsAuth:
     def test_anonymous_gets_401(self, client, pm):
         resp = client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         assert resp.status_code in (401, 403)
@@ -44,7 +46,7 @@ class TestPatchClaimsAuth:
         client.force_login(user)
         resp = client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         assert resp.status_code == 200
@@ -65,7 +67,7 @@ class TestPatchClaimsValidation:
         client.force_login(user)
         resp = client.patch(
             "/api/models/does-not-exist/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         assert resp.status_code == 404
@@ -172,10 +174,12 @@ class TestPatchClaimsPersistence:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
-        claim = pm.claims.get(actor=user.actor, field_name="year", is_active=True)
+        claim = pm.claims.get(
+            actor=user.actor, field_name="production_year", is_active=True
+        )
         assert claim.value == 1998
         assert claim.actor.backing_model == "user"
 
@@ -183,17 +187,19 @@ class TestPatchClaimsPersistence:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1999}}',
+            data='{"fields": {"production_year": 1999}}',
             content_type="application/json",
         )
-        active = pm.claims.filter(actor=user.actor, field_name="year", is_active=True)
+        active = pm.claims.filter(
+            actor=user.actor, field_name="production_year", is_active=True
+        )
         inactive = pm.claims.filter(
-            actor=user.actor, field_name="year", is_active=False
+            actor=user.actor, field_name="production_year", is_active=False
         )
         assert active.count() == 1
         assert inactive.count() == 1
@@ -203,7 +209,7 @@ class TestPatchClaimsPersistence:
         client.force_login(user)
         resp = client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 2001, "name": "Updated Name"}}',
+            data='{"fields": {"production_year": 2001, "name": "Updated Name"}}',
             content_type="application/json",
         )
         data = resp.json()
@@ -244,7 +250,7 @@ class TestPatchClaimsPersistence:
         self, client, user, pm, low_priority_source
     ):
         make_claim(pm, "name", "Medieval Madness", ingest_source=low_priority_source)
-        make_claim(pm, "year", 1997, ingest_source=low_priority_source)
+        make_claim(pm, "production_year", 1997, ingest_source=low_priority_source)
         resolve_after_mutation(pm)
         pm.refresh_from_db()
         assert pm.year == 1997
@@ -252,7 +258,7 @@ class TestPatchClaimsPersistence:
         client.force_login(user)
         resp = client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 2000}}',
+            data='{"fields": {"production_year": 2000}}',
             content_type="application/json",
         )
         assert resp.status_code == 200
@@ -270,9 +276,9 @@ class TestUserClaimResolution:
         self, user, pm, low_priority_source
     ):
         make_claim(pm, "name", "Medieval Madness", ingest_source=low_priority_source)
-        make_claim(pm, "year", 1990, ingest_source=low_priority_source)
+        make_claim(pm, "production_year", 1990, ingest_source=low_priority_source)
         make_claim(
-            pm, "year", 2000, user=user, changeset=user_changeset(user)
+            pm, "production_year", 2000, user=user, changeset=user_changeset(user)
         )  # priority 10000 > 10
 
         resolve_after_mutation(pm)
@@ -283,9 +289,9 @@ class TestUserClaimResolution:
             name="HighPri", source_type="editorial", priority=50000
         )
         make_claim(pm, "name", "Medieval Madness", ingest_source=high_source)
-        make_claim(pm, "year", 1990, ingest_source=high_source)
+        make_claim(pm, "production_year", 1990, ingest_source=high_source)
         make_claim(
-            pm, "year", 2000, user=user, changeset=user_changeset(user)
+            pm, "production_year", 2000, user=user, changeset=user_changeset(user)
         )  # priority 10000 < 50000
 
         resolve_after_mutation(pm)

@@ -102,7 +102,7 @@ class TestMojibakeClaimsApiIntegration:
         return make_machine_model(
             name="Medieval Madness",
             slug="medieval-madness",
-            year=1997,
+            production_year=1997,
         )
 
     def test_rejects_mojibake_name_via_claims_api(self, client, user, pm):
@@ -137,7 +137,7 @@ class TestMojibakeBatchValidation:
         return make_machine_model(
             name="Medieval Madness",
             slug="medieval-madness",
-            year=1997,
+            production_year=1997,
         )
 
     def test_rejects_mojibake_name_claim(self, pm):

@@ -44,10 +44,10 @@ claims: # ordered list of single-key entries
         - cite:
             ref: https://pinside.com/thread
             quote: "only two prototypes were built, in 1990"
-          year: 1990 # a disjoint field with its own evidence → its own ChangeSet
+          production_year: 1990 # a disjoint field with its own evidence → its own ChangeSet
 ```
 
-Each `changesets:` item inherits the header's ref and becomes its own `ChangeSet`. Items carry **only field assertions plus provenance** (`note`/`cite`/`cites`/`retract`/`remove`) — lifecycle (`create:`/`delete:`) is header-only. The items' fields must be **disjoint**: two items can't both set `year` (see [Notes & citations](#notes--citations) for this and the rest of the per-entry rules).
+Each `changesets:` item inherits the header's ref and becomes its own `ChangeSet`. Items carry **only field assertions plus provenance** (`note`/`cite`/`cites`/`retract`/`remove`) — lifecycle (`create:`/`delete:`) is header-only. The items' fields must be **disjoint**: two items can't both set `production_year` (see [Notes & citations](#notes--citations) for this and the rest of the per-entry rules).
 
 For a record that needs just **one** correction, the flat single-key form is the shorthand — the body sits directly under the ref, no `changesets:` wrapper:
 
@@ -161,7 +161,7 @@ Entity references are of format `type.public_id` — the canonical `entity_type`
 
 ### Field keys
 
-Field keys are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's `public_id`, resolved to the target's PK at plan time (a patch's slugs are point-in-time: valid at apply, never stored in claims); **relationship** (`tag`, `theme`, `manufacturer_alias`, `abbreviation`) — key is the namespace, value a list of members (FK public_ids, or bare strings for aliases/abbreviations). The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
+Field keys are classified by introspection: **scalar** (`production_year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's `public_id`, resolved to the target's PK at plan time (a patch's slugs are point-in-time: valid at apply, never stored in claims); **relationship** (`tag`, `theme`, `manufacturer_alias`, `abbreviation`) — key is the namespace, value a list of members (FK public_ids, or bare strings for aliases/abbreviations). The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
 
 Distinct from field keys are the **reserved keys** — directives, not claims: `create:`, `delete:`, `retract:` and `remove:` (each covered with its operation above), the cross-cutting `note:`, `cite:` and `cites:` (below), the grouping key `changesets:` (see [File format](#file-format)).
 
@@ -367,7 +367,7 @@ claims:
       cite:
         ref: https://en.wikipedia.org/wiki/Medieval_Madness # raw URL — needs a seeded website root (see Citation sources)
         quote: "was released in 1997"
-      year: 1997
+      production_year: 1997
 ```
 
 `note:` is the entity's ChangeSet note, shown on its Edit History page. Write it **sparingly** — it's the edit summary, for rationale the citation can't carry: uncertainty, a cleanup or merge explanation, a disambiguation, or why the value follows from what the source states. A **verbatim excerpt does not belong here** — it goes in `quote:` on the `cite:` mapping (below), where the citation already names the source, so the legacy `<source> says "<quote>"` note form is obsolete. A cite carrying a quote usually needs no note at all. See [DataPatchAuthoring.md → `note:`](DataPatchAuthoring.md#note).

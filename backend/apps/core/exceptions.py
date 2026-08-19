@@ -65,7 +65,7 @@ class StructuredValidationError(StructuredApiError):
             "detail": {
                 "kind": "validation_error",
                 "message": "summary",
-                "field_errors": {"year": "Must be ≤ 2100."},
+                "field_errors": {"production_year": "Must be ≤ 2100."},
                 "form_errors": ["No changes provided."]
             }
         }

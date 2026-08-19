@@ -41,13 +41,13 @@ def _first_model(title: Title) -> MachineModel | None:
 @pytest.mark.django_db
 def test_variant_sibling_is_not_the_first_model(big_ben_title):
     original = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-le", year=1975
+        title=big_ben_title, name="Big Ben", slug="big-ben-le", production_year=1975
     )
     make_machine_model(
         title=big_ben_title,
         name="Big Ben Deluxe",
         slug="big-ben-deluxe",
-        year=1974,
+        production_year=1974,
         variant_of=original,
     )
     assert _first_model(big_ben_title) == original
@@ -57,8 +57,12 @@ def test_variant_sibling_is_not_the_first_model(big_ben_title):
 def test_remake_stays_eligible(db):
     """A remake is a distinct product, not a subordinate copy: a Title whose
     only model is a remake must still surface it as the first model."""
-    remake = make_machine_model(name="Remade Thing", slug="remade-thing", year=2018)
-    original = make_machine_model(name="Old Thing", slug="old-thing", year=1979)
+    remake = make_machine_model(
+        name="Remade Thing", slug="remade-thing", production_year=2018
+    )
+    original = make_machine_model(
+        name="Old Thing", slug="old-thing", production_year=1979
+    )
     remake.remake_of = original
     remake.save(update_fields=["remake_of"])
     assert _first_model(remake.title) == remake
@@ -76,10 +80,13 @@ def test_remake_stays_eligible(db):
 def test_copy_edge_sibling_is_not_the_first_model(big_ben_title):
     """A copy edge (no legacy FK) subordinates exactly like bootleg_of did."""
     original = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
+        title=big_ben_title,
+        name="Big Ben",
+        slug="big-ben-williams",
+        production_year=1975,
     )
     copy = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-segasa", year=1974
+        title=big_ben_title, name="Big Ben", slug="big-ben-segasa", production_year=1974
     )
     ModelRelationship.objects.create(
         machine_model=copy,
@@ -95,10 +102,13 @@ def test_copy_edge_sibling_is_not_the_first_model(big_ben_title):
 def test_label_target_copy_edge_still_subordinates(big_ben_title):
     """A copy is subordinate even when its target isn't seeded (label rung)."""
     original = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
+        title=big_ben_title,
+        name="Big Ben",
+        slug="big-ben-williams",
+        production_year=1975,
     )
     copy = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-petaco", year=1974
+        title=big_ben_title, name="Big Ben", slug="big-ben-petaco", production_year=1974
     )
     ModelRelationship.objects.create(
         machine_model=copy,
@@ -120,10 +130,16 @@ def test_retheme_edge_sibling_is_not_the_first_model(big_ben_title):
     rather than the tiebreak.
     """
     original = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
+        title=big_ben_title,
+        name="Big Ben",
+        slug="big-ben-williams",
+        production_year=1975,
     )
     retheme = make_machine_model(
-        title=big_ben_title, name="Big Ben Reskinned", slug="big-ben-reskin", year=1974
+        title=big_ben_title,
+        name="Big Ben Reskinned",
+        slug="big-ben-reskin",
+        production_year=1974,
     )
     ModelRelationship.objects.create(
         machine_model=retheme,
@@ -140,10 +156,16 @@ def test_undated_retheme_still_loses_to_its_dated_donor(big_ben_title):
     ahead of its dated donor (NULLs sort first on SQLite), so subordination is
     what keeps the original at the head."""
     original = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
+        title=big_ben_title,
+        name="Big Ben",
+        slug="big-ben-williams",
+        production_year=1975,
     )
     retheme = make_machine_model(
-        title=big_ben_title, name="Big Ben Reskinned", slug="big-ben-reskin", year=None
+        title=big_ben_title,
+        name="Big Ben Reskinned",
+        slug="big-ben-reskin",
+        production_year=None,
     )
     ModelRelationship.objects.create(
         machine_model=retheme,
@@ -157,9 +179,9 @@ def test_undated_retheme_still_loses_to_its_dated_donor(big_ben_title):
 def test_conversion_edge_stays_eligible(db):
     """Conversion/kit edges are originals in their own right — they don't
     subordinate, unlike copy and re-theme edges."""
-    donor = make_machine_model(name="Base Game", slug="base-game", year=1990)
+    donor = make_machine_model(name="Base Game", slug="base-game", production_year=1990)
     conversion = make_machine_model(
-        name="Converted Game", slug="converted-game", year=1991
+        name="Converted Game", slug="converted-game", production_year=1991
     )
     ModelRelationship.objects.create(
         machine_model=conversion,
@@ -212,10 +234,16 @@ def test_export_edition_sibling_is_not_the_first_model(big_ben_title):
     the same year), so the ``(year, name)`` tiebreak can't be trusted — here the
     export is given the *earlier* year to prove subordination does the work."""
     domestic = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-domestic", year=1975
+        title=big_ben_title,
+        name="Big Ben",
+        slug="big-ben-domestic",
+        production_year=1975,
     )
     export = make_machine_model(
-        title=big_ben_title, name="Big Ben (Italy)", slug="big-ben-italy", year=1974
+        title=big_ben_title,
+        name="Big Ben (Italy)",
+        slug="big-ben-italy",
+        production_year=1974,
     )
     export.export_edition_of = domestic
     export.save(update_fields=["export_edition_of"])
@@ -227,8 +255,10 @@ def test_export_edition_sibling_is_not_the_first_model(big_ben_title):
 def test_export_edition_only_title_still_surfaces_it(db):
     """Subordination is a tiebreak against originals, not a bar: a Title whose
     only model is an export edition still surfaces it."""
-    domestic = make_machine_model(name="Dragoon", slug="dragoon", year=1977)
-    export = make_machine_model(name="Dragon", slug="dragon-interflip", year=1977)
+    domestic = make_machine_model(name="Dragoon", slug="dragoon", production_year=1977)
+    export = make_machine_model(
+        name="Dragon", slug="dragon-interflip", production_year=1977
+    )
     export.export_edition_of = domestic
     export.save(update_fields=["export_edition_of"])
     assert _first_model(export.title) == export

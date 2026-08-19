@@ -735,6 +735,21 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
                     "Consolidated manufacturer slug for this model's "
                     "corporate entity (the name on the cabinet).",
                 ),
+                # Database-generated display date: production date, falling
+                # back to project date. Generated columns aren't claim fields,
+                # so they don't auto-export; surfaced here because most
+                # consumers want the fallback, not the raw pair.
+                "year": DerivedField(
+                    int | None,
+                    "year",
+                    "Display year: production_year, or project_year when "
+                    "no production year is known.",
+                ),
+                "month": DerivedField(
+                    int | None,
+                    "month",
+                    "Display month, paired with whichever date supplied `year`.",
+                ),
             },
             annotate=_annotate_machine_model,
         ),

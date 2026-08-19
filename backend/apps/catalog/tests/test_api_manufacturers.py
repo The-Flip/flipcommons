@@ -57,9 +57,15 @@ class TestManufacturersAPI:
         middle = CorporateEntity.objects.create(
             manufacturer=manufacturer, name="Williams Middle", slug="williams-middle"
         )
-        make_machine_model(name="L", slug="l", corporate_entity=latest, year=1999)
-        make_machine_model(name="E", slug="e", corporate_entity=early, year=1943)
-        make_machine_model(name="M", slug="m", corporate_entity=middle, year=1985)
+        make_machine_model(
+            name="L", slug="l", corporate_entity=latest, production_year=1999
+        )
+        make_machine_model(
+            name="E", slug="e", corporate_entity=early, production_year=1943
+        )
+        make_machine_model(
+            name="M", slug="m", corporate_entity=middle, production_year=1985
+        )
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
         entities = resp.json()["entities"]
         assert [e["name"] for e in entities] == [
@@ -83,21 +89,25 @@ class TestManufacturersAPI:
         t_mid = Title.objects.create(name="Mid Game", slug="mid-game", opdb_id="T-mid")
         t_new = Title.objects.create(name="New Game", slug="new-game", opdb_id="T-new")
         make_machine_model(
-            name="Old", slug="old", corporate_entity=entity2, title=t_old, year=1960
+            name="Old",
+            slug="old",
+            corporate_entity=entity2,
+            title=t_old,
+            production_year=1960,
         )
         make_machine_model(
             name="Mid",
             slug="mid",
             corporate_entity=williams_entity,
             title=t_mid,
-            year=1995,
+            production_year=1995,
         )
         make_machine_model(
             name="New",
             slug="new",
             corporate_entity=williams_entity,
             title=t_new,
-            year=2020,
+            production_year=2020,
         )
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
         years = [c["year"] for c in resp.json()["games"]["items"]]
@@ -122,7 +132,7 @@ class TestManufacturersAPI:
             name="Has Year Game",
             slug="has-year-game",
             corporate_entity=williams_entity,
-            year=2020,
+            production_year=2020,
             title=t2,
         )
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
@@ -134,10 +144,16 @@ class TestManufacturersAPI:
         self, client, manufacturer, williams_entity
     ):
         make_machine_model(
-            name="Early", slug="early", corporate_entity=williams_entity, year=1985
+            name="Early",
+            slug="early",
+            corporate_entity=williams_entity,
+            production_year=1985,
         )
         make_machine_model(
-            name="Late", slug="late", corporate_entity=williams_entity, year=2003
+            name="Late",
+            slug="late",
+            corporate_entity=williams_entity,
+            production_year=2003,
         )
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
         data = resp.json()

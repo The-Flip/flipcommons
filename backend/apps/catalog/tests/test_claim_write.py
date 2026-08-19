@@ -51,16 +51,16 @@ class TestValidateScalarFieldsNumericConstraints:
         with pytest.raises(
             StructuredValidationError, match="greater than or equal to 1800"
         ):
-            validate_scalar_fields(MachineModel, {"year": 1000})
+            validate_scalar_fields(MachineModel, {"production_year": 1000})
 
     def test_rejects_year_above_maximum(self):
         with pytest.raises(
             StructuredValidationError, match="less than or equal to 2100"
         ):
-            validate_scalar_fields(MachineModel, {"year": 3000})
+            validate_scalar_fields(MachineModel, {"production_year": 3000})
 
     def test_accepts_valid_year(self):
-        specs = validate_scalar_fields(MachineModel, {"year": 1997})
+        specs = validate_scalar_fields(MachineModel, {"production_year": 1997})
         assert len(specs) == 1
 
     def test_rejects_flipper_count_above_maximum(self):
@@ -76,7 +76,7 @@ class TestValidateScalarFieldsNumericConstraints:
             validate_scalar_fields(MachineModel, {"ipdb_rating": 11})
 
     def test_skips_validators_for_null(self):
-        specs = validate_scalar_fields(MachineModel, {"year": None})
+        specs = validate_scalar_fields(MachineModel, {"production_year": None})
         assert len(specs) == 1
         assert specs[0].value == ""
 

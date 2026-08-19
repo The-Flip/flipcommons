@@ -78,21 +78,23 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   ) c ON c.model_id = r.model_id AND c.ref_id = r.theme_id
   WHERE r.model_id IS NULL OR c.model_id IS NULL
 
-  -- Scalar register: the top-ranked `year` claim must equal the resolved models.year.
-  -- Covers the OTHER half of the register split — a membership-only agreement check
-  -- would pass even if scalar registers were grouped on entirely the wrong key.
-  -- Joined (not FULL OUTER) on models: a model with no year claim at all is not a
-  -- disagreement, it is a model nobody has dated.
+  -- Scalar register: the top-ranked `production_year` claim must equal the resolved
+  -- models.production_year. Covers the OTHER half of the register split — a
+  -- membership-only agreement check would pass even if scalar registers were grouped
+  -- on entirely the wrong key.
+  -- Joined (not FULL OUTER) on models: a model with no production_year claim at all
+  -- is not a disagreement, it is a model nobody has dated.
   UNION ALL
   SELECT 'year_resolution_disagrees',
-         'model_id=' || m.id::VARCHAR || ' catalog=' || coalesce(m.year::VARCHAR, 'NULL')
+         'model_id=' || m.id::VARCHAR
+           || ' catalog=' || coalesce(m.production_year::VARCHAR, 'NULL')
            || ' top_ranked=' || coalesce(w.yr::VARCHAR, 'NULL')
   FROM models m
   JOIN (
     SELECT model_id, try_cast(json_extract_string(value, '$') AS BIGINT) AS yr
-    FROM model_claims WHERE field_name = 'year' AND rank = 1
+    FROM model_claims WHERE field_name = 'production_year' AND rank = 1
   ) w ON w.model_id = m.id
-  WHERE m.year IS DISTINCT FROM w.yr
+  WHERE m.production_year IS DISTINCT FROM w.yr
 
   -- ─── CLASSIFIER ──────────────────────────────────────────────────────────
   -- The two invariants that license deriving member-vs-scalar from the claim_key

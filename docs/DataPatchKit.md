@@ -41,7 +41,7 @@ entries = [
     pk.entry(
         f"model.{r['slug']}",
         cite={"ref": CDYN_URL, "quote": pk.clean_quote(r["quote"])},
-        fields={"year": r["year"]},
+        fields={"production_year": r["year"]},
     )
     for r in sorted(rows, key=lambda r: r["slug"])
 ]

@@ -34,9 +34,11 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def models(db, flipcommons_catalog):
     return {
-        "legacy": make_machine_model(name="Legacy MM", slug="legacy-mm", year=1997),
+        "legacy": make_machine_model(
+            name="Legacy MM", slug="legacy-mm", production_year=1997
+        ),
         "rewritten": make_machine_model(
-            name="Rewritten MM", slug="rewritten-mm", year=1997
+            name="Rewritten MM", slug="rewritten-mm", production_year=1997
         ),
     }
 
@@ -54,14 +56,14 @@ def _run_backfill() -> None:
 
 
 def _year_changeset(model) -> ChangeSet:
-    claim = model.claims.get(field_name="year", is_active=True)
+    claim = model.claims.get(field_name="production_year", is_active=True)
     changeset = claim.changeset
     assert isinstance(changeset, ChangeSet)
     return changeset
 
 
 def _evidence(model) -> set[tuple[str, str, str]]:
-    claim = model.claims.get(field_name="year", is_active=True)
+    claim = model.claims.get(field_name="production_year", is_active=True)
     return {
         (inst.citation_source.name, inst.locator, inst.quote)
         for inst in claim.citation_instances.select_related("citation_source")
@@ -77,7 +79,7 @@ class TestEquivalenceOracle:
             "  - model.legacy-mm:\n"
             "      note: 'IPDB says \"This game was never produced\".'\n"
             "      cite: ipdb:4443\n"
-            "      year: 1998\n",
+            "      production_year: 1998\n",
             patch_id="0001-legacy",
         )
         # Rewritten path: what flippatch's rewrite script emits for that note.
@@ -88,7 +90,7 @@ class TestEquivalenceOracle:
             "      cite:\n"
             "        ref: ipdb:4443\n"
             "        quote: 'This game was never produced'\n"
-            "      year: 1998\n",
+            "      production_year: 1998\n",
             patch_id="0002-rewritten",
         )
 
@@ -108,7 +110,7 @@ class TestEquivalenceOracle:
             "  - model.legacy-mm:\n"
             "      note: 'IPDB says \"This is a re-themed game.\"; IPDB records 1 unit.'\n"
             "      cite: ipdb:4443\n"
-            "      year: 1998\n",
+            "      production_year: 1998\n",
             patch_id="0001-legacy",
         )
         _apply(
@@ -119,7 +121,7 @@ class TestEquivalenceOracle:
             "      cite:\n"
             "        ref: ipdb:4443\n"
             "        quote: 'This is a re-themed game.'\n"
-            "      year: 1998\n",
+            "      production_year: 1998\n",
             patch_id="0002-rewritten",
         )
 
@@ -143,7 +145,7 @@ class TestEquivalenceOracle:
             "  - model.legacy-mm:\n"
             f"      {note}"
             "      cite: ipdb:4443\n"
-            "      year: 1998\n",
+            "      production_year: 1998\n",
             patch_id="0001-legacy",
         )
         _apply(
@@ -152,7 +154,7 @@ class TestEquivalenceOracle:
             "  - model.rewritten-mm:\n"
             f"      {note}"
             "      cite: ipdb:4443\n"
-            "      year: 1998\n",
+            "      production_year: 1998\n",
             patch_id="0002-rewritten",
         )
 
@@ -176,13 +178,13 @@ class TestBackfillMigration:
             "  - model.legacy-mm:\n"
             "      note: 'IPDB says \"never produced\".'\n"
             "      cite: ipdb:4443\n"
-            "      year: 1998\n"
+            "      production_year: 1998\n"
             "      production_quantity: 4000\n",
             patch_id="0001-legacy",
         )
         _run_backfill()
 
-        year = models["legacy"].claims.get(field_name="year", is_active=True)
+        year = models["legacy"].claims.get(field_name="production_year", is_active=True)
         qty = models["legacy"].claims.get(
             field_name="production_quantity", is_active=True
         )
@@ -198,7 +200,7 @@ class TestBackfillMigration:
         changeset = source_changeset(flipcommons_catalog)
         changeset.note = 'IPDB says "never produced".'
         changeset.save(update_fields=["note"])
-        make_claim(models["legacy"], "year", 1998, changeset=changeset)
+        make_claim(models["legacy"], "production_year", 1998, changeset=changeset)
 
         _run_backfill()
 
@@ -212,7 +214,7 @@ class TestBackfillMigration:
         changeset = source_changeset(flipcommons_catalog)
         changeset.note = "Seed import (backfilled)."
         changeset.save(update_fields=["note"])
-        make_claim(models["legacy"], "year", 1998, changeset=changeset)
+        make_claim(models["legacy"], "production_year", 1998, changeset=changeset)
 
         _run_backfill()
 
@@ -226,7 +228,7 @@ class TestBackfillMigration:
             "  - model.legacy-mm:\n"
             "      note: 'IPDB says \"never produced\".'\n"
             "      cite: ipdb:4443\n"
-            "      year: 1998\n",
+            "      production_year: 1998\n",
             patch_id="0001-legacy",
         )
         _apply(
@@ -236,7 +238,7 @@ class TestBackfillMigration:
             "      cite:\n"
             "        ref: ipdb:4443\n"
             "        quote: 'authored at ingest'\n"
-            "      year: 1998\n",
+            "      production_year: 1998\n",
             patch_id="0002-rewritten",
         )
         _populate._forward(django_apps, None)

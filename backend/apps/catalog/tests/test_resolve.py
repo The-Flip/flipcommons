@@ -46,21 +46,21 @@ class TestResolveModel:
     def test_basic_resolution(self, pm, ipdb):
         ss = TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
         make_claim(pm, "name", "Medieval Madness", ingest_source=ipdb)
-        make_claim(pm, "year", 1997, ingest_source=ipdb)
+        make_claim(pm, "production_year", 1997, ingest_source=ipdb)
         make_claim(pm, "technology_generation", ss.pk, ingest_source=ipdb)
 
         resolve_after_mutation(pm)
         assert pm.name == "Medieval Madness"
-        assert pm.year == 1997
+        assert pm.production_year == 1997
         assert pm.technology_generation == ss
 
     def test_higher_priority_wins(self, pm, ipdb, editorial):
         make_claim(pm, "name", "Test Game", ingest_source=ipdb)
-        make_claim(pm, "year", 1996, ingest_source=ipdb)
-        make_claim(pm, "year", 1997, ingest_source=editorial)
+        make_claim(pm, "production_year", 1996, ingest_source=ipdb)
+        make_claim(pm, "production_year", 1997, ingest_source=editorial)
 
         resolve_after_mutation(pm)
-        assert pm.year == 1997  # editorial has higher priority
+        assert pm.production_year == 1997  # editorial has higher priority
 
     def test_same_priority_latest_wins(self, pm, ipdb, opdb):
         make_claim(pm, "name", "IPDB Name", ingest_source=ipdb)
@@ -88,11 +88,11 @@ class TestResolveModel:
 
     def test_int_coercion(self, pm, ipdb):
         make_claim(pm, "name", "Test Game", ingest_source=ipdb)
-        make_claim(pm, "year", "1997", ingest_source=ipdb)
+        make_claim(pm, "production_year", "1997", ingest_source=ipdb)
         make_claim(pm, "player_count", "4", ingest_source=ipdb)
 
         resolve_after_mutation(pm)
-        assert pm.year == 1997
+        assert pm.production_year == 1997
         assert pm.player_count == 4
 
     def test_decimal_coercion(self, pm, ipdb):
@@ -106,44 +106,44 @@ class TestResolveModel:
 
     def test_empty_string_coercion(self, pm, ipdb):
         make_claim(pm, "name", "Test Game", ingest_source=ipdb)
-        make_claim(pm, "year", "", ingest_source=ipdb)
+        make_claim(pm, "production_year", "", ingest_source=ipdb)
         resolve_after_mutation(pm)
-        assert pm.year is None
+        assert pm.production_year is None
 
     def test_invalid_int_coercion_rejected_at_claim_boundary(self, pm, ipdb):
         """Invalid values are now rejected by assert_claim validation."""
         from django.core.exceptions import ValidationError
 
         with pytest.raises(ValidationError, match="must be an integer"):
-            make_claim(pm, "year", "not-a-number", ingest_source=ipdb)
+            make_claim(pm, "production_year", "not-a-number", ingest_source=ipdb)
 
     def test_stale_values_cleared_on_re_resolve(self, pm, ipdb):
         make_claim(pm, "name", "Test Game", ingest_source=ipdb)
-        make_claim(pm, "year", 1997, ingest_source=ipdb)
+        make_claim(pm, "production_year", 1997, ingest_source=ipdb)
         make_claim(pm, "player_count", 4, ingest_source=ipdb)
         resolve_after_mutation(pm)
-        assert pm.year == 1997
+        assert pm.production_year == 1997
         assert pm.player_count == 4
 
-        # Deactivate only year and player_count claims, keep name active.
+        # Deactivate only production_year and player_count claims, keep name active.
         pm.claims.filter(
-            is_active=True, field_name__in=["year", "player_count"]
+            is_active=True, field_name__in=["production_year", "player_count"]
         ).update(is_active=False)
         resolve_after_mutation(pm)
         pm.refresh_from_db()
-        assert pm.year is None
+        assert pm.production_year is None
         assert pm.player_count is None
         assert pm.extra_data == {}
 
     def test_mixed_fields_and_extra_data(self, pm, ipdb, editorial):
         make_claim(pm, "name", "The Addams Family", ingest_source=ipdb)
-        make_claim(pm, "year", 1992, ingest_source=ipdb)
+        make_claim(pm, "production_year", 1992, ingest_source=ipdb)
         make_claim(pm, "toys", "Thing hand, bookcase", ingest_source=ipdb)
         make_claim(pm, "fun_facts", "A seminal game.", ingest_source=editorial)
 
         resolve_after_mutation(pm)
         assert pm.name == "The Addams Family"
-        assert pm.year == 1992
+        assert pm.production_year == 1992
         assert pm.extra_data["toys"] == "Thing hand, bookcase"
         assert pm.extra_data["fun_facts"] == "A seminal game."
 
@@ -185,7 +185,7 @@ class TestResolveAll:
         pm3 = make_machine_model(name="P3", slug="p3")
 
         make_claim(pm1, "name", "Medieval Madness", ingest_source=ipdb)
-        make_claim(pm1, "year", 1997, ingest_source=ipdb)
+        make_claim(pm1, "production_year", 1997, ingest_source=ipdb)
         make_claim(pm2, "name", "The Addams Family", ingest_source=ipdb)
         make_claim(pm3, "name", "Twilight Zone", ingest_source=ipdb)
         make_claim(pm3, "technology_generation", ss.pk, ingest_source=ipdb)
@@ -198,7 +198,7 @@ class TestResolveAll:
         pm2.refresh_from_db()
         pm3.refresh_from_db()
         assert pm1.name == "Medieval Madness"
-        assert pm1.year == 1997
+        assert pm1.production_year == 1997
         assert pm2.name == "The Addams Family"
         assert pm3.name == "Twilight Zone"
         assert pm3.technology_generation == ss
@@ -229,7 +229,7 @@ class TestResolveAll:
 
         for pm in (pm_bulk, pm_single):
             make_claim(pm, "name", "Medieval Madness", ingest_source=ipdb)
-            make_claim(pm, "year", 1997, ingest_source=opdb)
+            make_claim(pm, "production_year", 1997, ingest_source=opdb)
             make_claim(pm, "title", title.pk, ingest_source=opdb)
             make_claim(
                 pm, "abbreviation", abbr_val, ingest_source=ipdb, claim_key=abbr_key
@@ -246,7 +246,7 @@ class TestResolveAll:
         pm_bulk.refresh_from_db()
 
         assert pm_bulk.name == pm_single.name
-        assert pm_bulk.year == pm_single.year
+        assert pm_bulk.production_year == pm_single.production_year
         assert pm_bulk.title_id == pm_single.title_id
         assert pm_bulk.technology_generation_id == pm_single.technology_generation_id
         assert pm_bulk.extra_data == pm_single.extra_data
@@ -277,20 +277,20 @@ class TestResolveAll:
         pm = make_machine_model(name="P1", slug="p1")
 
         make_claim(pm, "name", "P1", ingest_source=ipdb)
-        make_claim(pm, "year", 1997, ingest_source=ipdb)
+        make_claim(pm, "production_year", 1997, ingest_source=ipdb)
         make_claim(pm, "player_count", 4, ingest_source=ipdb)
         bulk_resolve()
         pm.refresh_from_db()
-        assert pm.year == 1997
+        assert pm.production_year == 1997
         assert pm.player_count == 4
 
-        # Deactivate only year and player_count claims, keep name active.
+        # Deactivate only production_year and player_count claims, keep name active.
         pm.claims.filter(
-            is_active=True, field_name__in=["year", "player_count"]
+            is_active=True, field_name__in=["production_year", "player_count"]
         ).update(is_active=False)
         bulk_resolve()
         pm.refresh_from_db()
-        assert pm.year is None
+        assert pm.production_year is None
         assert pm.player_count is None
         assert pm.extra_data == {}
 
@@ -301,7 +301,7 @@ class TestResolveAll:
         for i in range(5):
             pm = make_machine_model(name=f"Model {i}", slug=f"model-{i}")
             make_claim(pm, "name", f"Resolved {i}", ingest_source=ipdb)
-            make_claim(pm, "year", 2000 + i, ingest_source=ipdb)
+            make_claim(pm, "production_year", 2000 + i, ingest_source=ipdb)
 
         # Generic bulk dispatch over 5 models + their relationship namespaces;
         # ~46 queries today. Ceiling guards against an N+1 that would scale with

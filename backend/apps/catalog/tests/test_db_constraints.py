@@ -245,30 +245,46 @@ class TestRangeConstraints:
             name="Williams Electronics", slug="williams-electronics", manufacturer=mfr
         )
         return make_machine_model(
-            name="Test", slug="test-machine", corporate_entity=ce, year=1992
+            name="Test", slug="test-machine", corporate_entity=ce, production_year=1992
         )
 
-    def test_year_above_max_rejected(self, machine):
+    def test_production_year_above_max_rejected(self, machine):
         with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, machine.pk, year=2101)
+            _raw_update(MachineModel, machine.pk, production_year=2101)
 
-    def test_year_below_min_rejected(self, machine):
+    def test_production_year_below_min_rejected(self, machine):
         with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, machine.pk, year=1799)
+            _raw_update(MachineModel, machine.pk, production_year=1799)
 
-    def test_month_zero_rejected(self, machine):
+    def test_production_month_zero_rejected(self, machine):
         with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, machine.pk, month=0)
+            _raw_update(MachineModel, machine.pk, production_month=0)
 
-    def test_month_thirteen_rejected(self, machine):
+    def test_production_month_thirteen_rejected(self, machine):
         with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, machine.pk, month=13)
+            _raw_update(MachineModel, machine.pk, production_month=13)
+
+    def test_project_year_above_max_rejected(self, machine):
+        with pytest.raises(IntegrityError):
+            _raw_update(MachineModel, machine.pk, project_year=2101)
+
+    def test_project_year_below_min_rejected(self, machine):
+        with pytest.raises(IntegrityError):
+            _raw_update(MachineModel, machine.pk, project_year=1799)
+
+    def test_project_month_zero_rejected(self, machine):
+        with pytest.raises(IntegrityError):
+            _raw_update(MachineModel, machine.pk, project_year=1990, project_month=0)
+
+    def test_project_month_thirteen_rejected(self, machine):
+        with pytest.raises(IntegrityError):
+            _raw_update(MachineModel, machine.pk, project_year=1990, project_month=13)
 
     def test_valid_range_accepted(self, machine):
-        _raw_update(MachineModel, machine.pk, year=1800, month=12)
+        _raw_update(MachineModel, machine.pk, production_year=1800, production_month=12)
         machine.refresh_from_db()
-        assert machine.year == 1800
-        assert machine.month == 12
+        assert machine.production_year == 1800
+        assert machine.production_month == 12
 
     def test_person_birth_day_above_max_rejected(self, db):
         person = Person.objects.create(
@@ -430,15 +446,83 @@ class TestCrossFieldConstraints:
                 name="Test", slug="test-person", birth_year=2020, death_year=1950
             )
 
-    def test_machine_model_month_without_year_rejected(self, db):
+    @pytest.fixture
+    def corporate_entity(self, db):
         mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
-        ce = CorporateEntity.objects.create(
+        return CorporateEntity.objects.create(
             name="Test Corp", slug="test-corp", manufacturer=mfr
         )
+
+    def test_machine_model_production_month_without_year_rejected(
+        self, corporate_entity
+    ):
         with pytest.raises(IntegrityError):
             make_machine_model(
-                name="Test", slug="test-mm", corporate_entity=ce, month=6, year=None
+                name="Test",
+                slug="test-mm",
+                corporate_entity=corporate_entity,
+                production_month=6,
+                production_year=None,
             )
+
+    def test_machine_model_project_month_without_year_rejected(self, corporate_entity):
+        with pytest.raises(IntegrityError):
+            make_machine_model(
+                name="Test",
+                slug="test-mm",
+                corporate_entity=corporate_entity,
+                project_month=6,
+                project_year=None,
+            )
+
+    def test_project_year_after_production_year_rejected(self, corporate_entity):
+        with pytest.raises(IntegrityError):
+            make_machine_model(
+                name="Test",
+                slug="test-mm",
+                corporate_entity=corporate_entity,
+                production_year=1992,
+                project_year=1993,
+            )
+
+    def test_project_month_after_production_month_same_year_rejected(
+        self, corporate_entity
+    ):
+        with pytest.raises(IntegrityError):
+            make_machine_model(
+                name="Test",
+                slug="test-mm",
+                corporate_entity=corporate_entity,
+                production_year=1992,
+                production_month=3,
+                project_year=1992,
+                project_month=5,
+            )
+
+    def test_project_before_production_accepted(self, corporate_entity):
+        m = make_machine_model(
+            name="Test",
+            slug="test-mm",
+            corporate_entity=corporate_entity,
+            production_year=1992,
+            production_month=3,
+            project_year=1991,
+            project_month=11,
+        )
+        assert m.pk is not None
+
+    def test_project_null_month_gets_benefit_of_the_doubt(self, corporate_entity):
+        # project "1992" vs production "1992-03": the missing month is
+        # treated as unknown, not as December.
+        m = make_machine_model(
+            name="Test",
+            slug="test-mm",
+            corporate_entity=corporate_entity,
+            production_year=1992,
+            production_month=3,
+            project_year=1992,
+        )
+        assert m.pk is not None
 
 
 # ---------------------------------------------------------------------------
@@ -539,15 +623,45 @@ class TestValidateCheckConstraints:
             name="Test Corp", slug="test-corp", manufacturer=mfr
         )
         mm = make_machine_model(
-            name="Test Machine", slug="test-mm", corporate_entity=ce, year=1992
+            name="Test Machine",
+            slug="test-mm",
+            corporate_entity=ce,
+            production_year=1992,
         )
         make_claim(mm, "name", "Test Machine", ingest_source=source)
-        make_claim(mm, "month", 6, ingest_source=source)
-        # No year claim — resolver will reset year to None, month stays 6.
-        # validate_check_constraints should catch this before save().
+        make_claim(mm, "production_month", 6, ingest_source=source)
+        # No year claim — resolver will reset production_year to None while
+        # production_month stays 6. validate_check_constraints should catch
+        # this before save().
         from apps.provenance.resolution import resolve_after_mutation
 
-        with pytest.raises(ValidationError, match="month requires year"):
+        with pytest.raises(
+            ValidationError, match="production_month requires production_year"
+        ):
+            resolve_after_mutation(mm)
+
+    def test_resolver_catches_project_after_production(self, db):
+        """Independently-won project and production claims that violate the
+        ordering rule fail as a clean ValidationError, not an IntegrityError
+        at ``bulk_update``."""
+        from django.core.exceptions import ValidationError
+
+        source = Source.objects.create(name="Test", source_type="database")
+        mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
+        ce = CorporateEntity.objects.create(
+            name="Test Corp", slug="test-corp", manufacturer=mfr
+        )
+        mm = make_machine_model(
+            name="Test Machine", slug="test-mm", corporate_entity=ce
+        )
+        make_claim(mm, "name", "Test Machine", ingest_source=source)
+        make_claim(mm, "production_year", 1992, ingest_source=source)
+        make_claim(mm, "project_year", 1993, ingest_source=source)
+        from apps.provenance.resolution import resolve_after_mutation
+
+        with pytest.raises(
+            ValidationError, match="project date cannot be after production date"
+        ):
             resolve_after_mutation(mm)
 
     def test_execute_claims_returns_422_on_cross_field_violation(self, user):
@@ -896,3 +1010,41 @@ class TestExportEditionOfConstraints:
         export.save(update_fields=["export_edition_of"])
         with pytest.raises(ProtectedError):
             domestic.delete()
+
+
+class TestGeneratedDateFallback:
+    """The database-generated ``year``/``month`` columns: production date when
+    present, else project date — with the month always paired to whichever
+    date supplied the year."""
+
+    def _fresh(self, **kwargs) -> MachineModel:
+        m = make_machine_model(name="Gen", slug="gen-fallback", **kwargs)
+        m.refresh_from_db()
+        return m
+
+    def test_production_date_wins(self, db):
+        m = self._fresh(
+            production_year=1994,
+            production_month=3,
+            project_year=1993,
+            project_month=7,
+        )
+        assert (m.year, m.month) == (1994, 3)
+
+    def test_falls_back_to_project_date(self, db):
+        m = self._fresh(project_year=1993, project_month=7)
+        assert (m.year, m.month) == (1993, 7)
+
+    def test_no_dates_yields_null(self, db):
+        m = self._fresh()
+        assert (m.year, m.month) == (None, None)
+
+    def test_month_never_mixes_sources(self, db):
+        # Production supplies the year but has no month; project's month must
+        # not leak in alongside production's year.
+        m = self._fresh(production_year=1994, project_year=1993, project_month=7)
+        assert (m.year, m.month) == (1994, None)
+
+    def test_derived_year_is_filterable_and_sortable(self, db):
+        self._fresh(project_year=1993)
+        assert MachineModel.objects.filter(year=1993, slug="gen-fallback").exists()

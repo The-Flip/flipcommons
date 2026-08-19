@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models.functions import Coalesce
 
 from apps.core.models import (
     SluggedModel,
@@ -218,15 +219,47 @@ class MachineModel(
         blank=True,
         help_text="Specific corporate incarnation that produced this model.",
     )
-    year = models.PositiveSmallIntegerField(
+    # Dates. Production date is physical assembly / factory rollout; project
+    # date is the earlier milestone when the design was finalized or released
+    # to production in the manufacturer's internal records. The generated
+    # ``year``/``month`` pair below is what display, sorting, filtering and
+    # aggregation read: production date when present, else project date.
+    production_year = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
         validators=[MinValueValidator(YEAR_MIN), MaxValueValidator(YEAR_MAX)],
     )
-    month = models.PositiveSmallIntegerField(
+    production_month = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
         validators=[MinValueValidator(MONTH_MIN), MaxValueValidator(MONTH_MAX)],
+    )
+    project_year = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(YEAR_MIN), MaxValueValidator(YEAR_MAX)],
+    )
+    project_month = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(MONTH_MIN), MaxValueValidator(MONTH_MAX)],
+    )
+    # The month pairs with whichever date supplied the year — a plain
+    # per-column coalesce could stitch production's year to project's month.
+    year = models.GeneratedField(
+        expression=Coalesce("production_year", "project_year"),
+        output_field=models.PositiveSmallIntegerField(),
+        db_persist=True,
+    )
+    month = models.GeneratedField(
+        expression=models.Case(
+            models.When(
+                production_year__isnull=False, then=models.F("production_month")
+            ),
+            default=models.F("project_month"),
+        ),
+        output_field=models.PositiveSmallIntegerField(),
+        db_persist=True,
     )
     technology_generation = models.ForeignKey(
         "TechnologyGeneration",
@@ -382,14 +415,28 @@ class MachineModel(
             field_not_blank("name"),
             # Range constraints
             models.CheckConstraint(
-                condition=models.Q(year__isnull=True)
-                | models.Q(year__gte=YEAR_MIN, year__lte=YEAR_MAX),
-                name="catalog_machinemodel_year_range",
+                condition=models.Q(production_year__isnull=True)
+                | models.Q(
+                    production_year__gte=YEAR_MIN, production_year__lte=YEAR_MAX
+                ),
+                name="catalog_machinemodel_production_year_range",
             ),
             models.CheckConstraint(
-                condition=models.Q(month__isnull=True)
-                | models.Q(month__gte=MONTH_MIN, month__lte=MONTH_MAX),
-                name="catalog_machinemodel_month_range",
+                condition=models.Q(production_month__isnull=True)
+                | models.Q(
+                    production_month__gte=MONTH_MIN, production_month__lte=MONTH_MAX
+                ),
+                name="catalog_machinemodel_production_month_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(project_year__isnull=True)
+                | models.Q(project_year__gte=YEAR_MIN, project_year__lte=YEAR_MAX),
+                name="catalog_machinemodel_project_year_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(project_month__isnull=True)
+                | models.Q(project_month__gte=MONTH_MIN, project_month__lte=MONTH_MAX),
+                name="catalog_machinemodel_project_month_range",
             ),
             models.CheckConstraint(
                 condition=models.Q(player_count__isnull=True)
@@ -431,9 +478,36 @@ class MachineModel(
             nullable_id_not_empty("manufacturer_model_identifier"),
             # Cross-field: month requires year
             models.CheckConstraint(
-                condition=models.Q(month__isnull=True) | models.Q(year__isnull=False),
-                name="catalog_machinemodel_month_requires_year",
-                violation_error_message="month requires year.",
+                condition=models.Q(production_month__isnull=True)
+                | models.Q(production_year__isnull=False),
+                name="catalog_machinemodel_production_month_requires_year",
+                violation_error_message="production_month requires production_year.",
+                violation_error_code="cross_field",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(project_month__isnull=True)
+                | models.Q(project_year__isnull=False),
+                name="catalog_machinemodel_project_month_requires_year",
+                violation_error_message="project_month requires project_year.",
+                violation_error_code="cross_field",
+            ),
+            # Cross-field: project date cannot be after production date. A
+            # null month gets the benefit of the doubt — project "1994" vs
+            # production "1994-03" is allowed.
+            models.CheckConstraint(
+                condition=models.Q(project_year__isnull=True)
+                | models.Q(production_year__isnull=True)
+                | models.Q(project_year__lt=models.F("production_year"))
+                | (
+                    models.Q(project_year=models.F("production_year"))
+                    & (
+                        models.Q(project_month__isnull=True)
+                        | models.Q(production_month__isnull=True)
+                        | models.Q(project_month__lte=models.F("production_month"))
+                    )
+                ),
+                name="catalog_machinemodel_project_lte_production",
+                violation_error_message="project date cannot be after production date.",
                 violation_error_code="cross_field",
             ),
             # One per self-FK — test_self_fk_constraints enforces the set.

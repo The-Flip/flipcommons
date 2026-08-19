@@ -251,7 +251,7 @@ def machine_model(db, williams_entity, solid_state, bootstrap_source):
         slug="medieval-madness",
         title=title,
         corporate_entity=williams_entity,
-        year=1997,
+        production_year=1997,
         technology_generation=solid_state,
     )
     make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
@@ -269,7 +269,7 @@ def another_model(db, stern_entity, solid_state, bootstrap_source):
         slug="the-mandalorian",
         title=title,
         corporate_entity=stern_entity,
-        year=2021,
+        production_year=2021,
         technology_generation=solid_state,
     )
     make_claim(pm, "name", "The Mandalorian", ingest_source=bootstrap_source)

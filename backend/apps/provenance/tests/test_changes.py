@@ -36,7 +36,9 @@ def source(db):
 
 @pytest.fixture
 def pm(db, bootstrap_source):
-    pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
+    pm = make_machine_model(
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
+    )
     make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
@@ -56,7 +58,7 @@ class TestCursorPaginate:
     def test_first_page(self, user, pm):
         for i in range(5):
             cs = user_changeset(user)
-            make_claim(pm, "year", 1990 + i, user=user, changeset=cs)
+            make_claim(pm, "production_year", 1990 + i, user=user, changeset=cs)
 
         items, next_cursor = cursor_paginate(ChangeSet.objects.all(), "", 3)
         assert len(items) == 3
@@ -65,7 +67,7 @@ class TestCursorPaginate:
     def test_second_page_via_cursor(self, user, pm):
         for i in range(5):
             cs = user_changeset(user)
-            make_claim(pm, "year", 1990 + i, user=user, changeset=cs)
+            make_claim(pm, "production_year", 1990 + i, user=user, changeset=cs)
 
         # Scope to this user's changesets; the pm fixture seeds ingest changesets.
         qs = ChangeSet.objects.filter(actor=user.actor)
@@ -85,7 +87,7 @@ class TestCursorPaginate:
         cs_ids = []
         for i in range(3):
             cs = user_changeset(user)
-            make_claim(pm, "year", 1990 + i, user=user, changeset=cs)
+            make_claim(pm, "production_year", 1990 + i, user=user, changeset=cs)
             ChangeSet.objects.filter(pk=cs.pk).update(created_at=now)
             cs_ids.append(cs.pk)
 
@@ -123,7 +125,7 @@ class TestChangesList:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         resp = client.get("/api/pages/changesets/")
@@ -147,7 +149,7 @@ class TestChangesList:
             finished_at=timezone.now(),
         )
         cs = ingest_changeset(run)
-        make_claim(pm, "year", 1999, ingest_source=source, changeset=cs)
+        make_claim(pm, "production_year", 1999, ingest_source=source, changeset=cs)
 
         resp = client.get("/api/pages/changesets/")
         assert resp.status_code == 200
@@ -165,7 +167,7 @@ class TestChangesList:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         client.patch(
@@ -192,7 +194,7 @@ class TestChangesList:
         for i in range(5):
             client.patch(
                 f"/api/models/{pm.slug}/claims/",
-                data=f'{{"fields": {{"year": {1990 + i}}}}}',
+                data=f'{{"fields": {{"production_year": {1990 + i}}}}}',
                 content_type="application/json",
             )
 
@@ -219,7 +221,7 @@ class TestChangesList:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         # Use a future timestamp so the edit falls before it.
@@ -239,7 +241,7 @@ class TestChangesList:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         pm.delete()
@@ -263,7 +265,7 @@ class TestChangesDetail:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         cs_id = ChangeSet.objects.filter(actor=user.actor).latest("created_at").pk
@@ -273,7 +275,9 @@ class TestChangesDetail:
         data = resp.json()
         assert data["entity"]["name"] == "Medieval Madness"
         assert len(data["changes"]) >= 1
-        year_change = next(c for c in data["changes"] if c["field_name"] == "year")
+        year_change = next(
+            c for c in data["changes"] if c["field_name"] == "production_year"
+        )
         assert year_change["new_value"]["raw"] == 1998
 
     def test_cross_author_old_value(self, client, user, user_b, pm):
@@ -281,13 +285,13 @@ class TestChangesDetail:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         client.force_login(user_b)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 2001}}',
+            data='{"fields": {"production_year": 2001}}',
             content_type="application/json",
         )
 
@@ -295,7 +299,7 @@ class TestChangesDetail:
         resp = client.get(f"/api/pages/changesets/{cs_id}/")
         assert resp.status_code == 200
         year_change = next(
-            c for c in resp.json()["changes"] if c["field_name"] == "year"
+            c for c in resp.json()["changes"] if c["field_name"] == "production_year"
         )
         assert year_change["old_value"]["raw"] == 1998
         assert year_change["new_value"]["raw"] == 2001
@@ -309,14 +313,14 @@ class TestChangesDetail:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         cs_id = ChangeSet.objects.filter(actor=user.actor).latest("created_at").pk
 
         resp = client.get(f"/api/pages/changesets/{cs_id}/")
         year_change = next(
-            c for c in resp.json()["changes"] if c["field_name"] == "year"
+            c for c in resp.json()["changes"] if c["field_name"] == "production_year"
         )
         # The bootstrap source claim has no changeset, so no prior user claim exists.
         # old_value should be None for the first user edit.
@@ -326,7 +330,9 @@ class TestChangesDetail:
         """A changeset with only retracted claims shows retractions, no changes."""
         # Create a claim, then retract it via a separate changeset.
         original_cs = user_changeset(user)
-        claim = make_claim(pm, "year", 2000, user=user, changeset=original_cs)
+        claim = make_claim(
+            pm, "production_year", 2000, user=user, changeset=original_cs
+        )
 
         retract_cs = user_changeset(user)
         claim.retracted_by_changeset = retract_cs
@@ -338,7 +344,7 @@ class TestChangesDetail:
         data = resp.json()
         assert data["changes"] == []
         assert len(data["retractions"]) == 1
-        assert data["retractions"][0]["field_name"] == "year"
+        assert data["retractions"][0]["field_name"] == "production_year"
         assert data["retractions"][0]["old_value"]["raw"] == 2000
 
 
@@ -348,7 +354,7 @@ class TestChangesListBeforeFilter:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         # Use a past timestamp so the edit falls after it.

@@ -25,8 +25,10 @@ from apps.citation.models import CitationSource
 
 # (model_class, field_name, module, min_const_name, max_const_name_or_None)
 RANGE_FIELDS = [
-    (MachineModel, "year", mm_mod, "YEAR_MIN", "YEAR_MAX"),
-    (MachineModel, "month", mm_mod, "MONTH_MIN", "MONTH_MAX"),
+    (MachineModel, "production_year", mm_mod, "YEAR_MIN", "YEAR_MAX"),
+    (MachineModel, "production_month", mm_mod, "MONTH_MIN", "MONTH_MAX"),
+    (MachineModel, "project_year", mm_mod, "YEAR_MIN", "YEAR_MAX"),
+    (MachineModel, "project_month", mm_mod, "MONTH_MIN", "MONTH_MAX"),
     (MachineModel, "player_count", mm_mod, "PLAYER_COUNT_MIN", "PLAYER_COUNT_MAX"),
     (MachineModel, "flipper_count", mm_mod, "FLIPPER_COUNT_MIN", "FLIPPER_COUNT_MAX"),
     (MachineModel, "ipdb_rating", mm_mod, "RATING_MIN", "RATING_MAX"),

@@ -23,14 +23,18 @@ def manufacturer(db, bootstrap_source):
 
 @pytest.fixture
 def model_a(db, bootstrap_source):
-    pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
+    pm = make_machine_model(
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
+    )
     make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
 
 @pytest.fixture
 def model_b(db, bootstrap_source):
-    pm = make_machine_model(name="Attack from Mars", slug="attack-from-mars", year=1995)
+    pm = make_machine_model(
+        name="Attack from Mars", slug="attack-from-mars", production_year=1995
+    )
     make_claim(pm, "name", "Attack from Mars", ingest_source=bootstrap_source)
     return pm
 
@@ -62,7 +66,7 @@ class TestUserProfileWithEdits:
         client.force_login(user)
         client.patch(
             f"/api/models/{model_a.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
 
@@ -92,13 +96,13 @@ class TestUserProfileWithEdits:
         # Edit model_a first
         client.patch(
             f"/api/models/{model_a.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         # Edit model_b second (more recent)
         client.patch(
             f"/api/models/{model_b.slug}/claims/",
-            data='{"fields": {"year": 1996}}',
+            data='{"fields": {"production_year": 1996}}',
             content_type="application/json",
         )
 
@@ -121,12 +125,12 @@ class TestUserProfileWithEdits:
         client.force_login(user)
         client.patch(
             f"/api/models/{model_a.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         client.patch(
             f"/api/models/{model_a.slug}/claims/",
-            data='{"fields": {"year": 1999}}',
+            data='{"fields": {"production_year": 1999}}',
             content_type="application/json",
         )
 
@@ -143,7 +147,7 @@ class TestUserProfileWithEdits:
         client.force_login(user)
         client.patch(
             f"/api/models/{model_a.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         client.patch(
@@ -167,7 +171,7 @@ class TestUserProfileWithEdits:
         client.force_login(other)
         client.patch(
             f"/api/models/{model_a.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
 
@@ -192,10 +196,12 @@ class TestEditHistoryIngestAttribution:
         source = make_ingest_source(
             name="IPDB", slug="ipdb", source_type="database", priority=10
         )
-        pm = make_machine_model(name="Gorgar", slug="gorgar", year=1979)
+        pm = make_machine_model(name="Gorgar", slug="gorgar", production_year=1979)
 
         ingest_cs = ingest_changeset(ingest_run(source))
-        make_claim(pm, "year", 1979, ingest_source=source, changeset=ingest_cs)
+        make_claim(
+            pm, "production_year", 1979, ingest_source=source, changeset=ingest_cs
+        )
 
         user_cs = user_changeset(user)
         make_claim(
