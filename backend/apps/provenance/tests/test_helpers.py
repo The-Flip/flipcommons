@@ -69,7 +69,7 @@ class TestBuildSources:
     helper being called with an empty ``LabelLookup``."""
 
     def test_relationship_claim_value_has_display(self, source):
-        pm = make_machine_model(name="MM", slug="mm", year=1997)
+        pm = make_machine_model(name="MM", slug="mm", production_year=1997)
         person = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
         role = CreditRole.objects.create(name="Art", slug="art")
         make_claim(

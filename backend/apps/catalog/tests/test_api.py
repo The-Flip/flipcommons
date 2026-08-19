@@ -64,14 +64,14 @@ class TestSystemsAPI:
         make_machine_model(
             name="Medieval Madness",
             slug="medieval-madness",
-            year=1997,
+            production_year=1997,
             system=system,
             title=t1,
         )
         make_machine_model(
             name="No Good Gofers",
             slug="no-good-gofers",
-            year=1997,
+            production_year=1997,
             system=system,
             title=t2,
         )
@@ -94,13 +94,14 @@ class TestSystemsAPI:
         make_machine_model(
             name="Old Game",
             slug="old-game",
-            year=1990,
+            production_year=1990,
             system=system_with_machines,
             title=t3,
         )
         resp = client.get("/api/pages/system/wpc-95")
         data = resp.json()
         years = [c["year"] for c in data["games"]["items"] if c["year"]]
+        assert years, "fixture models should carry years — vacuous otherwise"
         assert years == sorted(years, reverse=True)
 
     def test_get_system_404(self, client, db):

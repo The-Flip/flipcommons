@@ -58,7 +58,7 @@ def assert_attribution_invariants() -> None:
 @pytest.fixture
 def pm(db, bootstrap_source):
     return make_machine_model(
-        name="Medieval Madness", slug="medieval-madness", year=1997
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
     )
 
 
@@ -75,8 +75,10 @@ def _active_user_claim(entity, field_name, user) -> Claim:
 
 class TestWritePathSetsActor:
     def test_interactive(self, user, pm):
-        execute_claims(pm, [ClaimSpec(field_name="year", value=1998)], user=user)
-        claim = _active_user_claim(pm, "year", user)
+        execute_claims(
+            pm, [ClaimSpec(field_name="production_year", value=1998)], user=user
+        )
+        claim = _active_user_claim(pm, "production_year", user)
         assert claim.actor_id == user.actor_id
         assert_attribution_invariants()
 
@@ -84,25 +86,27 @@ class TestWritePathSetsActor:
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
         execute_multi_entity_claims(
             [
-                EntityClaims(pm, [ClaimSpec(field_name="year", value=1999)]),
+                EntityClaims(pm, [ClaimSpec(field_name="production_year", value=1999)]),
                 EntityClaims(mfr, [ClaimSpec(field_name="description", value="x")]),
             ],
             user=user,
             action=ChangeSetAction.EDIT,
         )
-        for entity, field in ((pm, "year"), (mfr, "description")):
+        for entity, field in ((pm, "production_year"), (mfr, "description")):
             assert _active_user_claim(entity, field, user).actor_id == user.actor_id
         assert_attribution_invariants()
 
     def test_revert(self, user, pm):
-        execute_claims(pm, [ClaimSpec(field_name="year", value=1998)], user=user)
-        claim = _active_user_claim(pm, "year", user)
+        execute_claims(
+            pm, [ClaimSpec(field_name="production_year", value=1998)], user=user
+        )
+        claim = _active_user_claim(pm, "production_year", user)
         execute_revert(pm, claim_id=claim.pk, user=user, note="undo it")
         assert_attribution_invariants()
 
     def test_undo_changeset(self, user, pm):
         cs = execute_multi_entity_claims(
-            [EntityClaims(pm, [ClaimSpec(field_name="year", value=1998)])],
+            [EntityClaims(pm, [ClaimSpec(field_name="production_year", value=1998)])],
             user=user,
             action=ChangeSetAction.DELETE,
         )
