@@ -9,7 +9,8 @@ For the request-routing diagram and the rest of the runtime picture, see [Archit
 ### Overview
 
 - [Railway](#railway): hosting web & db
-- [Bunny.net](#bunny-cdn): CDN edge caching
+- [Joker](#dns): domain registration
+- [Bunny.net](#bunny-cdn): CDN edge caching and [DNS](#dns)
 - [iDrive e2](#idrive-e2): media storage
 - [WorkOS](#workos): authentication
 - [Sentry](#sentry): error monitoring
@@ -91,8 +92,16 @@ Bunny fronts `flipcommons.org` for anonymous SSR HTML caching. Configured to:
 
 - respect origin `Cache-Control`
 - bypass `/api/` and `/djadmin/`
-- bypass any request carrying `sessionid`
-- bypass any request carrying `mode=kiosk`
+- bypass any request carrying a `sessionid` **cookie**
+- bypass any request carrying a `mode=kiosk` **cookie**
+
+The last two match cookies, not query strings. `mode` is only ever a cookie — set by "Enter Kiosk Mode" and read server-side ([kiosk/config.ts](../frontend/src/lib/kiosk/config.ts)); nothing reads it from the URL. So `/?mode=kiosk` is an ordinary anonymous request and is cached as one, which is correct. Probe a bypass with the cookie, not the query string:
+
+```bash
+curl -sSI -H 'Cookie: mode=kiosk' https://flipcommons.org/ | grep -i cdn-cache
+```
+
+Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed response, discarding the origin's `private, no-cache` / `private, no-store`. The bullet above applies to cached and MISS responses; bypassed ones are re-stamped by the edge.
 
 Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. SvelteKit leaves `+server.ts` endpoints unstamped, so [Caddyfile](../Caddyfile) sets `Cache-Control: no-store` on `/__health` — otherwise an edge PoP serves uptime probes a cached `ok` for weeks after the origin stops responding.
 
@@ -100,11 +109,55 @@ Because the zone respects origin `Cache-Control`, any response that reaches Bunn
 
 The origin-side cache contract is described in [Architecture.md](Architecture.md#edge-caching-of-ssr-html). The client-IP and origin-locking prerequisites for fronting the apex are under [Client IP trust](#client-ip-trust).
 
-The apex DNS CNAMEs to the Bunny pull zone rather than Railway, but the domain stays registered on the Railway service so it still routes by `Host`.
+The apex resolves to this pull zone through a Bunny [`PZ` record](#dns) rather than to Railway, but the domain stays registered on the Railway service so it still routes by `Host`.
 
 #### Static & media CDN
 
 `static.flipcommons.org` fronts Railway's hashed `/_app/immutable/*` assets, fonts and `version.json`; `media.flipcommons.org` fronts the iDrive e2 media bucket. Both respect origin cache headers.
+
+### DNS
+
+Registration and nameserving are split. **[Joker](https://joker.com) is the registrar**; **Bunny hosts the zone** on `kiki.bunny.net` and `coco.bunny.net`. Two nameservers rather than Joker's three is not a downgrade — both are anycast, and `.org` requires two.
+
+Changing nameservers is a registrar operation at Joker, not a Bunny one. Check what the registry currently delegates with `whois flipcommons.org | grep -i "name server"`, which reads registry data on port 43 and so survives networks that intercept port 53.
+
+#### Apex `PZ` record
+
+The apex is a Bunny **`PZ` (Pull Zone)** record bound to the apex pull zone, not an `A`, `CNAME` or `ALIAS`. Bunny flattens it to `A`/`AAAA` inside its own network at query time, so the edge is chosen for the visitor's resolver and can never be a stale address.
+
+Two consequences worth knowing before touching it:
+
+- **The record names a pull zone by id.** Pointing it at a new pull zone yields valid Bunny addresses that pass every DNS check while silently dropping the origin config, the cache bypasses, the certificate and the `X-Client-IP` / `X-Origin-Auth` Edge Rules that rate limiting depends on (see [Client IP trust](#client-ip-trust)). Verify with `curl -sSI https://flipcommons.org/__health`: `cdn-pullzone` must match the existing apex zone, and the certificate must be the pre-existing one rather than freshly issued.
+- **Bunny sets the TTL, not us.** The record's TTL field is not honored; Bunny serves its own short value. This costs nothing, because the flattened address is anycast — edge failover happens in BGP, not DNS.
+
+Bunny omits `PZ`, `RDR` and `SCR` records from its zone exports, so **a Bunny export is never a complete backup of this zone.** Record the apex pull-zone binding separately.
+
+#### Reverting to Joker
+
+The pre-Bunny zone is still parked at Joker, undelegated. Reverting is a registrar edit — point the nameservers back at `x/y/z.ns.joker.com` — bounded by the registry's 3600s delegation TTL, so about an hour. Anything needing a faster remedy has to be fixed forward in the Bunny zone, where TTLs are ours.
+
+**This works only for as long as the parked Joker zone exists, so keep it.** It costs nothing, and deleting it turns a registrar edit into a zone rebuild under pressure. Note that the Joker zone's apex is an `ALIAS`, which is what the move to Bunny replaced — a revert reinstates the flattening described in [Apex `PZ` record](#apex-pz-record).
+
+#### Records
+
+| Name                   |  Type | Purpose                                                        |
+| ---------------------- | ----: | -------------------------------------------------------------- |
+| `flipcommons.org`      |    PZ | Site — apex pull zone                                          |
+| `flipcommons.org`      |    MX | Mail (`10 mx1`, `20 mx2` at `mailcast.io`)                     |
+| `flipcommons.org`      |   TXT | SPF, plus two Google Search Console proofs                     |
+| `_dmarc`               |   TXT | DMARC                                                          |
+| `_railway-verify`      |   TXT | Railway custom-domain proof for the apex                       |
+| `_railway-verify.www`  |   TXT | Railway custom-domain proof for `www`                          |
+| `mailcast._domainkey`  | CNAME | DKIM key 1                                                     |
+| `mailcast2._domainkey` | CNAME | DKIM key 2 — rotation pair with the above                      |
+| `www`                  | CNAME | Railway; exists to serve Caddy's apex redirect                 |
+| `static`               | CNAME | Static asset pull zone                                         |
+| `media`                | CNAME | Media pull zone (iDrive origin)                                |
+| `auth`                 | CNAME | WorkOS custom auth domain — **login breaks if this is missed** |
+
+No wildcard: unknown names must return `NXDOMAIN`. No DNSSEC and no CAA.
+
+The apex `_railway-verify` may be vestigial, since Bunny forwards the Railway origin host and the apex need not stay a Railway custom domain. The `www` proof is still load-bearing.
 
 ### iDrive e2
 
