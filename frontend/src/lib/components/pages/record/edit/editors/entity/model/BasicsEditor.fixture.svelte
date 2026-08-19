@@ -2,8 +2,10 @@
   import BasicsEditor from './BasicsEditor.svelte';
 
   type BasicsModel = {
-    year?: number | null;
-    month?: number | null;
+    production_year?: number | null;
+    production_month?: number | null;
+    project_year?: number | null;
+    project_month?: number | null;
     title?: { public_id: string; name: string } | null;
     corporate_entity?: { public_id: string; name: string } | null;
     game_format?: { public_id: string } | null;

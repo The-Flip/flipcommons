@@ -42,7 +42,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def pm(db, flipcommons_catalog):
     return make_machine_model(
-        name="Medieval Madness", slug="medieval-madness", year=1997
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
     )
 
 
@@ -68,13 +68,15 @@ def test_note_and_cite_parsed_and_excluded_from_fields():
         "  - model.x:\n"
         "      note: tagged because the name says so\n"
         "      cite: ipdb:4443\n"
-        "      year: 1990\n"
+        "      production_year: 1990\n"
     )
     (entry,) = doc.claims
     assert isinstance(entry, EditEntry)  # no create/delete → an edit
     assert entry.note == "tagged because the name says so"
     assert entry.cite == (("ipdb:4443", "", "", ""),)
-    assert entry.fields == {"year": 1990}  # note/cite are not field assertions
+    assert entry.fields == {
+        "production_year": 1990
+    }  # note/cite are not field assertions
 
 
 def test_note_must_be_string():
@@ -86,7 +88,7 @@ def test_note_must_be_string():
 
 
 def test_bad_cite_format_rejected(flipcommons_catalog, pm):
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb\n      production_year: 1998\n"
     with pytest.raises(PatchError, match="scheme:identifier"):
         _apply(text)
 
@@ -95,21 +97,21 @@ def test_unknown_cite_scheme_rejected(flipcommons_catalog, pm):
     # A slug-shaped unknown left segment parses as an authored source ref and
     # fails the read-phase resolution check — at build, before any write, with a
     # message naming the known schemes (the did-you-mean for a typo'd key).
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: bogus:4443\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: bogus:4443\n      production_year: 1998\n"
     with pytest.raises(PatchError, match="known schemes are"):
         _apply(text)
 
 
 def test_non_slug_shaped_unknown_cite_scheme_rejected_at_parse(flipcommons_catalog, pm):
     # A left segment that isn't even slug-shaped still fails at parse.
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: BOGUS:4443\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: BOGUS:4443\n      production_year: 1998\n"
     with pytest.raises(PatchError, match="unknown cite scheme"):
         _apply(text)
 
 
 def test_invalid_cite_identifier_rejected(flipcommons_catalog, pm):
     # ipdb ids are digits; a non-numeric id fails normalization.
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:not-a-number\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:not-a-number\n      production_year: 1998\n"
     with pytest.raises(PatchError, match="invalid ipdb identifier"):
         _apply(text)
 
@@ -126,7 +128,7 @@ def test_cite_quote_allows_mojibake_verbatim(flipcommons_catalog, ipdb_root, pm)
         "      cite:\n"
         "        ref: ipdb:4443\n"
         "        quote: \"a copy of 'Sky�Line'\"\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)  # must not raise
     assert "�" in CitationInstance.objects.get().quote
@@ -141,7 +143,7 @@ def test_cite_locator_still_rejects_mojibake(flipcommons_catalog, ipdb_root, pm)
         "      cite:\n"
         "        ref: ipdb:4443\n"
         '        locator: "Sky�Line"\n'
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="mojibake|replacement character"):
         _apply(text)
@@ -154,7 +156,7 @@ def test_overlong_note_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      note: {long_note}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="note exceeds"):
         _apply(text)
@@ -170,7 +172,7 @@ claims:
   - model.medieval-madness:
       note: corrected year per the flyer
       cite: ipdb:4443
-      year: 1998
+      production_year: 1998
   - model.medieval-madness:
       note: production figure from the archive
       production_quantity: 4000
@@ -186,7 +188,7 @@ claims:
     assert changesets[0].note == "corrected year per the flyer"
     assert changesets[1].note == "production figure from the archive"
 
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     qty_claim = pm.claims.get(field_name="production_quantity", is_active=True)
     # pk/file order: first entry → first changeset, second entry → second.
     assert year_claim.changeset_id == changesets[0].pk
@@ -203,7 +205,7 @@ def test_no_note_multi_entry_still_groups_per_entry(flipcommons_catalog, pm):
 attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
-      year: 1998
+      production_year: 1998
   - model.medieval-madness:
       production_quantity: 4000
 """
@@ -219,9 +221,9 @@ attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
       note: first
-      year: 1998
+      production_year: 1998
   - model.medieval-madness:
-      year: 1999
+      production_year: 1999
 """
     with pytest.raises(PatchError, match="more than one entry"):
         _apply(text)
@@ -230,16 +232,16 @@ claims:
 def test_same_field_retracted_twice_rejected(flipcommons_catalog, pm):
     # Two entries retracting the same field collapse to one deactivation,
     # dropping one entry's note — rejected.
-    make_claim(pm, "year", 1998, ingest_source=flipcommons_catalog)
+    make_claim(pm, "production_year", 1998, ingest_source=flipcommons_catalog)
     text = """
 attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
       note: drop it
-      retract: [year]
+      retract: [production_year]
   - model.medieval-madness:
       note: drop it again
-      retract: [year]
+      retract: [production_year]
 """
     with pytest.raises(PatchError, match="more than one entry"):
         _apply(text)
@@ -266,8 +268,8 @@ claims:
 
 def test_cite_on_retraction_only_entry_rejected(flipcommons_catalog, pm):
     # A cite has nothing to attach to when the entry only retracts.
-    make_claim(pm, "year", 1998, ingest_source=flipcommons_catalog)
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      retract: [year]\n"
+    make_claim(pm, "production_year", 1998, ingest_source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      retract: [production_year]\n"
     with pytest.raises(PatchError, match="cite has no field to attach to"):
         _apply(text)
 
@@ -316,7 +318,7 @@ claims:
 
 
 def test_note_sets_changeset_note(flipcommons_catalog, pm):
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      production_year: 1998\n"
     _apply(text)
     # Filter to this patch's changeset; seed name claims now ride their own
     # (patch_id-less) ingest changesets.
@@ -327,8 +329,8 @@ def test_note_sets_changeset_note(flipcommons_catalog, pm):
 def test_retract_only_entry_lands_note(flipcommons_catalog, pm):
     # Seed a flipcommons-catalog year claim, then retract it with a note. A retraction
     # emits no assertion, so its note must still reach the changeset.
-    make_claim(pm, "year", 1998, ingest_source=flipcommons_catalog)
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: removing our bad year\n      retract: [year]\n"
+    make_claim(pm, "production_year", 1998, ingest_source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: removing our bad year\n      retract: [production_year]\n"
     report = _apply(text, patch_id="0002-retract")
     assert report.retracted == 1
     cs = ChangeSet.objects.get(ingest_run__patch_id="0002-retract")
@@ -347,7 +349,7 @@ claims:
   - model.medieval-madness:
       note: only one prototype made
       cite: ipdb:4443
-      year: 1998
+      production_year: 1998
       tag: [prototype]
 """
     _apply(text)
@@ -360,14 +362,14 @@ claims:
     assert link.link_type == "reference"
 
     # Citation attached to BOTH the scalar (year) and relationship (tag) claims.
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     tag_claim = pm.claims.get(field_name="tag", is_active=True)
     assert year_claim.citation_instances.get().citation_source_id == child.pk
     assert tag_claim.citation_instances.get().citation_source_id == child.pk
 
 
 def test_cite_is_idempotent_across_applications(flipcommons_catalog, ipdb_root, pm):
-    base = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: {year}\n"
+    base = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      production_year: {year}\n"
     _apply(base.format(year=1998), patch_id="0001-a")
     _apply(base.format(year=1999), patch_id="0002-b")
     # Re-citing the same id reuses the one child source.
@@ -583,8 +585,8 @@ def test_cite_on_unchanged_value_rejected(flipcommons_catalog, ipdb_root, pm):
     # would attach to nothing and silently vanish — rejected. The empty-diff
     # guard runs in the apply layer (ValidationError; the command converts it
     # to a PatchError for the author).
-    make_claim(pm, "year", 2000, ingest_source=flipcommons_catalog)
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 2000\n"
+    make_claim(pm, "production_year", 2000, ingest_source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      production_year: 2000\n"
     with pytest.raises(ValidationError, match="changes nothing"):
         _apply(text)
     assert not CitationInstance.objects.exists()
@@ -595,8 +597,8 @@ def test_note_on_unchanged_value_rejected(flipcommons_catalog, pm):
     # unchanged, which would drop the note — rejected. Build time can't catch
     # this (it depends on the post-diff result), so the apply-layer empty-diff
     # guard does.
-    make_claim(pm, "year", 2000, ingest_source=flipcommons_catalog)
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
+    make_claim(pm, "production_year", 2000, ingest_source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      production_year: 2000\n"
     with pytest.raises(ValidationError, match="changes nothing"):
         _apply(text)
     # The no-op apply must mint no changeset; scope to this patch since seed
@@ -606,8 +608,8 @@ def test_note_on_unchanged_value_rejected(flipcommons_catalog, pm):
 
 def test_changing_note_entry_applies(flipcommons_catalog, pm):
     # A real change carrying a note applies clean (no false empty-diff reject).
-    make_claim(pm, "year", 2000, ingest_source=flipcommons_catalog)
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      year: 1999\n"
+    make_claim(pm, "production_year", 2000, ingest_source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      production_year: 1999\n"
     report = _apply(text)
     assert report.asserted == 1
 
@@ -617,7 +619,7 @@ def test_invalid_value_reports_validation_not_empty_diff(flipcommons_catalog, pm
     # be masked by the empty-diff guard as "changes nothing": a rejected claim
     # never reaches the diff, so the guard would otherwise blame the entry for a
     # no-op instead of the real problem (year is a positive int).
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: bumping the year\n      year: -5\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: bumping the year\n      production_year: -5\n"
     with pytest.raises(ValidationError, match="failed validation"):
         _apply(text)
 
@@ -632,7 +634,7 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
     )
     plan.assertions.append(
         PlannedClaimAssert(
-            field_name="year",
+            field_name="production_year",
             value=1998,
             content_type_id=ct.pk,
             object_id=pm.pk,
@@ -651,7 +653,7 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
     )
     apply_plan(plan)
 
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     qty_claim = pm.claims.get(field_name="production_quantity", is_active=True)
     assert year_claim.citation_instances.exists()
     assert not qty_claim.citation_instances.exists()
@@ -676,7 +678,7 @@ def test_cite_list_parsed_and_excluded_from_fields():
         "        - ref: ipdb:5556\n"
         "          locator: Notes section\n"
         "          quote: exists only as a prototype\n"
-        "      year: 1990\n"
+        "      production_year: 1990\n"
     )
     (entry,) = doc.claims
     assert isinstance(entry, EditEntry)
@@ -684,7 +686,7 @@ def test_cite_list_parsed_and_excluded_from_fields():
         ("ipdb:4443", "", "", ""),
         ("ipdb:5556", "", "Notes section", "exists only as a prototype"),
     )
-    assert entry.fields == {"year": 1990}
+    assert entry.fields == {"production_year": 1990}
 
 
 def test_cite_list_fans_out_to_all_claims(
@@ -700,12 +702,12 @@ claims:
         - ipdb:4443
         - ref: ipdb:5556
           quote: exists only as a prototype
-      year: 1998
+      production_year: 1998
       tag: [prototype]
 """
     _apply(text)
 
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     tag_claim = pm.claims.get(field_name="tag", is_active=True)
     year_instances = set(year_claim.citation_instances.values_list("pk", flat=True))
     tag_instances = set(tag_claim.citation_instances.values_list("pk", flat=True))
@@ -723,9 +725,9 @@ claims:
 
 def test_cite_single_spec_still_parses_as_before(flipcommons_catalog, ipdb_root, pm):
     # The single-spec form is unchanged wire grammar — a list of one.
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      production_year: 1998\n"
     _apply(text)
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     assert year_claim.citation_instances.get().citation_source.identifier == "4443"
 
 
@@ -736,7 +738,7 @@ def test_cite_empty_list_rejected():
             "claims:\n"
             "  - model.x:\n"
             "      cite: []\n"
-            "      year: 1990\n"
+            "      production_year: 1990\n"
         )
 
 
@@ -748,7 +750,7 @@ def test_cite_nested_list_element_rejected():
             "  - model.x:\n"
             "      cite:\n"
             "        - [ipdb:4443]\n"
-            "      year: 1990\n"
+            "      production_year: 1990\n"
         )
 
 
@@ -762,7 +764,7 @@ def test_cite_list_exact_duplicate_rejected():
             "      cite:\n"
             "        - ipdb:4443\n"
             "        - ipdb:4443\n"
-            "      year: 1990\n"
+            "      production_year: 1990\n"
         )
 
 
@@ -778,7 +780,7 @@ def test_cite_list_normalized_duplicate_rejected(flipcommons_catalog, youtube_ro
         "          locator: '95'\n"
         "        - ref: youtube:dQw4w9WgXcQ\n"
         "          locator: '1:35'\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="duplicate"):
         _apply(text)
@@ -796,7 +798,7 @@ def test_cite_list_string_vs_mapping_duplicate_rejected(
         "      cite:\n"
         "        - ipdb:4443\n"
         "        - ref: ipdb:4443\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="duplicate"):
         _apply(text)
@@ -814,10 +816,10 @@ claims:
           quote: first excerpt
         - ref: ipdb:4443
           quote: second excerpt
-      year: 1998
+      production_year: 1998
 """
     _apply(text)
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     assert year_claim.citation_instances.count() == 2
     assert (
         CitationSource.objects.filter(parent=ipdb_root, identifier="4443").count() == 1
@@ -839,10 +841,10 @@ def test_cite_list_url_bare_and_archived_one_join_row(
         f"        - {url}\n"
         f"        - ref: {url}\n"
         "          archive: https://web.archive.org/web/2024/https://kineticist.com/reviews/medieval-madness\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     assert year_claim.citation_instances.count() == 1
     assert year_claim.citation_links.count() == 1
 
@@ -865,7 +867,7 @@ claims:
 
 
 def test_cite_list_with_no_carrier_rejected(flipcommons_catalog, pm):
-    make_claim(pm, "year", 1998, ingest_source=flipcommons_catalog)
+    make_claim(pm, "production_year", 1998, ingest_source=flipcommons_catalog)
     text = (
         "attribution: flipcommons-catalog\n"
         "claims:\n"
@@ -873,7 +875,7 @@ def test_cite_list_with_no_carrier_rejected(flipcommons_catalog, pm):
         "      cite:\n"
         "        - ipdb:4443\n"
         "        - ipdb:5556\n"
-        "      retract: [year]\n"
+        "      retract: [production_year]\n"
     )
     with pytest.raises(PatchError, match="cite has no field to attach to"):
         _apply(text)
@@ -890,10 +892,10 @@ claims:
           cite:
             - ipdb:4443
             - ipdb:5556
-          year: 1998
+          production_year: 1998
 """
     _apply(text)
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     assert year_claim.citation_instances.count() == 2
 
 
@@ -905,7 +907,7 @@ def test_cite_list_idempotent_across_applications(flipcommons_catalog, ipdb_root
         "      cite:\n"
         "        - ipdb:4443\n"
         "        - ipdb:5556\n"
-        "      year: {year}\n"
+        "      production_year: {year}\n"
     )
     _apply(base.format(year=1998), patch_id="0001-a")
     _apply(base.format(year=1999), patch_id="0002-b")
@@ -924,7 +926,7 @@ def test_patch_plan_missing_entry_index_raises(flipcommons_catalog, pm):
     )
     plan.assertions.append(
         PlannedClaimAssert(
-            field_name="year",
+            field_name="production_year",
             value=1998,
             content_type_id=ct.pk,
             object_id=pm.pk,
@@ -938,7 +940,7 @@ def test_retract_note_on_already_inactive_field_rejected(flipcommons_catalog, pm
     # A retract: + note: on a field this source does not actively claim emits
     # no RetractEntry, so the note would vanish. Caught at build time — a no-op
     # retraction carries nothing.
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: removing a year we never claimed\n      retract: [year]\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: removing a year we never claimed\n      retract: [production_year]\n"
     with pytest.raises(PatchError, match="note has nothing to attach to"):
         _apply(text)
 
@@ -947,7 +949,7 @@ def test_missing_citation_root_errors(flipcommons_catalog, pm):
     # No ipdb root seeded → a clear error, not a silent miss. The resolver wraps
     # the leaf's DoesNotExist into a ValidationError naming the cite, so it
     # reaches _apply_one as a clean per-patch failure.
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      production_year: 1998\n"
     with pytest.raises(ValidationError) as exc_info:
         _apply(text)
     msg = "; ".join(exc_info.value.messages)
@@ -968,7 +970,7 @@ def test_url_cite_without_matching_root_errors(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     # The leaf's DoesNotExist is wrapped into a ValidationError naming the URL,
     # so a no-matching-root cite reaches _apply_one cleanly.
@@ -994,10 +996,10 @@ def test_url_cite_reuses_preexisting_source(flipcommons_catalog, kineticist_root
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     assert year_claim.citation_instances.get().citation_source_id == existing.pk
     assert CitationSource.objects.filter(links__url=url).distinct().count() == 1
 
@@ -1013,7 +1015,7 @@ def test_url_cite_nests_under_domain_matched_root(
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
 
@@ -1030,7 +1032,7 @@ def test_url_cite_nests_under_domain_matched_root(
         .exists()
     )
 
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     assert year_claim.citation_instances.get().citation_source_id == child.pk
 
 
@@ -1047,7 +1049,7 @@ def test_url_cite_on_subdomain_nests_under_domain_matched_root(
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
 
@@ -1059,7 +1061,7 @@ def test_url_cite_on_subdomain_nests_under_domain_matched_root(
         .exclude(pk=kineticist_root.pk)
         .exists()
     )
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     assert year_claim.citation_instances.get().citation_source_id == child.pk
 
 
@@ -1073,7 +1075,7 @@ def test_url_cite_under_root_dedups_and_separates(
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: {url}\n"
-        "      year: {year}\n"
+        "      production_year: {year}\n"
     )
     url_a = "https://kineticist.com/a"
     url_b = "https://kineticist.com/b"
@@ -1098,7 +1100,7 @@ def test_url_cite_with_archive_attaches_both_links(
         "      cite:\n"
         f"        ref: {url}\n"
         f"        archive: {archive}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
 
@@ -1106,7 +1108,7 @@ def test_url_cite_with_archive_attaches_both_links(
     links = {link.link_type: link.url for link in child.links.all()}
     assert links == {"reference": url, "archive": archive}
 
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     assert year_claim.citation_instances.get().citation_source_id == child.pk
 
 
@@ -1121,7 +1123,7 @@ def test_url_cite_archive_idempotent(flipcommons_catalog, kineticist_root, pm):
         "      cite:\n"
         f"        ref: {url}\n"
         f"        archive: {archive}\n"
-        "      year: {year}\n"
+        "      production_year: {year}\n"
     )
     _apply(base.format(year=1998), patch_id="0001-a")
     _apply(base.format(year=1999), patch_id="0002-b")
@@ -1139,14 +1141,14 @@ def test_archive_added_to_preexisting_child(flipcommons_catalog, kineticist_root
     archive = "https://web.archive.org/web/20240101000000/" + url
     _apply(
         "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n"
-        f"      cite: {url}\n      year: 1998\n",
+        f"      cite: {url}\n      production_year: 1998\n",
         patch_id="0001-a",
     )
     _apply(
         "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n"
         "      cite:\n"
         f"        ref: {url}\n        archive: {archive}\n"
-        "      year: 1999\n",
+        "      production_year: 1999\n",
         patch_id="0002-b",
     )
 
@@ -1165,7 +1167,7 @@ def test_cite_archive_with_scheme_cite_rejected(flipcommons_catalog, pm):
         "      cite:\n"
         "        ref: ipdb:4443\n"
         "        archive: https://web.archive.org/web/2024/x\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="only valid alongside"):
         _apply(text)
@@ -1179,7 +1181,7 @@ def test_cite_mapping_unknown_key_rejected(flipcommons_catalog, pm):
         "      cite:\n"
         "        ref: https://kineticist.com/x\n"
         "        wayback: https://web.archive.org/x\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="unknown key"):
         _apply(text)
@@ -1193,7 +1195,7 @@ def test_invalid_archive_url_rejected(flipcommons_catalog, kineticist_root, pm):
         "      cite:\n"
         "        ref: https://kineticist.com/x\n"
         "        archive: not-a-url\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="not a valid"):
         _apply(text)
@@ -1212,12 +1214,12 @@ def test_cite_mapping_locator_and_quote_land_on_instance(
         "        ref: ipdb:4443\n"
         "        locator: Notes section\n"
         '        quote: "This game was never produced."\n'
-        "      year: 1998\n"
+        "      production_year: 1998\n"
         "      production_quantity: 4000\n"
     )
     _apply(text)
 
-    year_claim = pm.claims.get(field_name="year", is_active=True)
+    year_claim = pm.claims.get(field_name="production_year", is_active=True)
     qty_claim = pm.claims.get(field_name="production_quantity", is_active=True)
     instance = year_claim.citation_instances.get()
     assert instance.locator == "Notes section"
@@ -1234,11 +1236,13 @@ def test_cite_scalar_form_mints_empty_locator_and_quote(
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: ipdb:4443\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
 
-    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    instance = pm.claims.get(
+        field_name="production_year", is_active=True
+    ).citation_instances.get()
     assert instance.locator == ""
     assert instance.quote == ""
 
@@ -1252,7 +1256,7 @@ def test_cite_quote_overlong_rejected(flipcommons_catalog, pm):
         "      cite:\n"
         "        ref: ipdb:4443\n"
         f"        quote: {long_quote}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="cite quote exceeds"):
         _apply(text)
@@ -1267,7 +1271,7 @@ def test_cite_locator_overlong_rejected(flipcommons_catalog, pm):
         "      cite:\n"
         "        ref: ipdb:4443\n"
         f"        locator: {long_locator}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="cite locator exceeds"):
         _apply(text)
@@ -1280,7 +1284,7 @@ def test_ipdb_url_cite_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: https://www.ipdb.org/machine.cgi?id=4443\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="matches the ipdb scheme.*ipdb:4443"):
         _apply(text)
@@ -1292,7 +1296,7 @@ def test_opdb_url_cite_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: https://opdb.org/machines/GRhX5\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="matches the opdb scheme"):
         _apply(text)
@@ -1304,7 +1308,7 @@ def test_malformed_url_cite_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: https://\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="is not a valid URL"):
         _apply(text)
@@ -1317,7 +1321,7 @@ def test_overlong_url_cite_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {long_url}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="cite URL exceeds"):
         _apply(text)
@@ -1334,7 +1338,7 @@ def test_long_url_cite_names_source_by_hostname(
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
     child = CitationSource.objects.get(parent=kineticist_root)
@@ -1352,7 +1356,7 @@ def test_url_cite_surfaced_in_edit_history(
         "  - model.medieval-madness:\n"
         "      note: per the forum\n"
         f"      cite: {url}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
 
@@ -1361,9 +1365,11 @@ def test_url_cite_surfaced_in_edit_history(
     # Seed name claim now rides its own ingest changeset, so pick the one
     # carrying the year change rather than assuming a single entry.
     cs = next(
-        c for c in resp.json() if any(ch["field_name"] == "year" for ch in c["changes"])
+        c
+        for c in resp.json()
+        if any(ch["field_name"] == "production_year" for ch in c["changes"])
     )
-    year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
+    year_change = next(c for c in cs["changes"] if c["field_name"] == "production_year")
     (citation,) = year_change["citations"]
     assert citation["source_name"] == url
     (link,) = citation["links"]
@@ -1386,7 +1392,7 @@ def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
         "      cite:\n"
         f"        ref: {url}\n"
         f"        archive: {archive}\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
 
@@ -1395,9 +1401,11 @@ def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
     # Seed name claim now rides its own ingest changeset, so pick the one
     # carrying the year change rather than assuming a single entry.
     cs = next(
-        c for c in resp.json() if any(ch["field_name"] == "year" for ch in c["changes"])
+        c
+        for c in resp.json()
+        if any(ch["field_name"] == "production_year" for ch in c["changes"])
     )
-    year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
+    year_change = next(c for c in cs["changes"] if c["field_name"] == "production_year")
     (citation,) = year_change["citations"]
     by_type = {link["link_type"]: link["url"] for link in citation["links"]}
     assert by_type["reference"] == url  # the live page leads
@@ -1408,7 +1416,7 @@ def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
 
 
 def test_edit_history_exposes_citation(client, flipcommons_catalog, ipdb_root, pm):
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: per ipdb\n      cite: ipdb:4443\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: per ipdb\n      cite: ipdb:4443\n      production_year: 1998\n"
     _apply(text)
 
     resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
@@ -1416,9 +1424,13 @@ def test_edit_history_exposes_citation(client, flipcommons_catalog, ipdb_root, p
     body = resp.json()
     # Seed name claim now rides its own ingest changeset, so pick the one
     # carrying the year change rather than assuming a single entry.
-    cs = next(c for c in body if any(ch["field_name"] == "year" for ch in c["changes"]))
+    cs = next(
+        c
+        for c in body
+        if any(ch["field_name"] == "production_year" for ch in c["changes"])
+    )
     assert cs["note"] == "per ipdb"
-    year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
+    year_change = next(c for c in cs["changes"] if c["field_name"] == "production_year")
     (citation,) = year_change["citations"]
     assert citation["source_name"] == "Internet Pinball Database #4443"
     assert "https://www.ipdb.org/machine.cgi?id=4443" in [
@@ -1429,7 +1441,7 @@ def test_edit_history_exposes_citation(client, flipcommons_catalog, ipdb_root, p
 def test_changeset_detail_exposes_citation(client, flipcommons_catalog, ipdb_root, pm):
     # The changeset-detail endpoint shares build_changes with edit history, so
     # its claims prefetch must also load citation instances.
-    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      production_year: 1998\n"
     _apply(text)
     # Filter to this patch's changeset; seed name claims now ride their own
     # (patch_id-less) ingest changesets.
@@ -1437,7 +1449,9 @@ def test_changeset_detail_exposes_citation(client, flipcommons_catalog, ipdb_roo
 
     resp = client.get(f"/api/pages/changesets/{cs.pk}/")
     assert resp.status_code == 200
-    year_change = next(c for c in resp.json()["changes"] if c["field_name"] == "year")
+    year_change = next(
+        c for c in resp.json()["changes"] if c["field_name"] == "production_year"
+    )
     (citation,) = year_change["citations"]
     assert citation["source_name"] == "Internet Pinball Database #4443"
 
@@ -1470,11 +1484,13 @@ def test_video_cite_locator_normalized_and_child_minted_as_video(
         "      cite:\n"
         "        ref: youtube:dQw4w9WgXcQ\n"
         "        locator: 1h2m3s\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
 
-    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    instance = pm.claims.get(
+        field_name="production_year", is_active=True
+    ).citation_instances.get()
     assert instance.locator == "1:02:03"
     child = instance.citation_source
     assert child.source_type == "video"
@@ -1489,7 +1505,7 @@ def test_video_cite_locator_invalid_rejected(flipcommons_catalog, youtube_root, 
         "      cite:\n"
         "        ref: youtube:dQw4w9WgXcQ\n"
         "        locator: p. 42\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(PatchError, match="cite locator"):
         _apply(text)
@@ -1502,10 +1518,12 @@ def test_video_cite_without_locator_is_fine(flipcommons_catalog, youtube_root, p
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: youtube:dQw4w9WgXcQ\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
-    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    instance = pm.claims.get(
+        field_name="production_year", is_active=True
+    ).citation_instances.get()
     assert instance.locator == ""
 
 
@@ -1519,10 +1537,12 @@ def test_web_scheme_cite_locator_stays_freeform(flipcommons_catalog, ipdb_root, 
         "      cite:\n"
         "        ref: ipdb:4443\n"
         "        locator: Notes section\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
-    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    instance = pm.claims.get(
+        field_name="production_year", is_active=True
+    ).citation_instances.get()
     assert instance.locator == "Notes section"
 
 
@@ -1557,11 +1577,13 @@ def test_isbn_cite_attaches_to_the_seeded_edition(
         "      cite:\n"
         "        ref: isbn:9781889933023\n"
         "        locator: Vol. 2, p. 107\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     _apply(text)
 
-    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    instance = pm.claims.get(
+        field_name="production_year", is_active=True
+    ).citation_instances.get()
     assert instance.citation_source_id == encyclopedia_vol2.pk
     assert instance.locator == "Vol. 2, p. 107"
     assert instance.quote == ""
@@ -1576,12 +1598,14 @@ def test_isbn_cite_reuses_the_one_source(flipcommons_catalog, encyclopedia_vol2,
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: isbn:978-1-889933-02-3\n"
-        "      year: {year}\n"
+        "      production_year: {year}\n"
     )
     _apply(base.format(year=1998), patch_id="0001-a")
     _apply(base.format(year=1999), patch_id="0002-b")
     assert CitationSource.objects.count() == before
-    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    instance = pm.claims.get(
+        field_name="production_year", is_active=True
+    ).citation_instances.get()
     assert instance.citation_source_id == encyclopedia_vol2.pk
 
 
@@ -1593,7 +1617,7 @@ def test_unseeded_isbn_cite_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: isbn:9780764365027\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     # Apply-time failures surface as ValidationError here; the ingest command
     # is what maps them to a PatchError (see the missing-root cite tests).
@@ -1615,7 +1639,7 @@ def test_isbn_cite_on_a_work_with_children_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: isbn:9780764323003\n"
-        "      year: 1998\n"
+        "      production_year: 1998\n"
     )
     with pytest.raises(ValidationError, match="edition"):
         _apply(text)
@@ -1638,12 +1662,12 @@ claims:
             is a copy of Tura Automatenfabrik Gmbh's 1933 'Tura-Ball'.
         - ref: isbn:9781889933023
           locator: Vol. 2, p. 107
-      year: 1998
+      production_year: 1998
 """
     _apply(text)
 
     instances = pm.claims.get(
-        field_name="year", is_active=True
+        field_name="production_year", is_active=True
     ).citation_instances.all()
     by_source = {i.citation_source_id: i for i in instances}
     assert len(by_source) == 2

@@ -32,7 +32,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def pm(db, flipcommons_catalog):
     return make_machine_model(
-        name="Medieval Madness", slug="medieval-madness", year=1997
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
     )
 
 
@@ -399,12 +399,12 @@ claims:
 
 
 def test_cites_without_markdown_claim_rejected(flipcommons_catalog, ipdb_root, pm):
-    # year is not a markdown field — nothing for the cite to bind to.
+    # production_year is not a markdown field — nothing for the cite to bind to.
     text = """
 attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
-      year: 1998
+      production_year: 1998
       cites:
         '1': ipdb:4443
 """

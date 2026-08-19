@@ -84,16 +84,21 @@ class TestListCorporateEntities:
 
     def test_list_includes_model_count(self, client, entity):
         make_machine_model(
-            name="Ace High", slug="ace-high", corporate_entity=entity, year=1957
+            name="Ace High",
+            slug="ace-high",
+            corporate_entity=entity,
+            production_year=1957,
         )
         resp = client.get("/api/corporate-entities/")
         assert resp.json()["items"][0]["model_count"] == 1
 
     def test_list_includes_production_span(self, client, entity):
         make_machine_model(
-            name="Early", slug="early", corporate_entity=entity, year=1960
+            name="Early", slug="early", corporate_entity=entity, production_year=1960
         )
-        make_machine_model(name="Late", slug="late", corporate_entity=entity, year=1975)
+        make_machine_model(
+            name="Late", slug="late", corporate_entity=entity, production_year=1975
+        )
         resp = client.get("/api/corporate-entities/")
         row = next(r for r in resp.json()["items"] if r["slug"] == entity.slug)
         assert row["year_of_first_model"] == 1960
@@ -147,7 +152,7 @@ class TestGetCorporateEntity:
             slug="ace-high",
             corporate_entity=entity,
             title=title,
-            year=1957,
+            production_year=1957,
         )
         resp = client.get(f"/api/pages/corporate-entity/{entity.slug}")
         games = resp.json()["games"]
@@ -156,9 +161,11 @@ class TestGetCorporateEntity:
 
     def test_detail_production_span(self, client, entity):
         make_machine_model(
-            name="Early", slug="early", corporate_entity=entity, year=1960
+            name="Early", slug="early", corporate_entity=entity, production_year=1960
         )
-        make_machine_model(name="Late", slug="late", corporate_entity=entity, year=1975)
+        make_machine_model(
+            name="Late", slug="late", corporate_entity=entity, production_year=1975
+        )
         resp = client.get(f"/api/pages/corporate-entity/{entity.slug}")
         data = resp.json()
         assert data["year_of_first_model"] == 1960

@@ -56,8 +56,12 @@ class TestPeopleAPI:
         t3 = Title.objects.create(
             name="No Year Title", slug="no-year-title", opdb_id="T-noyear-p"
         )
-        old = make_machine_model(name="Old Game", slug="old-game", year=1990, title=t1)
-        new = make_machine_model(name="New Game", slug="new-game", year=2020, title=t2)
+        old = make_machine_model(
+            name="Old Game", slug="old-game", production_year=1990, title=t1
+        )
+        new = make_machine_model(
+            name="New Game", slug="new-game", production_year=2020, title=t2
+        )
         no_year = make_machine_model(name="No Year Game", slug="no-year-game", title=t3)
         for m in (old, new, no_year):
             Credit.objects.create(model=m, person=person, role=role)

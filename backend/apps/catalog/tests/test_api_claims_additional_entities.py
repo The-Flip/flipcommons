@@ -451,7 +451,7 @@ class TestPatchSeriesResponseShape:
             slug="eight-ball-deluxe",
             title=title,
             corporate_entity=williams_entity,
-            year=1981,
+            production_year=1981,
         )
         person = Person.objects.create(name="George Christian", slug="george-christian")
         role = CreditRole.objects.get(slug="design")
@@ -505,7 +505,7 @@ class TestPatchSystemResponseShape:
             system=system,
             corporate_entity=williams_entity,
             technology_generation=solid_state,
-            year=1997,
+            production_year=1997,
         )
 
         client.force_login(user)
@@ -542,7 +542,7 @@ class TestPatchRewardTypeResponseShape:
             title=title,
             corporate_entity=williams_entity,
             technology_generation=solid_state,
-            year=1980,
+            production_year=1980,
         )
         model.reward_types.add(reward_type)
 

@@ -109,7 +109,7 @@ _MODEL_SEQ = iter(range(1, 1_000_000))
 def _model(
     ce: CorporateEntity,
     *,
-    year: int | None = None,
+    production_year: int | None = None,
     technology_generation: TechnologyGeneration | None = None,
     person: Person | None = None,
     status: str = EntityStatus.ACTIVE,
@@ -125,7 +125,7 @@ def _model(
         name=f"Model {n}",
         title=title,
         corporate_entity=ce,
-        year=year,
+        production_year=production_year,
         technology_generation=technology_generation,
         status=status,
         variant_of=variant_of,
@@ -435,13 +435,13 @@ class TestYearFilter:
         inside it (the two bounds are satisfied by different models)."""
         mfr = _mfr("acme", name="Acme")
         ce = _ce(mfr, "acme-ce")
-        _model(ce, year=1980)
-        _model(ce, year=2000)
+        _model(ce, production_year=1980)
+        _model(ce, production_year=2000)
         assert _slugs(MfrFilters(year_min=1990, year_max=1995)) == {"acme"}
 
     def test_open_ended_min(self, db):
         mfr = _mfr("acme", name="Acme")
-        _model(_ce(mfr, "acme-ce"), year=1985)
+        _model(_ce(mfr, "acme-ce"), production_year=1985)
         assert _slugs(MfrFilters(year_min=1990)) == set()
         assert _slugs(MfrFilters(year_min=1980)) == {"acme"}
 
@@ -449,8 +449,8 @@ class TestYearFilter:
         """A variant model's year can't satisfy the filter (the card never shows it)."""
         mfr = _mfr("acme", name="Acme")
         ce = _ce(mfr, "acme-ce")
-        base = _model(ce, year=1980)
-        _model(ce, year=2000, variant_of=base)
+        base = _model(ce, production_year=1980)
+        _model(ce, production_year=2000, variant_of=base)
         # Only the 1980 base model is real → no overlap with 1995–1999.
         assert _slugs(MfrFilters(year_min=1995, year_max=1999)) == set()
 
@@ -487,11 +487,11 @@ class TestCombinedFilters:
         em = _tech("electromechanical", "EM")
         a = _mfr("a", name="A")
         ce_a = _ce(a, "a-ce")
-        _model(ce_a, year=1990, technology_generation=ss)
+        _model(ce_a, production_year=1990, technology_generation=ss)
         b = _mfr("b", name="B")
         ce_b = _ce(b, "b-ce")
         _model(
-            ce_b, year=1990, technology_generation=em
+            ce_b, production_year=1990, technology_generation=em
         )  # year matches, technology_generation doesn't
         f = MfrFilters(
             year_min=1985, year_max=1995, technology_generation="solid-state"
@@ -558,8 +558,8 @@ class TestFacetCounts:
     def test_year_bounds(self, db):
         mfr = _mfr("acme", name="Acme")
         ce = _ce(mfr, "acme-ce")
-        _model(ce, year=1980)
-        _model(ce, year=2005)
+        _model(ce, production_year=1980)
+        _model(ce, production_year=2005)
         assert facet_counts(MfrFilters()).year == (1980, 2005)
 
     def test_badge_equals_result_count(self, db):
@@ -597,7 +597,7 @@ class TestFacetCounts:
         # technology_generation exists in the catalog but no manufacturer matches the combined
         # filter (year excludes the only solid-state manufacturer).
         mfr = _mfr("acme", name="Acme")
-        _model(_ce(mfr, "acme-ce"), year=1980, technology_generation=ss)
+        _model(_ce(mfr, "acme-ce"), production_year=1980, technology_generation=ss)
         f = MfrFilters(year_min=2000, technology_generation="solid-state")
         assert not _slugs(f)
         by_id = {o.public_id: o for o in facet_counts(f).technology_generation}
@@ -690,9 +690,9 @@ class TestOrdering:
         surviving models)."""
         mfr = _mfr("acme", name="Acme")
         ce = _ce(mfr, "acme-ce")
-        _model(ce, year=1990)
-        _model(ce, year=1995)
-        _model(ce, year=2000)
+        _model(ce, production_year=1990)
+        _model(ce, production_year=1995)
+        _model(ce, production_year=2000)
         rows = dict(_ordered_counts(MfrFilters(year_min=1999)))
         assert rows == {"acme": 3}
 
@@ -709,8 +709,8 @@ class TestOrdering:
     def test_variant_only_manufacturer_reads_zero(self, db):
         mfr = _mfr("acme", name="Acme")
         ce = _ce(mfr, "acme-ce")
-        base = _model(ce, year=1980)
-        _model(ce, year=1981, variant_of=base)
+        base = _model(ce, production_year=1980)
+        _model(ce, production_year=1981, variant_of=base)
         # 1 non-variant base model.
         assert dict(_ordered_counts(MfrFilters())) == {"acme": 1}
 
@@ -767,7 +767,7 @@ class TestCardsEndpoint:
         ce = _ce(_mfr("acme", name="Acme"), "acme-ce")
         _model(
             ce,
-            year=1990,
+            production_year=1990,
             extra_data={
                 "opdb.images": [
                     {
@@ -778,7 +778,7 @@ class TestCardsEndpoint:
                 ]
             },
         )
-        _model(ce, year=2020, extra_data={"opdb.images": SAMPLE_IMAGES})
+        _model(ce, production_year=2020, extra_data={"opdb.images": SAMPLE_IMAGES})
         body = client.get("/api/manufacturers/").json()
         assert body["items"][0]["thumbnail_url"] == "https://img.opdb.org/md.jpg"
 
@@ -794,7 +794,7 @@ class TestCardsEndpoint:
         for i in range(3):
             _model(
                 _ce(_mfr(f"a{i}", name=f"A{i}"), f"a{i}-ce"),
-                year=2000,
+                production_year=2000,
                 extra_data={"opdb.images": SAMPLE_IMAGES},
             )
         with CaptureQueriesContext(connection) as a:
@@ -802,7 +802,7 @@ class TestCardsEndpoint:
         for i in range(3, 9):
             _model(
                 _ce(_mfr(f"a{i}", name=f"A{i}"), f"a{i}-ce"),
-                year=2000,
+                production_year=2000,
                 extra_data={"opdb.images": SAMPLE_IMAGES},
             )
         with CaptureQueriesContext(connection) as b:

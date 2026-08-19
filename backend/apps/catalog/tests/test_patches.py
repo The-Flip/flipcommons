@@ -126,14 +126,16 @@ def test_non_finite_float_rejected():
 
 
 def test_fingerprint_stable_to_key_order_and_whitespace():
-    a = parse_patch_text("attribution: x\nclaims:\n  - model.a: {year: 1}\n")
-    b = parse_patch_text("claims:\n  - model.a: {year: 1}\nattribution:   x\n")
+    a = parse_patch_text("attribution: x\nclaims:\n  - model.a: {production_year: 1}\n")
+    b = parse_patch_text(
+        "claims:\n  - model.a: {production_year: 1}\nattribution:   x\n"
+    )
     assert fingerprint(a) == fingerprint(b)
 
 
 def test_fingerprint_changes_with_value():
-    a = parse_patch_text("attribution: x\nclaims:\n  - model.a: {year: 1}\n")
-    b = parse_patch_text("attribution: x\nclaims:\n  - model.a: {year: 2}\n")
+    a = parse_patch_text("attribution: x\nclaims:\n  - model.a: {production_year: 1}\n")
+    b = parse_patch_text("attribution: x\nclaims:\n  - model.a: {production_year: 2}\n")
     assert fingerprint(a) != fingerprint(b)
 
 
@@ -147,7 +149,7 @@ attribution: flipcommons-catalog
 description: tag a prototype
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       tag: [prototype]
 """
     report = _apply(text)
@@ -181,7 +183,7 @@ def test_unknown_entity_type_rejected():
 attribution: flipcommons-catalog
 claims:
   - frobnicator.foo:
-      year: 1
+      production_year: 1
 """
     with pytest.raises(PatchError):
         _apply(text)
@@ -956,8 +958,8 @@ def test_expect_accepted_but_ignored_on_edit(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      expect: {{ year: 1234 }}
-      year: 1990
+      expect: {{ production_year: 1234 }}
+      production_year: 1990
 """
     _apply(text)
     machine_model.refresh_from_db()
@@ -1303,7 +1305,7 @@ def test_grouped_header_expect_ignored(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      expect: {{ year: 1234 }}
+      expect: {{ production_year: 1234 }}
       changesets:
         - player_count: 4
         - flipper_count: 2
@@ -1320,7 +1322,7 @@ def test_grouped_disjoint_violation_across_items(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      expect: {{ year: 1997 }}
+      expect: {{ production_year: 1997 }}
       changesets:
         - player_count: 4
         - player_count: 2
@@ -1360,7 +1362,7 @@ def test_grouped_primary_edit_plus_companions(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      expect: {{ year: 1997 }}
+      expect: {{ production_year: 1997 }}
       note: header note
       player_count: 4
       changesets:
@@ -1420,7 +1422,7 @@ def test_grouped_empty_or_nonlist_changesets_rejected(bad):
 attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
-      expect: {{ year: 1997 }}
+      expect: {{ production_year: 1997 }}
       {bad}
 """
     with pytest.raises(
@@ -1436,7 +1438,7 @@ def test_grouped_header_provenance_without_fields_rejected():
 attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
-      expect: { year: 1997 }
+      expect: { production_year: 1997 }
       note: orphan note
       changesets:
         - player_count: 4
@@ -2082,7 +2084,7 @@ claims:
       delete: true
   - model.medieval-madness:
       note: 'edit on a machine that the cascade is deleting'
-      year: 1998
+      production_year: 1998
 """
     with pytest.raises(PatchError, match="another entry targets an entity this patch"):
         _apply(text)
@@ -2189,7 +2191,7 @@ def test_empty_directives_on_edit_are_accepted(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       expect: {{}}
       retract: []
       remove: {{}}
@@ -2208,7 +2210,7 @@ def test_reassert_same_claim_is_noop(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
 """
     r1 = _apply(text, patch_id="0001-a")
     assert r1.asserted == 1
@@ -2225,7 +2227,7 @@ def test_one_ingestrun_one_changeset(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
 """
     _apply(text, patch_id="0001-x")
     run = IngestRun.objects.get(patch_id="0001-x")
@@ -2293,7 +2295,7 @@ attribution: flipcommons-catalog
 description: tag it
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
 """
     _write(tmp_path, "0001-year.yaml", text)
 
@@ -2318,14 +2320,14 @@ claims:
 def test_command_immutability_semantic_change(tmp_path, machine_model):
     p = tmp_path / "0001-year.yaml"
     p.write_text(
-        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      production_year: 1990\n",
         encoding="utf-8",
     )
     call_command("ingest_patches", "--patches-dir", str(tmp_path))
 
     # Semantic change to an applied patch → hard error.
     p.write_text(
-        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1991\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      production_year: 1991\n",
         encoding="utf-8",
     )
     with pytest.raises(CommandError, match="immutable"):
@@ -2335,14 +2337,14 @@ def test_command_immutability_semantic_change(tmp_path, machine_model):
 def test_command_immutability_cosmetic_reformat_skips(tmp_path, machine_model):
     p = tmp_path / "0001-year.yaml"
     p.write_text(
-        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      production_year: 1990\n",
         encoding="utf-8",
     )
     call_command("ingest_patches", "--patches-dir", str(tmp_path))
 
     # Cosmetic reformat (added comment + blank lines + spacing) → still skips.
     p.write_text(
-        f"# a comment\nattribution:   flipcommons-catalog\n\nclaims:\n\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"# a comment\nattribution:   flipcommons-catalog\n\nclaims:\n\n  - model.{machine_model.slug}:\n      production_year: 1990\n",
         encoding="utf-8",
     )
     call_command("ingest_patches", "--patches-dir", str(tmp_path))
@@ -2373,7 +2375,7 @@ def test_command_missing_attribution_source(tmp_path, machine_model):
     _write(
         tmp_path,
         "0001-x.yaml",
-        f"attribution: no-such-source\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"attribution: no-such-source\nclaims:\n  - model.{machine_model.slug}:\n      production_year: 1990\n",
     )
     with pytest.raises(CommandError, match="does not exist"):
         call_command("ingest_patches", "--patches-dir", str(tmp_path))
@@ -2384,7 +2386,7 @@ def test_command_stops_at_first_failure(tmp_path, machine_model):
     _write(
         tmp_path,
         "0001-ok.yaml",
-        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      production_year: 1990\n",
     )
     _write(
         tmp_path,
@@ -2394,7 +2396,7 @@ def test_command_stops_at_first_failure(tmp_path, machine_model):
     _write(
         tmp_path,
         "0003-later.yaml",
-        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1992\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      production_year: 1992\n",
     )
     with pytest.raises(CommandError):
         call_command("ingest_patches", "--patches-dir", str(tmp_path))
@@ -2846,7 +2848,7 @@ sources:
       - {{ url: "https://en.wikipedia.org/", label: Wikipedia, link_type: homepage }}
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite: https://en.wikipedia.org/wiki/Pinball
 """
     report = _apply(text, patch_id="0001-root-cite")
@@ -4226,7 +4228,7 @@ attribution: flipcommons-catalog
 {_BILLBOARD_SOURCES}
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite:
         - ref: billboard:1945-09-29
           locator: p. 83
@@ -4266,7 +4268,7 @@ sources:
       - {{ url: "https://archive.org/details/wpc95-schematic", link_type: archive }}
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite:
         - ref: williams:wpc-95-schematic-manual
           locator: p. 12
@@ -4286,7 +4288,7 @@ def test_cite_of_an_undeclared_document_fails_at_build(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite: williams:wpc-95-schematic-manual
 """
     with pytest.raises(PatchError, match="declare\\s+the child"):
@@ -4325,7 +4327,7 @@ sources:
     source_type: periodical
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite: billboard:1945-09-29
 """
     report = _apply(text, patch_id="0001-issue-first")
@@ -4379,7 +4381,7 @@ def test_cite_of_an_undeclared_issue_fails_at_build(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite: billboard:1945-09-29
 """
     with pytest.raises(PatchError, match="declare\\s+the child"):
@@ -4393,7 +4395,7 @@ def test_scheme_typo_fails_at_build_naming_the_schemes(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite: ipddb:4443
 """
     with pytest.raises(PatchError, match="known schemes are"):
@@ -4434,7 +4436,7 @@ def test_cite_of_a_previously_seeded_issue_resolves(machine_model):
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite:
         - ref: billboard:1945-09-29
           locator: p. 83
@@ -4459,7 +4461,7 @@ attribution: flipcommons-catalog
 {_BILLBOARD_SOURCES}
 claims:
   - model.{machine_model.slug}:
-      year: 1990
+      production_year: 1990
       cite:
         - ref: ipdb:3656
           quote: "The earliest mention is in Victory Game's ad in Billboard 09/29/1945 p83."

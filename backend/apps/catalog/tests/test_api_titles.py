@@ -26,7 +26,7 @@ class TestTitlesAPI:
             name="Medieval Madness",
             slug="medieval-madness",
             corporate_entity=williams_entity,
-            year=1997,
+            production_year=1997,
             title=title,
             extra_data={"opdb.images": SAMPLE_IMAGES},
         )
@@ -34,7 +34,7 @@ class TestTitlesAPI:
             name="Medieval Madness (Remake)",
             slug="medieval-madness-remake",
             corporate_entity=williams_entity,
-            year=2015,
+            production_year=2015,
             title=title,
         )
         return title
@@ -438,19 +438,19 @@ class TestTitleDetailAggregation:
             name="MM",
             slug="mm-1",
             title=title,
-            year=1990,
+            production_year=1990,
         )
         middle = make_machine_model(
             name="MMR",
             slug="mm-2",
             title=title,
-            year=1991,
+            production_year=1991,
         )
         latest = make_machine_model(
             name="MM Deluxe",
             slug="mm-3",
             title=title,
-            year=1992,
+            production_year=1992,
         )
         ct = ContentType.objects.get_for_model(MachineModel)
 

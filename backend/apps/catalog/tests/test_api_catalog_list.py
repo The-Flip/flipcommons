@@ -534,7 +534,7 @@ class TestSeriesListThumbnail:
             title=title,
             name="Saga I",
             slug="saga-i-m",
-            year=1990,
+            production_year=1990,
             extra_data={"opdb.images": SAMPLE_IMAGES},
         )
         body = client.get("/api/series/").json()
@@ -564,10 +564,12 @@ class TestSeriesListThumbnail:
             name="Saga 1", slug="saga-1", status="active", series=series
         )
         # Earliest model (1980), no image at all.
-        make_machine_model(title=early, name="Saga 0", slug="saga-0-m", year=1980)
+        make_machine_model(
+            title=early, name="Saga 0", slug="saga-0-m", production_year=1980
+        )
         # Later model (1990), image only via uploaded primary media — empty extra_data.
         late_model = make_machine_model(
-            title=late, name="Saga 1", slug="saga-1-m", year=1990
+            title=late, name="Saga 1", slug="saga-1-m", production_year=1990
         )
         asset = MediaAsset.objects.create(
             kind=MediaAsset.Kind.IMAGE,

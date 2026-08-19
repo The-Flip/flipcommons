@@ -145,7 +145,7 @@ class TestBuildDisplayValue:
             name="Speakeasy",
             slug="speakeasy-display",
             corporate_entity=corporate_entity,
-            year=1982,
+            production_year=1982,
         )
         value = {
             "target_machine": target.pk,
@@ -412,10 +412,10 @@ class TestBuildDisplayValue:
         assert type(primary.value) is bool
 
     def test_unknown_namespace_returns_none(self):
-        # Non-FK scalar claims (year is an IntegerField, not a namespace or
+        # Non-FK scalar claims (production_year is an IntegerField, not a namespace or
         # FK) fall through — frontend renders the raw scalar.
         ctx = _ctx()
-        assert build_display_value(_MODEL, "year", 1998, ctx) is None
+        assert build_display_value(_MODEL, "production_year", 1998, ctx) is None
 
     def test_non_dict_value_returns_none(self):
         ctx = _ctx()
@@ -466,7 +466,7 @@ class TestDirectFkDisplay:
 
     def test_resolve_labels_ignores_direct_fields_and_bare_markers(self):
         # Resolve over a mixed batch: a credit dict, a theme dict, a
-        # direct-field scalar (year), and a bare retraction marker. The
+        # direct-field scalar (production_year), and a bare retraction marker. The
         # resulting lookup should only know about the FKs that were
         # genuinely referenced.
         person = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
@@ -480,7 +480,7 @@ class TestDirectFkDisplay:
                     _MODEL,
                 ),
                 FieldValue("theme", {"theme": theme.pk, "exists": True}, _MODEL),
-                FieldValue("year", 1998, _MODEL),
+                FieldValue("production_year", 1998, _MODEL),
                 FieldValue("credit", {"exists": False}, _MODEL),
             ]
         )
@@ -531,7 +531,7 @@ class TestMarkdownDisplay:
         # in [[manufacturer:slug]] form must round-trip back to that form in
         # the diff's display.text (raw stays storage form).
         user = make_user()
-        pm = make_machine_model(name="MM", slug="mm-eh", year=1997)
+        pm = make_machine_model(name="MM", slug="mm-eh", production_year=1997)
         man = Manufacturer.objects.create(name="Gottlieb", slug="gottlieb")
 
         client.force_login(user)
@@ -636,7 +636,7 @@ class TestQueryCountDoesNotScale:
         producing one query per credit on top of the batched baseline.
         """
         user = make_user()
-        pm = make_machine_model(name="MM", slug="mm-credits", year=1997)
+        pm = make_machine_model(name="MM", slug="mm-credits", production_year=1997)
         make_claim(pm, "name", "MM", ingest_source=bootstrap_source)
         CreditRole.objects.create(name="Design", slug="design")
 
@@ -694,7 +694,7 @@ class TestQueryCountDoesNotScale:
         public-id link type, not convert per rendered row.
         """
         user = make_user()
-        pm = make_machine_model(name="MM", slug="mm-descr", year=1997)
+        pm = make_machine_model(name="MM", slug="mm-descr", production_year=1997)
 
         counter = 0
 

@@ -192,6 +192,11 @@ class TestExportDriftGuard:
             "last_modified",
             "description",
             # claim scalars + FKs
+            "production_year",
+            "production_month",
+            "project_year",
+            "project_month",
+            # derived date (COALESCE of production, else project)
             "year",
             "month",
             "player_count",

@@ -84,7 +84,7 @@ class TestRungOne:
         """The VIFICO shape: a copy never rolls up to the Title it shares with
         the original — the matching Models card individually."""
         t = _title("Big Valley", "big-valley")
-        _model(t, "big-valley-bally", manufacturer="bally", year=1970)
+        _model(t, "big-valley-bally", manufacturer="bally", production_year=1970)
         _model(t, "big-valley-rmg", name="Big Valley (RMG)", manufacturer="rmg")
         assert _cards(GameFilters(manufacturer="rmg")) == {
             ("model", "Big Valley (RMG)")
@@ -104,7 +104,7 @@ class TestRungOne:
 
     def test_year_is_tested_per_model_and_missing_fails(self, db):
         t = _title("Timed", "timed")
-        _model(t, "timed-old", manufacturer="stern", year=1980)
+        _model(t, "timed-old", manufacturer="stern", production_year=1980)
         _model(t, "timed-undated", name="Timed Undated", manufacturer="stern")
         f = GameFilters(year_min=1975, year_max=1985)
         # The undated Model fails the range, so the Title shatters to the dated one.
@@ -144,7 +144,7 @@ class TestLifecycleStates:
         empty Title for a value it never had."""
         _title("Empty", "empty")
         t2 = _title("Full", "full")
-        _model(t2, "full-m", manufacturer="stern", year=1990)
+        _model(t2, "full-m", manufacturer="stern", production_year=1990)
         assert _cards(GameFilters(manufacturer="stern")) == {("title", "Full")}
         assert _cards(GameFilters(year_min=1980)) == {("title", "Full")}
 
@@ -366,8 +366,10 @@ class TestEdgeDimension:
         """One Title holding an original and its unlicensed copy — the shape
         the roll-up was built for (a copy sits under the Title it copies)."""
         t = _title("Big Valley", "big-valley")
-        original = _model(t, "big-valley-bally", name="Big Valley", year=1970)
-        rmg = _model(t, "big-valley-rmg", name="Big Valley (RMG)", year=1970)
+        original = _model(
+            t, "big-valley-bally", name="Big Valley", production_year=1970
+        )
+        rmg = _model(t, "big-valley-rmg", name="Big Valley (RMG)", production_year=1970)
         _edge(
             rmg,
             original,
@@ -712,9 +714,9 @@ class TestSparseDimensions:
 class TestRows:
     def test_ordering_newest_first_nulls_last(self, db):
         t1 = _title("Alpha", "alpha")
-        _model(t1, "alpha-m", year=1990)
+        _model(t1, "alpha-m", production_year=1990)
         t2 = _title("Beta", "beta")
-        _model(t2, "beta-m", year=2020)
+        _model(t2, "beta-m", production_year=2020)
         t3 = _title("Gamma", "gamma")
         _model(t3, "gamma-m")  # no year → last
         names = [r.name for r in _rows(GameFilters())]

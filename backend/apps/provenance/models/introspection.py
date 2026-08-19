@@ -24,6 +24,7 @@ def get_claim_fields(model_class: type[ClaimControlledModel]) -> ClaimFieldMap:
     claim-controlled.  Fields are excluded if they are:
 
     * primary keys
+    * database-generated (``GeneratedField``) — derived, never user-input
     * in ``_CLAIMS_EXEMPT_NAMES`` (infrastructure fields)
     * listed in the model's ``claims_exempt`` class attribute
     * GenericForeignKey helper columns (``content_type``, ``object_id``)
@@ -38,6 +39,8 @@ def get_claim_fields(model_class: type[ClaimControlledModel]) -> ClaimFieldMap:
         if not getattr(f, "concrete", False):
             continue
         if f.primary_key:
+            continue
+        if isinstance(f, models.GeneratedField):
             continue
         if f.name in _CLAIMS_EXEMPT_NAMES:
             continue

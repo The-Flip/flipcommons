@@ -35,7 +35,9 @@ def _only_user_changeset(user) -> ChangeSet:
 
 @pytest.fixture
 def pm(db, bootstrap_source):
-    pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
+    pm = make_machine_model(
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
+    )
     make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
@@ -129,7 +131,7 @@ class TestM2MThemes:
         client.force_login(user)
         _patch(client, pm.slug, {"themes": ["medieval"]})
         # PATCH with only a scalar field, themes=null (omitted)
-        resp = _patch(client, pm.slug, {"fields": {"year": 1998}})
+        resp = _patch(client, pm.slug, {"fields": {"production_year": 1998}})
         assert resp.status_code == 200
         assert len(resp.json()["themes"]) == 1
         assert resp.json()["themes"][0]["public_id"] == "medieval"
@@ -300,7 +302,7 @@ class TestCombinedEdits:
             client,
             pm.slug,
             {
-                "fields": {"year": 1998},
+                "fields": {"production_year": 1998},
                 "themes": ["medieval"],
                 "gameplay_features": [{"slug": "ramps", "count": 2}],
                 "credits": [{"person_slug": "pat-lawlor", "role": "design"}],
@@ -316,7 +318,7 @@ class TestCombinedEdits:
         cs = _only_user_changeset(user)
         assert cs.note == "Full edit"
         field_names = set(cs.claims.values_list("field_name", flat=True))
-        assert "year" in field_names
+        assert "production_year" in field_names
         assert "theme" in field_names
         assert "gameplay_feature" in field_names
         assert "credit" in field_names
@@ -338,7 +340,7 @@ class TestCombinedEdits:
             client,
             pm.slug,
             {
-                "fields": {"year": 1998},
+                "fields": {"production_year": 1998},
                 "themes": ["medieval"],
                 "gameplay_features": [{"slug": "ramps", "count": 2}],
                 "credits": [{"person_slug": "pat-lawlor", "role": "design"}],
@@ -453,7 +455,7 @@ class TestCredits:
             {"credits": [{"person_slug": "pat-lawlor", "role": "design"}]},
         )
         # PATCH with only a scalar field, credits=null (omitted)
-        resp = _patch(client, pm.slug, {"fields": {"year": 1998}})
+        resp = _patch(client, pm.slug, {"fields": {"production_year": 1998}})
         assert resp.status_code == 200
         assert len(resp.json()["credits"]) == 1
 
@@ -506,7 +508,9 @@ class TestHierarchyFKValidation:
         assert resp.status_code == 422
 
     def test_valid_hierarchy_fk_succeeds(self, client, user, pm):
-        parent = make_machine_model(name="Star Trek", slug="star-trek", year=1991)
+        parent = make_machine_model(
+            name="Star Trek", slug="star-trek", production_year=1991
+        )
         client.force_login(user)
         resp = _patch(client, pm.slug, {"fields": {"variant_of": parent.slug}})
         assert resp.status_code == 200
@@ -528,7 +532,7 @@ class TestHierarchyFKValidation:
 
 @pytest.fixture
 def rock(db, bootstrap_source):
-    target = make_machine_model(name="Rock", slug="rock", year=1985)
+    target = make_machine_model(name="Rock", slug="rock", production_year=1985)
     make_claim(target, "name", "Rock", ingest_source=bootstrap_source)
     return target
 
@@ -869,14 +873,14 @@ class TestRelationshipEdges:
             client,
             pm.slug,
             {
-                "fields": {"year": 1998},
+                "fields": {"production_year": 1998},
                 "relationships": [{"relationship_type": "copy", "target_slug": "rock"}],
             },
         )
         assert resp.status_code == 200, resp.json()
         latest = ChangeSet.objects.filter(actor=user.actor).order_by("-pk").first()
         assert latest is not None
-        assert [c.field_name for c in latest.claims.all()] == ["year"]
+        assert [c.field_name for c in latest.claims.all()] == ["production_year"]
 
     def test_one_citation_rides_every_edge_claim(
         self, client, user, pm, rock, citation_source
@@ -923,7 +927,7 @@ class TestRelationshipEdges:
             pm.slug,
             {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
         )
-        resp = _patch(client, pm.slug, {"fields": {"year": 1998}})
+        resp = _patch(client, pm.slug, {"fields": {"production_year": 1998}})
         assert resp.status_code == 200
         assert len(_relationships(resp)) == 1
 

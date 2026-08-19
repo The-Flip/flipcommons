@@ -223,8 +223,15 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     slug: str
     manufacturer: EntityRef | None = None
     corporate_entity: EntityRef | None = None
+    # Derived display date (production date, falling back to project date) —
+    # what card/label/meta rendering reads. The four raw fields are what the
+    # Basics editor edits.
     year: int | None = None
     month: int | None = None
+    production_year: int | None = None
+    production_month: int | None = None
+    project_year: int | None = None
+    project_month: int | None = None
     technology_generation: EntityRef | None = None
     technology_subgeneration: EntityRef | None = None
     display_type: EntityRef | None = None
@@ -346,6 +353,10 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         ),
         year=pm.year,
         month=pm.month,
+        production_year=pm.production_year,
+        production_month=pm.production_month,
+        project_year=pm.project_year,
+        project_month=pm.project_month,
         technology_generation=(
             EntityRef(
                 name=pm.technology_generation.name,

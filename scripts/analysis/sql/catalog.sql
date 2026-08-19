@@ -207,10 +207,21 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             just bad data (Bally 868 = Safari 1969 + Mysterian 1982). GROUP BY
 --             (manufacturer_id, identifier) before treating it as an identity, or use
 --             `model_number_collisions`. NULL on most live models.
---   year / month : a precision ladder — a NULL month is "dated to the year", never a month
---             lost from a fuller date (`catalog_machinemodel_month_requires_year`). Nothing
---             above the year is modelled, so a named quarter or season arrives as a month
---             or as nothing.
+--   production_year / production_month : date of physical assembly and factory rollout.
+--   project_year / project_month : the earlier design-finalized / released-to-production
+--             milestone from the manufacturer's internal records.
+--             Each pair is a precision ladder — a NULL month is "dated to the year", never
+--             a month lost from a fuller date
+--             (`catalog_machinemodel_production_month_requires_year` and the project twin).
+--             Nothing above the year is modelled, so a named quarter or season arrives as
+--             a month or as nothing. Project date is never after production date
+--             (`catalog_machinemodel_project_lte_production`).
+--   year / month : the DISPLAY date — production date, falling back to project date, with
+--             the month always paired to whichever date supplied the year. Derived HERE:
+--             Django stores the same fallback as generated columns, but the sqlite import
+--             does not surface generated columns, so this view re-derives them. Keep the
+--             expression in lockstep with MachineModel.year/month. Use these for "when is
+--             this game from"; use the production_*/project_* pairs to ask which date it is.
 --   production_quantity : TEXT, not a number, and nothing validates it — TRY_CAST for
 --             arithmetic and keep the NULLs it produces. Blank is unknown, not zero.
 --   manufacturer : manufacturer_name is the canonical name on the cabinet — display and
@@ -247,6 +258,9 @@ CREATE OR REPLACE VIEW models AS
       pinside_rating,
       flipper_count     -- near-empty scalar; model_gameplay_features.count is the signal
     ),
+    COALESCE(m.production_year, m.project_year) AS year,
+    CASE WHEN m.production_year IS NOT NULL
+         THEN m.production_month ELSE m.project_month END AS month,
     t.slug AS title_slug, t.name AS title_name,
     COALESCE(tn.n, 0) AS title_size,
     COALESCE(nk.n, 0) AS namesake_count,
@@ -268,7 +282,7 @@ CREATE OR REPLACE VIEW models AS
     COALESCE(json_extract(m.extra_data, '$."opdb.features"')::VARCHAR[], []::VARCHAR[]) AS opdb_features,
     m.name || ' ('
       || COALESCE(NULLIF(mf.name, ''), NULLIF(ce.name, ''), '?')
-      || COALESCE(' ' || m.year::VARCHAR, '')
+      || COALESCE(' ' || COALESCE(m.production_year, m.project_year)::VARCHAR, '')
       || ')' AS label
   FROM stg.machine_model m
   LEFT JOIN stg.title t              ON t.id  = m.title_id

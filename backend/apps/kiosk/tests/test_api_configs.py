@@ -151,7 +151,7 @@ class TestRead:
             name="Medieval Madness",
             slug="mm-model",
             corporate_entity=ce,
-            year=1997,
+            production_year=1997,
         )
         cfg = KioskConfig.objects.create()
         KioskConfigItem.objects.create(config=cfg, title=title, position=1)

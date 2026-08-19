@@ -113,9 +113,11 @@ class TestThemePageEndpoint:
         medieval = _theme("medieval")
         _theme("castles", parents=(medieval,))
         t1 = _title("Excalibur", "excalibur")
-        _model(t1, "excalibur-m", themes=("medieval",), year=1988)
+        _model(t1, "excalibur-m", themes=("medieval",), production_year=1988)
         t2 = _title("Camelot", "camelot")
-        _model(t2, "camelot-m", themes=("castles",), year=1990)  # child theme
+        _model(
+            t2, "camelot-m", themes=("castles",), production_year=1990
+        )  # child theme
         _title("Unthemed", "unthemed")
 
         page = client.get("/api/pages/theme/medieval").json()

@@ -52,6 +52,10 @@ The _Godzilla_ `Title` has four `Model`s:
 
 A standalone game that has never been remade — like Gottlieb's 1965 _Buckaroo_ — has one `Title` and one `Model`. See [SingleModelTitles.md](SingleModelTitles.md) for how this case is handled in the UI.
 
+### Model dates
+
+A Model carries two optional dates, each a year plus optional month: the **production date** (`production_year`/`production_month`) — physical assembly and factory rollout — and the earlier **project date** (`project_year`/`project_month`) — when the design was finalized, logged in internal corporate documentation, or approved/released to production by the manufacturer (sometimes called the Release-to-Production Date or Design Date in company archives). A project date is never later than the production date. Wherever the catalog shows, sorts, filters or aggregates a single model date (the derived `year`/`month`), it uses the production date and falls back to the project date; neither date is displayed as a standalone field on the detail page.
+
 ### Remakes
 
 The _Cactus Canyon_ Title includes the 1998 original and its remakes by Chicago Gaming:
@@ -289,6 +293,7 @@ Reward mechanisms:
 - `novelty`: no reward; the game is offered purely for amusement.
 - `cash-payout`: coins dispensed directly based on scoring.
 - `ticket-payout`: redeemable paper tickets dispensed based on score.
+- `merchant-paid`: the machine displays the fact of winning, but the award is handed over at the location, in cash, trade credit or goods.
 - `free-play`: no coin required to start — the absence of the coin-op transaction rather than a reward.
 
 ### Theme

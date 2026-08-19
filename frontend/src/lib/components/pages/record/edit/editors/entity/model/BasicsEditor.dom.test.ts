@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,7 +33,8 @@ const CE_ROWS = [
 
 const FIELD_CONSTRAINTS = {
   data: {
-    year: { min: 1930, max: 2100, step: 1 },
+    production_year: { min: 1930, max: 2100, step: 1 },
+    project_year: { min: 1930, max: 2100, step: 1 },
   },
 };
 
@@ -53,13 +54,20 @@ const EDIT_OPTIONS = {
 };
 
 const INITIAL_MODEL = {
-  year: 1997,
-  month: 6,
+  production_year: 1997,
+  production_month: 6,
+  project_year: null,
+  project_month: null,
   title: { public_id: 'medieval-madness', name: 'Medieval Madness' },
   corporate_entity: { public_id: 'williams-electronics', name: 'Williams Electronics' },
   game_format: { public_id: 'pinball-machine' },
   production_status: { public_id: 'produced' },
 };
+
+/** The Year input inside one of the two date fieldsets ("Production date" / "Project date"). */
+function yearInputIn(groupName: string): HTMLElement {
+  return within(screen.getByRole('group', { name: groupName })).getByLabelText('Year');
+}
 
 function mockGetResponses() {
   GET.mockImplementation(
@@ -94,7 +102,7 @@ describe('BasicsEditor dirty-state contract', () => {
 
     expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
-    const yearInput = screen.getByLabelText('Year');
+    const yearInput = yearInputIn('Production date');
     await user.clear(yearInput);
     await user.type(yearInput, '1998');
 
@@ -155,7 +163,7 @@ describe('BasicsEditor dirty-state contract', () => {
     });
   });
 
-  it('PATCHes only the changed year', async () => {
+  it('PATCHes only the changed production year', async () => {
     const user = userEvent.setup();
     PATCH.mockResolvedValue({ data: {}, error: undefined });
     invalidateAll.mockResolvedValue(undefined);
@@ -163,7 +171,7 @@ describe('BasicsEditor dirty-state contract', () => {
       props: { initialData: INITIAL_MODEL },
     });
 
-    const yearInput = screen.getByLabelText('Year');
+    const yearInput = yearInputIn('Production date');
     await user.clear(yearInput);
     await user.type(yearInput, '1998');
 
@@ -172,7 +180,37 @@ describe('BasicsEditor dirty-state contract', () => {
     expect(PATCH).toHaveBeenCalledOnce();
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { year: 1998 }, note: '', citations: [], inline_citations: [] },
+      body: {
+        fields: { production_year: 1998 },
+        note: '',
+        citations: [],
+        inline_citations: [],
+      },
+    });
+  });
+
+  it('PATCHes only the changed project year', async () => {
+    const user = userEvent.setup();
+    PATCH.mockResolvedValue({ data: {}, error: undefined });
+    invalidateAll.mockResolvedValue(undefined);
+    render(BasicsEditorFixture, {
+      props: { initialData: INITIAL_MODEL },
+    });
+
+    const yearInput = yearInputIn('Project date');
+    await user.type(yearInput, '1996');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(PATCH).toHaveBeenCalledOnce();
+    expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
+      params: { path: { public_id: 'medieval-madness' } },
+      body: {
+        fields: { project_year: 1996 },
+        note: '',
+        citations: [],
+        inline_citations: [],
+      },
     });
   });
 });
@@ -194,8 +232,11 @@ describe('BasicsEditor slim mode', () => {
 
     // The kept fields are still rendered.
     expect(screen.getByRole('combobox', { name: 'Manufacturer' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Year')).toBeInTheDocument();
-    expect(screen.getByLabelText('Month')).toBeInTheDocument();
+    for (const group of ['Production date', 'Project date']) {
+      const scope = within(screen.getByRole('group', { name: group }));
+      expect(scope.getByLabelText('Year')).toBeInTheDocument();
+      expect(scope.getByLabelText('Month')).toBeInTheDocument();
+    }
     expect(screen.getByRole('combobox', { name: 'Game format' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Production status' })).toBeInTheDocument();
   });

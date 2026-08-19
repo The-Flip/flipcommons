@@ -180,7 +180,7 @@ def test_query_count_is_constant_across_result_size(
             name=f"Scale Title {i}",
             slug=f"scale-title-{i}",
             corporate_entity=williams_entity,
-            year=1990 + i,
+            production_year=1990 + i,
             extra_data={"opdb.images": SAMPLE_IMAGES},
         )
         _make_manufacturer(f"Scale Mfr {i}", f"scale-mfr-{i}", bootstrap_source)
@@ -271,14 +271,16 @@ def test_name_matches_rank_above_description_matches(client, db, williams_entity
     description-only title first — this pins the two-tier ordering."""
     zeta = Title.objects.create(name="Zeta Classic", slug="zeta-classic")
     make_machine_model(
-        title=zeta, name="Zeta Classic", slug="zeta-classic-m", year=1985
+        title=zeta, name="Zeta Classic", slug="zeta-classic-m", production_year=1985
     )
     retro = Title.objects.create(
         name="Retro Blast",
         slug="retro-blast",
         description="Includes a zeta bonus mode.",
     )
-    make_machine_model(title=retro, name="Retro Blast", slug="retro-blast-m", year=2020)
+    make_machine_model(
+        title=retro, name="Retro Blast", slug="retro-blast-m", production_year=2020
+    )
 
     names = [
         t["name"]

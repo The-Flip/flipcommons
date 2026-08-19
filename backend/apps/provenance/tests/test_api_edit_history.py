@@ -33,7 +33,9 @@ def source(db):
 
 @pytest.fixture
 def pm(db, bootstrap_source):
-    pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
+    pm = make_machine_model(
+        name="Medieval Madness", slug="medieval-madness", production_year=1997
+    )
     make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
@@ -51,7 +53,7 @@ class TestEditHistoryEmpty:
 
     def test_source_claims_not_included(self, client, pm, source):
         """Source-attributed claims should not appear in *user* edit history."""
-        make_claim(pm, "year", 1998, ingest_source=source)
+        make_claim(pm, "production_year", 1998, ingest_source=source)
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
         assert _user_changesets(resp) == []
@@ -64,7 +66,7 @@ class TestEditHistoryBasic:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
 
@@ -80,7 +82,7 @@ class TestEditHistoryBasic:
         }
         assert cs["note"] == ""
         assert len(cs["changes"]) == 1
-        assert cs["changes"][0]["field_name"] == "year"
+        assert cs["changes"][0]["field_name"] == "production_year"
         assert cs["changes"][0]["new_value"]["raw"] == 1998
         # First edit — no old value
         assert cs["changes"][0]["old_value"] is None
@@ -90,12 +92,12 @@ class TestEditHistoryBasic:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1999}}',
+            data='{"fields": {"production_year": 1999}}',
             content_type="application/json",
         )
 
@@ -105,7 +107,7 @@ class TestEditHistoryBasic:
 
         # Most recent first
         newest = data[0]
-        assert newest["changes"][0]["field_name"] == "year"
+        assert newest["changes"][0]["field_name"] == "production_year"
         assert newest["changes"][0]["old_value"]["raw"] == 1998
         assert newest["changes"][0]["new_value"]["raw"] == 1999
 
@@ -153,7 +155,7 @@ class TestEditHistoryMultipleFields:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998, "player_count": 4}}',
+            data='{"fields": {"production_year": 1998, "player_count": 4}}',
             content_type="application/json",
         )
 
@@ -162,7 +164,7 @@ class TestEditHistoryMultipleFields:
         assert len(data) == 1
 
         field_names = {c["field_name"] for c in data[0]["changes"]}
-        assert field_names == {"year", "player_count"}
+        assert field_names == {"production_year", "player_count"}
 
 
 @pytest.mark.django_db
@@ -174,13 +176,13 @@ class TestEditHistoryMultiUser:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         client.force_login(user_b)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1999}}',
+            data='{"fields": {"production_year": 1999}}',
             content_type="application/json",
         )
 
@@ -206,12 +208,12 @@ class TestEditHistoryMultiUser:
 
     def test_old_value_uses_source_claim(self, client, user, pm, source):
         """A user edit shows the prior source/ingest claim's value as old."""
-        make_claim(pm, "year", 1997, ingest_source=source)
+        make_claim(pm, "production_year", 1997, ingest_source=source)
 
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1999}}',
+            data='{"fields": {"production_year": 1999}}',
             content_type="application/json",
         )
 
@@ -234,13 +236,13 @@ class TestEditHistoryMultiUser:
             name="Editorial", source_type="editorial", priority=100
         )
         low = make_ingest_source(name="Databases", source_type="database", priority=10)
-        make_claim(pm, "year", 2001, ingest_source=high)
-        make_claim(pm, "year", 1999, ingest_source=low)
+        make_claim(pm, "production_year", 2001, ingest_source=high)
+        make_claim(pm, "production_year", 1999, ingest_source=low)
 
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1995}}',
+            data='{"fields": {"production_year": 1995}}',
             content_type="application/json",
         )
 
@@ -258,7 +260,7 @@ class TestEditHistoryOrdering:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         client.patch(
@@ -272,7 +274,7 @@ class TestEditHistoryOrdering:
         assert len(data) == 2
         # Newest changeset (player_count) first
         assert data[0]["changes"][0]["field_name"] == "player_count"
-        assert data[1]["changes"][0]["field_name"] == "year"
+        assert data[1]["changes"][0]["field_name"] == "production_year"
 
 
 @pytest.mark.django_db
@@ -287,7 +289,7 @@ class TestEditHistorySoftDeleted:
         client.force_login(user)
         client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data='{"fields": {"year": 1998}}',
+            data='{"fields": {"production_year": 1998}}',
             content_type="application/json",
         )
         pm.status = "deleted"
@@ -305,7 +307,7 @@ class TestEditHistoryCitations:
     def test_attached_citation_carries_rich_metadata(self, client, user, pm):
         """Join-attached (supporting-evidence) citations expose the full
         source metadata, not just a name and one URL."""
-        claim = make_claim(pm, "year", 1998, user=user)
+        claim = make_claim(pm, "production_year", 1998, user=user)
         src = make_citation_source(
             name="The Toy Book",
             source_type="web",
@@ -342,7 +344,7 @@ class TestEditHistoryCitations:
     def test_multiple_attached_citations_all_returned(self, client, user, pm):
         """A claim backed by several join-attached citations surfaces every
         one on the change, not just the first."""
-        claim = make_claim(pm, "year", 1998, user=user)
+        claim = make_claim(pm, "production_year", 1998, user=user)
         book = make_citation_source(name="The Encyclopedia of Pinball")
         web = make_citation_source(name="The Toy Book", source_type="web")
         cite_claim(claim, citation_source=book, locator="p. 42")
@@ -441,13 +443,13 @@ class TestEditHistoryParkedFields:
     def test_parked_field_change_is_hidden(self, client, pm, source):
         """A mixed changeset keeps its real fields and drops the parked one."""
         cs = source_changeset(source)
-        make_claim(pm, "year", 1998, changeset=cs)
+        make_claim(pm, "production_year", 1998, changeset=cs)
         make_claim(pm, "ipdb.notes", "Raw scraped text.", changeset=cs)
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
         entry = next(e for e in resp.json() if e["id"] == cs.pk)
-        assert [c["field_name"] for c in entry["changes"]] == ["year"]
+        assert [c["field_name"] for c in entry["changes"]] == ["production_year"]
 
     def test_changeset_of_only_parked_fields_is_dropped(self, client, pm, source):
         """Nothing left to show means an ingest artifact, not an edit — so the

@@ -141,9 +141,9 @@ def test_count_distinct_guard_excludes_rows() -> None:
 
 @pytest.mark.django_db
 def test_bounds_guard_excludes_inactive_rows() -> None:
-    make_machine_model(name="m1", year=1980)
-    make_machine_model(name="m2", year=2000)
-    make_machine_model(name="m3", year=1970, status=EntityStatus.DELETED)
+    make_machine_model(name="m1", production_year=1980)
+    make_machine_model(name="m2", production_year=2000)
+    make_machine_model(name="m3", production_year=1970, status=EntityStatus.DELETED)
 
     result = bounds(
         MachineModel,

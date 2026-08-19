@@ -30,7 +30,7 @@ def williams(db):
     return Manufacturer.objects.create(name="Williams", slug="williams")
 
 
-def _make_title_with_model(*, title_name, title_slug, mfr_name, year):
+def _make_title_with_model(*, title_name, title_slug, mfr_name, production_year):
     """Create a title with one non-variant model under a fresh manufacturer,
     so the title's ``manufacturer · year`` sublabel resolves."""
     from apps.catalog.models import (
@@ -50,7 +50,7 @@ def _make_title_with_model(*, title_name, title_slug, mfr_name, year):
         name=title_name,
         slug=f"{title_slug}-model",
         corporate_entity=ce,
-        year=year,
+        production_year=production_year,
     )
     return title, model
 
@@ -131,7 +131,7 @@ class TestEntityAutocomplete:
             title_name="Medieval Madness",
             title_slug="medieval-madness",
             mfr_name="Williams",
-            year=1997,
+            production_year=1997,
         )
         resp = api.get(ENDPOINT, {"type": "title", "q": "medieval"})
         result = resp.json()["results"][0]
@@ -143,7 +143,7 @@ class TestEntityAutocomplete:
             title_name="Twilight Zone",
             title_slug="twilight-zone",
             mfr_name="Bally",
-            year=1993,
+            production_year=1993,
         )
         resp = api.get(ENDPOINT, {"type": "model", "q": "twilight"})
         result = resp.json()["results"][0]
@@ -188,7 +188,7 @@ class TestEntityAutocomplete:
             name="ToM",
             slug="tom-1990",
             corporate_entity=williams_ce,
-            year=1990,
+            production_year=1990,
         )
         # A later non-variant model — passed over (not the earliest).
         later = MachineModel.objects.create(
@@ -196,7 +196,7 @@ class TestEntityAutocomplete:
             name="ToM Remake",
             slug="tom-1995",
             corporate_entity=bally_ce,
-            year=1995,
+            production_year=1995,
         )
         # An earlier *variant* — earliest by year, but excluded by variant_of.
         MachineModel.objects.create(
@@ -204,7 +204,7 @@ class TestEntityAutocomplete:
             name="ToM LE",
             slug="tom-le",
             corporate_entity=bally_ce,
-            year=1985,
+            production_year=1985,
             variant_of=later,
         )
 

@@ -1,3 +1,4 @@
+<!-- @component Model Basics editor: title, manufacturer, game format, production & project dates, production status. -->
 <script lang="ts">
   import { untrack } from 'svelte';
   import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
@@ -5,6 +6,7 @@
   import type { EntityOption } from '$lib/api/entity-autocomplete';
   import NumberField from '$lib/components/input/NumberField.svelte';
   import MonthSelect from '$lib/components/input/MonthSelect.svelte';
+  import Fieldset from '$lib/components/input/Fieldset.svelte';
   import { fetchFieldConstraints, fc, type FieldConstraints } from '$lib/field-constraints';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
@@ -22,8 +24,10 @@
   type EntityRefData = { public_id: string; name: string } | null | undefined;
 
   type BasicsModel = {
-    year?: number | null;
-    month?: number | null;
+    production_year?: number | null;
+    production_month?: number | null;
+    project_year?: number | null;
+    project_month?: number | null;
     title?: EntityRefData;
     corporate_entity?: EntityRefData;
     game_format?: { public_id: string } | null;
@@ -42,8 +46,10 @@
   }: SectionEditorProps<BasicsModel> & { slim?: boolean } = $props();
 
   type BasicsFormFields = {
-    year: string | number;
-    month: string | number;
+    production_year: string | number;
+    production_month: string | number;
+    project_year: string | number;
+    project_month: string | number;
     title: string;
     game_format: string;
     production_status: string;
@@ -51,8 +57,10 @@
 
   function extractFields(m: BasicsModel): BasicsFormFields {
     return {
-      year: m.year ?? '',
-      month: m.month ?? '',
+      production_year: m.production_year ?? '',
+      production_month: m.production_month ?? '',
+      project_year: m.project_year ?? '',
+      project_month: m.project_month ?? '',
       title: m.title?.public_id ?? '',
       game_format: m.game_format?.public_id ?? '',
       production_status: m.production_status?.public_id ?? '',
@@ -139,13 +147,40 @@
     error={fieldErrors.corporate_entity ?? ''}
     placeholder="Search manufacturers..."
   />
-  <NumberField
-    label="Year"
-    bind:value={fields.year}
-    error={fieldErrors.year ?? ''}
-    {...fc(constraints, 'year')}
-  />
-  <MonthSelect label="Month" bind:value={fields.month} error={fieldErrors.month ?? ''} />
+  <div class="date-group">
+    <Fieldset legend="Production date">
+      <div class="date-fields">
+        <NumberField
+          label="Year"
+          bind:value={fields.production_year}
+          error={fieldErrors.production_year ?? ''}
+          {...fc(constraints, 'production_year')}
+        />
+        <MonthSelect
+          label="Month"
+          bind:value={fields.production_month}
+          error={fieldErrors.production_month ?? ''}
+        />
+      </div>
+    </Fieldset>
+  </div>
+  <div class="date-group">
+    <Fieldset legend="Project date">
+      <div class="date-fields">
+        <NumberField
+          label="Year"
+          bind:value={fields.project_year}
+          error={fieldErrors.project_year ?? ''}
+          {...fc(constraints, 'project_year')}
+        />
+        <MonthSelect
+          label="Month"
+          bind:value={fields.project_month}
+          error={fieldErrors.project_month ?? ''}
+        />
+      </div>
+    </Fieldset>
+  </div>
   <SearchableSelect
     label="Game format"
     options={toSelectOptions(editOptions.game_formats ?? [])}
@@ -168,6 +203,16 @@
 
 <style>
   .basics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-3);
+  }
+
+  .date-group {
+    grid-column: 1 / -1;
+  }
+
+  .date-fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--size-3);

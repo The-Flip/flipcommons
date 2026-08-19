@@ -223,15 +223,15 @@ A new record should carry every field the evidence supports, and no field it doe
 - **Manufacturer** — `name` (the name as it appeared on the cabinet), `manufacturer_alias` for spelling/legal variants, `operating_status` when a source states it (leave unknown rather than guess — the 0049 Kato precedent).
 - **CorporateEntity** — `name` (the legal/corporate incarnation, distinct from the manufacturer), `manufacturer`, city-level `location` (see [Corporate Entity locations](#corporate-entity-locations)), active years when stated, `corporate_entity_alias` for native-script or variant names.
 - **Title** — a thin identity shell: `name`, `abbreviation` where established; `franchise`/`series` only with evidence. Credits, themes and hardware live on the Model.
-- **Model** — `name`, `year`, `title`, `corporate_entity`, `technology_generation`, `game_format`, player count, `production_status`, display and system where known, `ipdb_id`/`opdb_id` when the machine is cross-listed, `theme` and credits when a source states them.
+- **Model** — `name`, `production_year`, `title`, `corporate_entity`, `technology_generation`, `game_format`, player count, `production_status`, display and system where known, `ipdb_id`/`opdb_id` when the machine is cross-listed, `theme` and credits when a source states them.
 
-Required minimums for a `create: true`: every entity needs `name` plus a cite; a Model additionally needs `title` and `corporate_entity`. Everything else is fill-what-the-evidence-supports — a Model with no known year is acceptable (say so in the `note:`), a Model with an invented year is not.
+Required minimums for a `create: true`: every entity needs `name` plus a cite; a Model additionally needs `title` and `corporate_entity`. Everything else is fill-what-the-evidence-supports — a Model with no known date is acceptable (say so in the `note:`), a Model with an invented one is not.
 
-**A Model's `year` (and `month`) is the manufacture date — not the trade-show presentation, not the announcement.** A source dating a different event ("presentato Enada ottobre 1974", a reveal, a flyer date) is not `year` evidence: leave the field to a source that dates manufacture, and keep the presentation/announcement date in the `note:` (with its quote) or the description. When two sources disagree on a year, check first whether they are dating different events before treating it as a conflict.
+**A Model's `production_year` (and `production_month`) is the manufacture date — not the trade-show presentation, not the announcement.** A source dating a different event ("presentato Enada ottobre 1974", a reveal, a flyer date) is not `production_year` evidence: leave the field to a source that dates manufacture, and keep the presentation/announcement date in the `note:` (with its quote) or the description. A source dating the design milestone — release to production, the date logged in the manufacturer's internal records — asserts `project_year`/`project_month` instead; project date can never be later than production date. When two sources disagree on a year, check first whether they are dating different events before treating it as a conflict.
 
 ### Uncertain values
 
-Assert the best value and record the uncertainty in the `note:` — the model has no "approximate" flag (0042 precedent: eremeka's `~1967` becomes `year: 1967` with the `~` quoted in evidence). A source's `(?)` marker, a year range, or a disputed spelling all follow the same rule: pick the best-supported value, keep the hedge visible in the note and quote. Never invent precision the source doesn't have.
+Assert the best value and record the uncertainty in the `note:` — the model has no "approximate" flag (0042 precedent: eremeka's `~1967` becomes `production_year: 1967` with the `~` quoted in evidence). A source's `(?)` marker, a year range, or a disputed spelling all follow the same rule: pick the best-supported value, keep the hedge visible in the note and quote. Never invent precision the source doesn't have.
 
 ### Uncertain existence
 
@@ -367,7 +367,7 @@ JOIN models m ON m.id = c.model_id
 JOIN changesets cs ON cs.changeset_id = c.changeset_id
 LEFT JOIN claim_citations cc ON cc.claim_id = c.claim_id
 LEFT JOIN citation_instances ci ON ci.citation_instance_id = cc.citation_instance_id
-WHERE m.slug = 'bank-a-ball-6' AND c.field_name = 'year' AND c.rank = 1;"
+WHERE m.slug = 'bank-a-ball-6' AND c.field_name = 'production_year' AND c.rank = 1;"
 ```
 
 For a non-model entity, swap `model_claims`/`models` for `claims` joined on `subject_type = 'catalog.manufacturer'` and that entity's view.

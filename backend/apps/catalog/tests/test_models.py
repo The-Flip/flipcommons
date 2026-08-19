@@ -49,7 +49,7 @@ def machine_model(db, corporate_entity):
         name="Medieval Madness",
         slug="medieval-madness",
         corporate_entity=corporate_entity,
-        year=1997,
+        production_year=1997,
     )
 
 
@@ -219,8 +219,8 @@ class TestClaim:
         assert claim.value == "Medieval Madness"
 
     def test_assert_claim_supersedes(self, machine_model, source):
-        c1 = make_claim(machine_model, "year", 1997, ingest_source=source)
-        c2 = make_claim(machine_model, "year", 1998, ingest_source=source)
+        c1 = make_claim(machine_model, "production_year", 1997, ingest_source=source)
+        c2 = make_claim(machine_model, "production_year", 1998, ingest_source=source)
         c1.refresh_from_db()
         assert c1.is_active is False
         assert c2.is_active is True
@@ -228,8 +228,10 @@ class TestClaim:
     def test_assert_claim_different_sources_coexist(
         self, machine_model, source, editorial_source
     ):
-        c1 = make_claim(machine_model, "year", 1997, ingest_source=source)
-        c2 = make_claim(machine_model, "year", 1997, ingest_source=editorial_source)
+        c1 = make_claim(machine_model, "production_year", 1997, ingest_source=source)
+        c2 = make_claim(
+            machine_model, "production_year", 1997, ingest_source=editorial_source
+        )
         c1.refresh_from_db()
         assert c1.is_active is True
         assert c2.is_active is True
@@ -255,9 +257,9 @@ class TestClaim:
             )
 
     def test_str(self, machine_model, source):
-        claim = make_claim(machine_model, "year", 1997, ingest_source=source)
+        claim = make_claim(machine_model, "production_year", 1997, ingest_source=source)
         assert "IPDB" in str(claim)
-        assert "year" in str(claim)
+        assert "production_year" in str(claim)
 
 
 # --- Field validator enforcement ---

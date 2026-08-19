@@ -33,7 +33,7 @@ def _seed_changesets(client, user, pm, n: int) -> None:
         year = 1990 + i
         resp = client.patch(
             f"/api/models/{pm.slug}/claims/",
-            data=f'{{"fields": {{"year": {year}}}}}',
+            data=f'{{"fields": {{"production_year": {year}}}}}',
             content_type="application/json",
         )
         # Assert success — otherwise the N=2 vs N=20 query-count diff
@@ -52,7 +52,7 @@ def _q(fn: Callable[[], object]) -> int:
 def test_edit_history_capabilities_does_not_scale_queries(client, bootstrap_source):
     """GET /api/pages/edit-history/... query count must not grow with N rows."""
     user = make_user()
-    pm = make_machine_model(name="MM", slug="mm-x", year=1997)
+    pm = make_machine_model(name="MM", slug="mm-x", production_year=1997)
     make_claim(pm, "name", "MM", ingest_source=bootstrap_source)
 
     _seed_changesets(client, user, pm, 2)
@@ -78,7 +78,7 @@ def test_global_changes_feed_capabilities_does_not_scale_queries(
 ):
     """GET /api/pages/changesets/ query count must not grow with N rows."""
     user = make_user()
-    pm = make_machine_model(name="MM2", slug="mm-y", year=1997)
+    pm = make_machine_model(name="MM2", slug="mm-y", production_year=1997)
     make_claim(pm, "name", "MM2", ingest_source=bootstrap_source)
 
     _seed_changesets(client, user, pm, 2)
@@ -99,7 +99,7 @@ def test_user_profile_recent_edits_capabilities_does_not_scale_queries(
 ):
     """GET /api/pages/user/{username}/ recent_edits embed must not scale queries."""
     user = make_user()
-    pm = make_machine_model(name="MM4", slug="mm-w", year=1997)
+    pm = make_machine_model(name="MM4", slug="mm-w", production_year=1997)
     make_claim(pm, "name", "MM4", ingest_source=bootstrap_source)
 
     _seed_changesets(client, user, pm, 2)
