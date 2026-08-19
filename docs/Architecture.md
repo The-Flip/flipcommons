@@ -8,7 +8,7 @@ The pieces the system is built from. See [Hosting.md](Hosting.md#services) for t
 
 | Layer            | Production | Local dev        |
 | ---------------- | ---------- | ---------------- |
-| CDN              | Bunny.net  | —                |
+| CDN & DNS        | Bunny.net  | —                |
 | Authentication   | WorkOS     | WorkOS           |
 | Frontend         | SvelteKit  | SvelteKit        |
 | API              | Ninja      | Ninja            |
