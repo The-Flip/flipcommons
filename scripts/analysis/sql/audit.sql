@@ -624,6 +624,165 @@ CREATE OR REPLACE VIEW audit_duplicate_name AS
 COMMENT ON VIEW audit_duplicate_name IS
   'WARNING — one row per live record whose name or alias also identifies another record of the same type, usually a record created twice. Model, Title and Location are exempt: repeated names are normal for all three.';
 
+-- ─── ambiguous-alias ───────────────────────────────────────────────────────
+-- One alias string that names two records of the same type. Everything resolving source
+-- wording through the alias tables inherits the ambiguity, and nothing downstream can
+-- settle it from the alias alone.
+--
+-- Compared on lower(), which is the PRODUCT's alias key: every AliasModel declares
+-- UNIQUE(Lower(value)), so on all but one type this asserts a constraint the database
+-- already holds. The exception is LocationAlias, whose constraint is scoped per location
+-- — which makes Location, whose place names repeat by nature, the one type where the
+-- collision is writable at all.
+--
+-- The boundary with duplicate-name is exact, so the two cannot report the same row:
+-- duplicate-name pools names and aliases under name_norm and exempts Location, while
+-- this rule reads aliases alone under the stricter key, where a collision is impossible
+-- for every type duplicate-name covers.
+--
+-- Both sides are reported, as in duplicate-name: either alias may be the one to drop.
+-- Every instance today is a province beside the city inside it (Milano naming both
+-- italy/mi and italy/mi/milan), which is the shape to expect and still a real ambiguity:
+-- a resolver handed "Milano" cannot tell which grain the source meant.
+CREATE OR REPLACE VIEW audit_ambiguous_alias AS
+  WITH al AS (
+    SELECT entity_type, entity_id, public_id, name, lower(name) AS k
+    FROM entity_names WHERE kind = 'alias'
+  ),
+  shared AS (
+    SELECT entity_type, k FROM al GROUP BY ALL HAVING count(DISTINCT entity_id) > 1
+  )
+  SELECT 'error' AS severity,
+         a.entity_type,
+         a.entity_id,
+         a.public_id,
+         -- Ordered for the reason duplicate-name orders its list: a finding's identity
+         -- includes its message.
+         format('alias "{}" also names {}', a.name,
+                (SELECT string_agg(DISTINCT o.entity_type || '.' || o.public_id, ', '
+                                   ORDER BY o.entity_type || '.' || o.public_id)
+                 FROM al o
+                 WHERE o.entity_type = a.entity_type AND o.k = a.k
+                   AND o.entity_id <> a.entity_id)) AS message
+  FROM al a
+  JOIN shared s ON s.entity_type = a.entity_type AND s.k = a.k;
+COMMENT ON VIEW audit_ambiguous_alias IS
+  'ERROR — one row per alias of a live record that also names another live record of the same type, leaving every resolver a choice it cannot make. Location is where this happens; elsewhere the alias table''s own unique constraint forbids it.';
+
+-- ─── redundant-alias ───────────────────────────────────────────────────────
+-- An alias that only re-cases its own record's name. Alias lookup is case-insensitive by
+-- construction — UNIQUE(Lower(value)) on every alias table — so the row cannot match
+-- anything the name does not already match.
+--
+-- lower(), not name_norm: name_norm also collapses punctuation and folds accents, and
+-- both distinguish alias forms the product genuinely stores. "Kick-targets" beside "Kick
+-- targets", "Malaga" beside the canonical "Málaga" — in each pair the alias is the whole
+-- reason the row exists, and it is a source spelling this one would stop matching. Case
+-- alone is dead weight.
+CREATE OR REPLACE VIEW audit_redundant_alias AS
+  SELECT 'warning' AS severity,
+         a.entity_type,
+         a.entity_id,
+         a.public_id,
+         format('alias "{}" only re-cases the record''s own name "{}"', a.name, n.name) AS message
+  FROM entity_names a
+  JOIN entity_names n
+    ON n.entity_type = a.entity_type AND n.entity_id = a.entity_id AND n.kind = 'name'
+  WHERE a.kind = 'alias' AND lower(a.name) = lower(n.name);
+COMMENT ON VIEW audit_redundant_alias IS
+  'WARNING — one row per alias that differs from its own record''s name only in case, which a case-insensitive lookup can never need. Punctuation and accent variants are real match keys and are not reported.';
+
+-- ─── variant-chain ─────────────────────────────────────────────────────────
+-- A variant points at the base model, never at another variant. A variant is the same
+-- gameplay in different dress (DomainModel.md), so a chain asserts a dress of a dress —
+-- and the Title collapse rule reads the shape directly: collapsed_models wants one
+-- active non-variant model, itself without live variants, so a chain moves a Title's page.
+--
+-- Nothing in the schema forbids it: self_fk_not_self('variant_of') stops a model being
+-- its OWN variant, and a two-hop chain satisfies that constraint and every other one on
+-- the column.
+--
+-- Reported on the CHILD, the end that can be repointed; the middle model's own edge is
+-- correct. variant_of only: remake_of chains across eras legitimately, and
+-- export_edition_of is 1:1 with a domestic original.
+CREATE OR REPLACE VIEW audit_variant_chain AS
+  SELECT 'error' AS severity,
+         _entity_type_of('catalog_machinemodel') AS entity_type,
+         child.model_id   AS entity_id,
+         child.model_slug AS public_id,
+         format('variant of {}, which is itself a variant of {} — point it at the base model',
+                child.target_slug, parent.target_slug) AS message
+  FROM model_lineage child
+  JOIN model_lineage parent ON parent.model_id = child.target_id
+  WHERE child.edge_kind = 'variant_of' AND parent.edge_kind = 'variant_of';
+COMMENT ON VIEW audit_variant_chain IS
+  'ERROR — one row per model whose variant_of target is itself a variant. A variant names the base model, so the chain has to be flattened; the finding sits on the end that moves.';
+
+-- ─── vocabulary-cycle ──────────────────────────────────────────────────────
+-- A theme or gameplay feature whose parent chain returns to itself. Nothing forbids one:
+-- ThemeParent and GameplayFeatureParent carry a unique pair and nothing else, so a
+-- self-parent and a longer loop are both writable today.
+--
+-- An error rather than a curiosity because this layer walks those DAGs to answer
+-- questions about them. _vocab_carriage rolls an attachment up to every ancestor, so a
+-- loop makes every member an ancestor of every other and each one silently inherits all
+-- their machines — and uncarried-link and wrong-grain-link both read it.
+--
+-- UNION, not UNION ALL, for the reason _vocab_carriage gives and one more: the closure is
+-- one row per (record, ancestor) either way, but on the cyclic data this rule exists to
+-- find, UNION ALL enumerates paths that never terminate. Deduplicating against the
+-- accumulated result reaches a fixpoint instead — and a walk that hangs on a cycle
+-- reports no cycles at all.
+--
+-- The cost is the step count, which a set closure cannot carry. A direct self-edge is the
+-- half of that triage worth keeping: one row to delete, versus a chain to trace.
+CREATE OR REPLACE VIEW audit_vocabulary_cycle AS
+  WITH RECURSIVE parent_edge AS (
+              SELECT _entity_type_of('catalog_theme') AS entity_type, id, slug,
+                     unnest(parents) AS parent_slug
+              FROM themes
+    UNION ALL SELECT _entity_type_of('catalog_gameplayfeature'), id, slug, unnest(parents)
+              FROM gameplay_features
+  ),
+  ancestor AS (
+    SELECT entity_type, id, slug AS root, parent_slug AS ancestor_slug
+    FROM parent_edge
+    UNION
+    SELECT a.entity_type, a.id, a.root, e.parent_slug
+    FROM ancestor a
+    JOIN parent_edge e ON e.entity_type = a.entity_type AND e.slug = a.ancestor_slug
+  )
+  SELECT 'error' AS severity,
+         a.entity_type,
+         a.id   AS entity_id,
+         a.root AS public_id,
+         CASE WHEN EXISTS (SELECT 1 FROM parent_edge e
+                           WHERE e.entity_type = a.entity_type
+                             AND e.slug = a.root AND e.parent_slug = a.root)
+              THEN 'is its own parent — the vocabulary DAG must stay acyclic'
+              ELSE 'is its own ancestor — the vocabulary DAG must stay acyclic'
+         END AS message
+  FROM ancestor a
+  WHERE a.ancestor_slug = a.root;
+COMMENT ON VIEW audit_vocabulary_cycle IS
+  'ERROR — one row per live theme or gameplay feature that is its own ancestor. Every member of a loop is reported, since any edge in it may be the one to cut.';
+
+-- ─── orphan-title ──────────────────────────────────────────────────────────
+-- A Title with no live models. It survives its last model's deletion by design — `titles`
+-- carries n_models = 0 to say so — leaving a page with nothing on it and a name still
+-- competing in every match against the catalog. Either a deletion stopped halfway or the
+-- models were never written.
+CREATE OR REPLACE VIEW audit_orphan_title AS
+  SELECT 'warning' AS severity,
+         _entity_type_of('catalog_title') AS entity_type,
+         id   AS entity_id,
+         slug AS public_id,
+         'no live models — a Title exists to group them' AS message
+  FROM titles
+  WHERE n_models = 0;
+COMMENT ON VIEW audit_orphan_title IS
+  'WARNING — one row per live Title with no live model under it, which renders as an empty page.';
+
 -- ─── bare-shared-cdn-host ──────────────────────────────────────────────────
 -- A shared multi-tenant CDN host carries only path-scoped registration rows — on such a
 -- host the path names the tenant, so a bare row would attribute every tenant's files to
@@ -666,6 +825,11 @@ CREATE OR REPLACE TABLE audit_findings AS
   UNION ALL SELECT 'duplicate-name',            severity, entity_type, entity_id, public_id, message FROM audit_duplicate_name
   UNION ALL SELECT 'broken-link',               severity, entity_type, entity_id, public_id, message FROM audit_broken_link
   UNION ALL SELECT 'uncarried-link',            severity, entity_type, entity_id, public_id, message FROM audit_uncarried_link
+  UNION ALL SELECT 'ambiguous-alias',           severity, entity_type, entity_id, public_id, message FROM audit_ambiguous_alias
+  UNION ALL SELECT 'redundant-alias',           severity, entity_type, entity_id, public_id, message FROM audit_redundant_alias
+  UNION ALL SELECT 'variant-chain',             severity, entity_type, entity_id, public_id, message FROM audit_variant_chain
+  UNION ALL SELECT 'vocabulary-cycle',          severity, entity_type, entity_id, public_id, message FROM audit_vocabulary_cycle
+  UNION ALL SELECT 'orphan-title',              severity, entity_type, entity_id, public_id, message FROM audit_orphan_title
   UNION ALL SELECT 'shared-cdn-bare-host',      severity, entity_type, entity_id, public_id, message FROM audit_shared_cdn_bare_host;
 COMMENT ON TABLE audit_findings IS
   'One row per catalog defect across every rule — rule, severity, the record it is about and a human-readable message. Catalog content, not a health gate. Materialized at build; the per-rule audit_* views are the live spelling.';
@@ -761,6 +925,11 @@ CREATE OR REPLACE VIEW audit_summary AS
   UNION ALL SELECT 'duplicate-name',           count(*) FROM audit_duplicate_name
   UNION ALL SELECT 'broken-link',              count(*) FROM audit_broken_link
   UNION ALL SELECT 'uncarried-link',           count(*) FROM audit_uncarried_link
+  UNION ALL SELECT 'ambiguous-alias',          count(*) FROM audit_ambiguous_alias
+  UNION ALL SELECT 'redundant-alias',          count(*) FROM audit_redundant_alias
+  UNION ALL SELECT 'variant-chain',            count(*) FROM audit_variant_chain
+  UNION ALL SELECT 'vocabulary-cycle',         count(*) FROM audit_vocabulary_cycle
+  UNION ALL SELECT 'orphan-title',             count(*) FROM audit_orphan_title
   UNION ALL SELECT 'shared-cdn-bare-host',     count(*) FROM audit_shared_cdn_bare_host
   UNION ALL SELECT 'TOTAL errors', count(*) FILTER (severity = 'error') FROM audit_findings
   UNION ALL SELECT 'TOTAL warnings', count(*) FILTER (severity = 'warning') FROM audit_findings
