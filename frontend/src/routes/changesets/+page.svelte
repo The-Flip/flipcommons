@@ -1,5 +1,10 @@
+<!-- @component The /changesets page: the global changelog feed, filtered by entity type and time range via the URL. -->
 <script lang="ts">
   import type { ChangeSetDetailSchema, ChangeSetSummarySchema } from '$lib/api/schema';
+  import { untrack } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
+  import { page } from '$app/state';
   import client from '$lib/api/client';
   import { CATALOG_ENTITY_KEYS, ENTITY_META } from '$lib/entities/entity-meta';
   import { SITE_TITLE } from '$lib/constants';
@@ -18,13 +23,53 @@
     substituteCiteMarkers,
   } from '$lib/components/provenance/cite-markers';
   import { changesLabel } from './changes';
+  import {
+    afterFor,
+    changesFilterCodec,
+    CHANGES_TIME_RANGES,
+    toEntityTypeFilter,
+    toTimeRangeFilter,
+    type ChangesFilterState,
+  } from './filters';
 
   type ChangeSetSummary = ChangeSetSummarySchema;
   type ChangeSetDetail = ChangeSetDetailSchema;
 
-  // Filter state
-  let entityType = $state('');
-  let timeRange = $state('');
+  // Filter state lives in the URL and is derived from it, so there is no
+  // writable copy to fall out of sync: back/forward, a shared link and our own
+  // `goto` landings are all the same event — the URL changed. While one of our
+  // own navigations is in flight, `pending` holds its target so further intents
+  // compose on the requested state rather than the still-committed URL;
+  // otherwise a second change made before the first lands would rebuild the
+  // query string from pre-navigation filters and drop the first one.
+  // `$state.raw` because settlement matches intents by object identity.
+  let pending = $state.raw<{ search: string } | null>(null);
+  let filters = $derived(
+    changesFilterCodec.parse(new URLSearchParams(pending ? pending.search : page.url.search)),
+  );
+
+  /**
+   * Apply a filter intent: compose the patch on the rendered state and navigate
+   * to the result, which re-derives `filters`. A no-op patch doesn't navigate.
+   * Each selection gets its own history entry so the browser's back button
+   * returns to the filtered feed the user left. `pending` clears when the
+   * `goto` settles — on landing, error and supersession alike — guarded by
+   * identity so an earlier intent's settlement can't clear a later one's. A
+   * navigation that settles without landing snaps the controls back to the
+   * URL's state, which is also the honest outcome.
+   */
+  function apply(patch: Partial<ChangesFilterState>) {
+    const search = changesFilterCodec.canonical({ ...filters, ...patch });
+    if (search === changesFilterCodec.canonical(filters)) return;
+    const intent = { search };
+    pending = intent;
+    void goto(`${resolve('/changesets')}${search ? `?${search}` : ''}`, {
+      keepFocus: true,
+      noScroll: true,
+    }).finally(() => {
+      if (pending === intent) pending = null;
+    });
+  }
 
   // Feed state
   let items = $state<ChangeSetSummary[]>([]);
@@ -42,28 +87,12 @@
   // Sentinel for infinite scroll
   let sentinel: HTMLDivElement | undefined = $state();
 
-  function computeTimeFilter(): { after?: string; before?: string } {
-    if (!timeRange) return {};
-    const now = new Date();
-    const ms: Record<string, number> = {
-      '24h': 24 * 60 * 60 * 1000,
-      '7d': 7 * 24 * 60 * 60 * 1000,
-      '30d': 30 * 24 * 60 * 60 * 1000,
-    };
-    if (ms[timeRange]) {
-      return { after: new Date(now.getTime() - ms[timeRange]).toISOString() };
-    }
-    return {};
-  }
-
   async function fetchPage(cursor?: string) {
-    const { after, before } = computeTimeFilter();
     const { data } = await client.GET('/api/pages/changesets/', {
       params: {
         query: {
-          entity_type: entityType || undefined,
-          after,
-          before,
+          entity_type: filters.entity_type || undefined,
+          after: afterFor(filters.range),
           cursor: cursor || undefined,
           limit: 50,
         },
@@ -137,13 +166,16 @@
     }
   }
 
-  // Reload on filter change
-  let filterKey = $derived(`${entityType}|${timeRange}`);
+  // Reload when the filter set itself changes. `filterKey` is a string, so a
+  // URL change that leaves the filters alone — a tracking param, a hash —
+  // re-derives an equal key and doesn't reload. `untrack` keeps the loader's
+  // own reads out of this effect's dependencies: `filters` is a fresh object
+  // on every URL change, and tracking it would defeat the key.
+  let filterKey = $derived(changesFilterCodec.canonical(filters));
 
   $effect(() => {
-    // Read filterKey to trigger on any filter change
     void filterKey;
-    loadInitial();
+    untrack(() => loadInitial());
   });
 
   // Infinite scroll sentinel
@@ -178,7 +210,10 @@
   <div class="filter-bar">
     <label class="filter-field">
       <span class="filter-label">Entry type</span>
-      <select bind:value={entityType}>
+      <select
+        value={filters.entity_type}
+        onchange={(e) => apply({ entity_type: toEntityTypeFilter(e.currentTarget.value) })}
+      >
         <option value="">All types</option>
         {#each CATALOG_ENTITY_KEYS.map((k) => ENTITY_META[k]) as et (et.entity_type)}
           <option value={et.entity_type}>{et.label}</option>
@@ -188,11 +223,14 @@
 
     <label class="filter-field">
       <span class="filter-label">Time range</span>
-      <select bind:value={timeRange}>
+      <select
+        value={filters.range}
+        onchange={(e) => apply({ range: toTimeRangeFilter(e.currentTarget.value) })}
+      >
         <option value="">All time</option>
-        <option value="24h">Last 24 hours</option>
-        <option value="7d">Last 7 days</option>
-        <option value="30d">Last 30 days</option>
+        {#each CHANGES_TIME_RANGES as tr (tr.value)}
+          <option value={tr.value}>{tr.label}</option>
+        {/each}
       </select>
     </label>
   </div>
