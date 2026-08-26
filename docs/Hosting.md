@@ -67,6 +67,10 @@ Every push to `main` triggers a build and deploy:
    [DeployChecks.md](DeployChecks.md) for the preDeploy phase (Django
    system checks).
 
+3. **Health check**: Railway probes `healthcheckPath` and holds the new container out of rotation until it answers 200, up to `healthcheckTimeout`. A container that builds and migrates but can't serve therefore never takes traffic — the old one keeps serving until the probe gives up. The path is SvelteKit's `/__health`, not Django's `/api/health`; [railway.toml](../railway.toml) records why that distinction decides whether the probe survives `ALLOWED_HOSTS`.
+
+   This gates the release only. Railway stops probing once the deployment is live, so continuous liveness monitoring of the running site is the Sentry uptime monitor's job, hitting the same endpoint from outside.
+
 The contributor-facing deploy workflow (branch → PR → merge → live) and rollback are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 #### Deploy version stamping
@@ -377,11 +381,9 @@ Per-user rate limits ([backend/apps/provenance/rate_limits.py](../backend/apps/p
 ## Troubleshooting
 
 **Health check fails after deploy**:
-The health check should hit `/__health`. That endpoint is served by the
-SvelteKit Node runtime and, in turn, checks Django via its internal
-`/api/health/` call. If it fails, check the deploy logs for Node or Python
-startup errors. Common causes: missing `SECRET_KEY`, database connection
-issues, a bad migration, or the SSR process failing to start.
+`/__health` is served by the SvelteKit Node runtime and checks Django in turn via an internal `/api/health` call, which runs a `SELECT 1`. So a failing probe means Node is down, Django is down, or the database is unreachable — check the deploy logs for Node or Python startup errors. Common causes: missing `SECRET_KEY`, database connection issues, a bad migration or the SSR process failing to start. Railway will not promote the deployment while this fails, so the previous container stays live.
+
+A probe that fails with **400** rather than a connection error means it reached Django with an external `Host` header and hit `ALLOWED_HOSTS`. That points at `healthcheckPath` having been changed to a Django route — put it back to `/__health`; see [railway.toml](../railway.toml).
 
 **"Frontend build directory not found" error**:
 The Docker build's Node stage failed to produce the SvelteKit SSR runtime.
