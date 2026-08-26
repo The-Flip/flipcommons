@@ -230,6 +230,57 @@ describe('GET /sitemap.xml', () => {
     expect(response.status).toBe(404);
   });
 
+  // Production sits just under super-sitemap's 50,000-URL page limit, so the
+  // `<sitemapindex>` branch has never rendered for real. Each Title slug
+  // expands to 3 URLs (detail + edit-history + sources), so this many slugs
+  // clears the limit and exercises the split the way catalog growth will.
+  describe('above super-sitemap 50,000-url page limit', () => {
+    const MAX_PER_PAGE = 50_000;
+    const SLUGS = 17_000;
+    const urlCount = (xml: string) => xml.match(/<url>/g)?.length ?? 0;
+
+    beforeEach(() => {
+      setApiResponse({
+        feeds: [
+          {
+            kind: 'title',
+            entries: Array.from({ length: SLUGS }, (_, i) => ({
+              slug: `t${i}`,
+              lastmod: '2026-01-01T00:00:00Z',
+            })),
+            detail_excluded_slugs: [],
+            max_lastmod: '2026-01-01T00:00:00Z',
+          },
+        ],
+      });
+    });
+
+    it('renders a sitemapindex pointing at every subpage', async () => {
+      const xml = await (await callGet()).text();
+      expect(xml).toContain('<sitemapindex');
+      expect(xml).not.toContain('<urlset');
+      expect(xml).toContain('<loc>https://flipcommons.org/sitemap1.xml</loc>');
+      expect(xml).toContain('<loc>https://flipcommons.org/sitemap2.xml</loc>');
+      expect(xml).not.toContain('<loc>https://flipcommons.org/sitemap3.xml</loc>');
+    });
+
+    it('splits every url across the subpages, dropping none', async () => {
+      const first = await (await callGet({ page: '1' })).text();
+      const second = await (await callGet({ page: '2' })).text();
+      expect(first).toContain('<urlset');
+      expect(second).toContain('<urlset');
+      expect(urlCount(first)).toBe(MAX_PER_PAGE);
+      expect(urlCount(second)).toBeGreaterThan(0);
+      expect(urlCount(second)).toBeLessThan(MAX_PER_PAGE);
+
+      // Re-render with no feed to count the static routes the tree currently
+      // discovers, so this stays correct as static routes are added.
+      setApiResponse({ feeds: [] });
+      const staticUrls = urlCount(await (await callGet()).text());
+      expect(urlCount(first) + urlCount(second)).toBe(SLUGS * 3 + staticUrls);
+    });
+  });
+
   // XSD validation pins XML correctness — well-formedness, element order,
   // value shapes — against the official sitemaps.org 0.9 schema. Combined
   // with the Location rest-param regression (multi-segment slug must NOT

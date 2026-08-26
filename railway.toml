@@ -19,6 +19,19 @@ watchPatterns = [
 ]
 
 [deploy]
+# Container restart policy. These are the values the prod Web service already
+# runs with — declared here so they are reviewable and survive a dashboard
+# edit, not to change behavior.
+#
+# The retry budget is cumulative across a deployment's whole life and never
+# resets on healthy running, so ON_FAILURE/10 means a deployment stops for
+# good on its eleventh crash however far apart those crashes are; recovery
+# then needs a *redeploy*, since a restart re-enters the exhausted deployment.
+# Raising the number buys time between hard outages without removing them.
+# See https://github.com/The-Flip/flipcommons/issues/726.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
 # scripts/predeploy runs check --deploy then migrate, in that order. Do NOT
 # inline `check --deploy && migrate` here again: an && chain in this config
 # string is unreliable — only the first command ran, so migrations were

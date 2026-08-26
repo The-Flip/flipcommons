@@ -95,7 +95,10 @@ COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=caddy-runtime /usr/bin/caddy /usr/local/bin/caddy
 
 WORKDIR /app
-ENV INTERNAL_API_BASE_URL=http://127.0.0.1:8000
+
+# INTERNAL_API_BASE_URL is deliberately NOT set here. It points at Caddy's
+# listener, whose port Railway injects as PORT at runtime, so the image can't
+# bake it. scripts/start-production exports it and owns the rationale.
 
 # Install dependencies (cached layer)
 COPY backend/pyproject.toml backend/uv.lock ./

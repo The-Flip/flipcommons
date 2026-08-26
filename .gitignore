@@ -74,3 +74,6 @@ data/ingest_sources/
 *.duckdb
 *.duckdb.wal
 *.duckdb.tmp.*
+
+# Production logs pulled down for local inspection
+production_logs/

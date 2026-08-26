@@ -151,7 +151,7 @@ Pros:
 Cons:
 
 - A new outermost hop forces IP-trust re-derivation
-  - Bunny sits _in front of_ Railway's edge, so the client IP arrives via Bunny and the `X-Real-IP`/`Forwarded`/`RATE_LIMIT_TRUST_PROXY_HEADERS` chain ([ClientIpTrust.md](../../ClientIpTrust.md)) must be re-derived so rate limits and IP logging see the true client — the prerequisite [StaticAssetCDN.md](StaticAssetCDN.md) deliberately avoided by scoping Bunny to a static subdomain.
+  - Bunny sits _in front of_ Railway's edge, so the client IP arrives via Bunny and the `X-Real-IP`/`Forwarded`/`RATE_LIMIT_TRUST_PROXY_HEADERS` chain ([ClientIpTrust.md](../devops/ClientIpTrust.md)) must be re-derived so rate limits and IP logging see the true client — the prerequisite [StaticAssetCDN.md](StaticAssetCDN.md) deliberately avoided by scoping Bunny to a static subdomain.
 - It exposes the origin
   - Edge absorption and the IP-trust fix both depend on the Railway origin being unreachable except through Bunny, but Railway keeps a public `*.railway.app` hostname that is awkward to lock down — so an attacker can hit the origin directly, bypassing rate limiting and, because the origin now trusts Bunny's forwarded client IP, spoofing that IP. Caddy adds no new front door to lock.
 - `/api/` and `/djadmin/` now flow through Bunny

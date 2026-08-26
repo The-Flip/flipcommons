@@ -9,7 +9,7 @@ interface RequireCapabilityOptions {
   url: URL;
   // Required: forwarded to createServerClient so the user's Cookie
   // header reaches Django. SvelteKit's event.fetch only forwards
-  // cookies same-origin, and SSR crosses to 127.0.0.1:8000 in prod.
+  // cookies same-origin, and SSR crosses to a loopback origin in prod.
   // Dropping this would re-introduce #420 (gate sees anonymous /me/).
   request: Request;
   activity: Activity;
