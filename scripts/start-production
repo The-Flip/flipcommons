@@ -47,7 +47,7 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:"${DJANGO_PORT}" --workers 2 --timeout 60 --graceful-timeout 30 &
+.venv/bin/gunicorn config.wsgi:application --config gunicorn.conf.py --bind 127.0.0.1:"${DJANGO_PORT}" --workers 2 --timeout 60 --graceful-timeout 30 &
 DJANGO_PID=$!
 
 cd frontend_runtime

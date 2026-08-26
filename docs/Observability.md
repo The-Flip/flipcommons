@@ -32,7 +32,18 @@ Some of the things we explicitly don't capture:
 
 ## Logs ≠ alerts
 
-`logger.info/warning/error` flows to stdout and stays there. To send to Sentry, code must call the Sentry SDK's `capture_*` API explicitly. On the backend, `LoggingIntegration(level=INFO, event_level=None)` attaches log records as breadcrumbs on real events but never promotes them to standalone Sentry events. This keeps authz denials, validation errors, and rate-limit hits out of the alert stream by construction.
+`logger.info/warning/error` flows to the container's log stream and stays there. To send to Sentry, code must call the Sentry SDK's `capture_*` API explicitly. On the backend, `LoggingIntegration(level=INFO, event_level=None)` attaches log records as breadcrumbs on real events but never promotes them to standalone Sentry events. This keeps authz denials, validation errors, and rate-limit hits out of the alert stream by construction.
+
+## Log severity in Railway
+
+Railway derives the `severity` you filter on in the log explorer from the line itself: a JSON line's `level` field wins, and a plain-text line is classified by the stream it arrived on — stdout becomes `info`, stderr becomes `error`. Python's `StreamHandler` writes to stderr, so unformatted output arrives tagged as an error whatever its real level, and `severity:error` stops meaning anything.
+
+Both Python processes therefore emit JSON in production: Django via `settings.LOGGING`, gunicorn via `logconfig_dict` in `backend/gunicorn.conf.py`. Both use `RailwayJSONFormatter` from `backend/config/log_format.py`, which also folds tracebacks into the message so a crash is one log event rather than one per stack frame. Dev keeps the plain-text format. Caddy already emits its own structured JSON and needs nothing. Gunicorn's access log stays off — Caddy logs every request with more detail.
+
+Two sources still classify by stream, both deliberately:
+
+- **The Postgres service.** Its image writes every `LOG:` line to stderr, so routine checkpoints and WAL archiving read as errors. Not fixable without forking the image — scope the log explorer to the web service instead.
+- **Python `warnings` and Node SSR.** Warnings bypass `logging` entirely. In Node, `console.error` genuinely is an error, but `console.warn` reads as one too.
 
 ## Privacy
 
