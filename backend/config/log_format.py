@@ -22,6 +22,14 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+# Derived from a live record rather than hand-listed so the set tracks the
+# interpreter — `taskName` arrived in 3.12, and a literal set would leak
+# whatever the next version adds into every payload. `message` and `asctime`
+# are absent from a fresh record but get set by `logging.Formatter`.
+_RESERVED_RECORD_ATTRS = frozenset(
+    logging.LogRecord("", 0, "", 0, "", (), None).__dict__
+) | {"message", "asctime"}
+
 
 def railway_level(levelno: int) -> str:
     """Map a Python level number onto Railway's four-value vocabulary.
@@ -43,7 +51,13 @@ class RailwayJSONFormatter(logging.Formatter):
     """Render a record as one JSON line Railway can classify and filter."""
 
     def format(self, record: logging.LogRecord) -> str:
-        payload: dict[str, str | int | None] = {
+        # Extras first so the fields below win a name collision. `logging`
+        # rejects an `extra` key that shadows a record attribute, but `level`,
+        # `logger`, `time` and `pid` are ours rather than the record's, so
+        # `extra={"level": "debug"}` reaches us and would otherwise overwrite
+        # the severity Railway reads.
+        payload: dict[str, object] = {
+            **self._extras(record),
             "level": railway_level(record.levelno),
             "message": self._message(record),
             "logger": record.name,
@@ -53,7 +67,24 @@ class RailwayJSONFormatter(logging.Formatter):
             # this, two workers logging the same warning are indistinguishable.
             "pid": record.process,
         }
-        return json.dumps(payload)
+        # Extras are arbitrary objects, so the encoder needs a fallback; a
+        # logging call reporting a problem must not raise a second one.
+        return json.dumps(payload, default=str)
+
+    def _extras(self, record: logging.LogRecord) -> dict[str, object]:
+        """Whatever the caller passed as ``extra=``.
+
+        Flattened into the payload rather than nested, because Railway indexes
+        top-level JSON keys as attributes you can filter a query on — which is
+        the only reason these fields are worth emitting. Anything put in
+        ``extra=`` is therefore stored by Railway unscrubbed; see
+        docs/Observability.md.
+        """
+        return {
+            key: value
+            for key, value in record.__dict__.items()
+            if key not in _RESERVED_RECORD_ATTRS
+        }
 
     def _message(self, record: logging.LogRecord) -> str:
         """The formatted message with any traceback folded into it.

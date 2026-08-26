@@ -106,16 +106,61 @@ def test_traceback_is_folded_into_the_message() -> None:
 
 
 def test_non_string_argument_is_stringified() -> None:
-    """Why the payload needs no ``default=`` on ``json.dumps``.
-
-    Interpolation happens before the JSON encoding, so an argument of any type
-    reaches the encoder already flattened into the message string and no
-    logging call can hand it something un-serializable.
-    """
+    """Interpolation happens before the JSON encoding."""
     record = make_record(logging.INFO, "state: %s")
     record.args = (object(),)
 
     assert "state: <object object at" in format_record(record)["message"]
+
+
+def test_extra_fields_become_filterable_attributes() -> None:
+    """The reason ``extra=`` is worth emitting at all.
+
+    Railway indexes top-level JSON keys as attributes a query can filter on, so
+    a flattened ``user_id`` is reachable where the same value inside the
+    message string is not.
+    """
+    record = make_record(logging.INFO, "authz.deny")
+    record.user_id = 42
+    record.activity = "catalog.edit"
+
+    payload = format_record(record)
+
+    assert payload["user_id"] == 42
+    assert payload["activity"] == "catalog.edit"
+    assert payload["message"] == "authz.deny"
+
+
+def test_record_internals_stay_out_of_the_payload() -> None:
+    """Only what the caller passed, never the record's own machinery."""
+    payload = format_record(make_record(logging.INFO, "plain"))
+
+    assert set(payload) == {"level", "message", "logger", "time", "pid"}
+
+
+def test_extra_cannot_overwrite_the_severity() -> None:
+    """``level`` is not a LogRecord attribute, so ``logging`` lets it through.
+
+    Without the payload's own fields winning the merge, one such call would
+    hand Railway a severity unrelated to the record's real level — the exact
+    misclassification this formatter exists to prevent.
+    """
+    record = make_record(logging.INFO, "surprise")
+    record.level = "error"
+    record.pid = "nonsense"
+
+    payload = format_record(record)
+
+    assert payload["level"] == "info"
+    assert payload["pid"] == record.process
+
+
+def test_unserializable_extra_does_not_break_logging() -> None:
+    """Extras are arbitrary objects; the encoder must not raise on one."""
+    record = make_record(logging.INFO, "saving")
+    record.entity = object()
+
+    assert str(format_record(record)["entity"]).startswith("<object object at")
 
 
 def test_django_console_handler_uses_the_selected_formatter() -> None:

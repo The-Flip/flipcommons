@@ -38,11 +38,15 @@ Some of the things we explicitly don't capture:
 
 [production_logs/](../production_logs/README.md) pulls these logs out of Railway and Sentry and builds a queryable database over them. Use it for incidents rather than reading the raw exports: it encodes the classification caveats below as data, so `severity` is not taken at face value, and it records what each export actually covers.
 
-## Log severity in Railway
+## Structured logs in Railway
 
 Railway derives the `severity` you filter on in the log explorer from the line itself: a JSON line's `level` field wins, and a plain-text line is classified by the stream it arrived on — stdout becomes `info`, stderr becomes `error`. Python's `StreamHandler` writes to stderr, so unformatted output arrives tagged as an error whatever its real level, and `severity:error` stops meaning anything.
 
 Both Python processes therefore emit JSON in production: Django via `settings.LOGGING`, gunicorn via `logconfig_dict` in `backend/gunicorn.conf.py`. Both use `RailwayJSONFormatter` from `backend/config/log_format.py`, which also folds tracebacks into the message so a crash is one log event rather than one per stack frame. Dev keeps the plain-text format. Caddy already emits its own structured JSON and needs nothing. Gunicorn's access log stays off — Caddy logs every request with more detail.
+
+Anything passed as `extra=` is flattened into the same JSON object, which is what makes it filterable — `logger.info("authz.deny", extra={"user_id": ...})` becomes a `user_id` attribute you can query on, where the same value inside the message string would not be. The formatter's own fields (`level`, `message`, `logger`, `time`, `pid`) win a name collision, so an `extra` key can never rewrite the severity Railway reads.
+
+That flattening makes `extra=` a publish. Railway's log store has none of the scrubbing described under Privacy below — no `EventScrubber`, no server-side rules — so keep personal data out of it. Internal ids, activity names and error codes are fine; emails, tokens, IPs and request bodies are not.
 
 Four sources still classify by stream, all of them expected:
 
