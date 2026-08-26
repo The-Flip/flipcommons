@@ -151,7 +151,7 @@ export const load: PageServerLoad = async ({ fetch, url, request, params }) => {
 };
 ```
 
-`createServerClient` resolves `INTERNAL_API_BASE_URL` (direct-to-Django in production) with a fallback to the request origin (Vite proxy in dev). Every SSR load function should use this helper instead of constructing the client manually. Passing `request` is required: in production SSR crosses origins to reach Django, and SvelteKit's `event.fetch` only forwards cookies same-origin, so the helper forwards the user's `Cookie` header from the incoming request — without it, every authenticated endpoint sees an anonymous request.
+`createServerClient` resolves `INTERNAL_API_BASE_URL` (Caddy's loopback listener in production, which proxies on to Django) with a fallback to the request origin (Vite proxy in dev). Every SSR load function should use this helper instead of constructing the client manually. Passing `request` is required: in production SSR crosses origins to reach Django, and SvelteKit's `event.fetch` only forwards cookies same-origin, so the helper forwards the user's `Cookie` header from the incoming request — without it, every authenticated endpoint sees an anonymous request.
 
 This keeps:
 

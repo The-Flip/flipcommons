@@ -32,9 +32,13 @@ The web container runs three long-lived processes:
 - **Django/Gunicorn** on `127.0.0.1:8000`
 - **SvelteKit Node SSR** on `127.0.0.1:3000`
 
+SSR's own API calls go **through Caddy**, not straight to Gunicorn: `INTERNAL_API_BASE_URL` is `http://127.0.0.1:$PORT`, and Caddy's `@django` matcher forwards them on. Gunicorn's sync worker closes the connection after every response, and Node 24's bundled undici crashes the process when a large enough response body is still buffered as that FIN arrives ([#726](https://github.com/The-Flip/flipcommons/issues/726)). Caddy holds the Node-facing connection open, which removes the trigger. It does not remove the underlying defect — Node still dies if any upstream closes on it mid-body — so [`backend/tests/test_ssr_api_route.py`](../backend/tests/test_ssr_api_route.py) pins the routing, and giving each process its own restart domain (below) is what would make such a crash survivable.
+
 The entrypoint is [`scripts/start-production`](../scripts/start-production); it starts all three and keeps the container alive while they are all healthy. Supervision is intentionally simple: there is no in-container restart policy, so when any child exits, the entrypoint kills the other two and the container exits with it. A deliberate bootstrap-phase choice — simple and fails closed, but not a full supervisor.
 
 **Do not assume Railway restarts the container after that.** On 2026-08-17 the SSR process died on an uncatchable assertion inside Node's bundled undici — raised from a socket event handler while reading a response from Django, so no application `try`/`catch` could intercept it — the container exited, and the deployment stayed down for hours. The service was already configured `ON_FAILURE` with 10 retries at the time. Treat a single process crash as a full outage of indeterminate length until that changes.
+
+Those restart settings are declared in [`railway.toml`](../railway.toml). The budget they describe is **cumulative across a deployment's whole life and never resets on healthy running**, so a deployment stops for good on its eleventh crash no matter how far apart those crashes are. Recovery then needs a _redeploy_ — a restart re-enters the same exhausted deployment and does nothing.
 
 Changing it means giving each process its own restart domain. The shape that fits the platform is one process per service — Caddy holding the public domain and reverse-proxying to Django and the SSR server over private networking — since Railway restarts a single-process service natively and has no path-based routing across services on one domain, which is why the proxy has to be a service rather than a platform setting. Keeping everything in one container instead means adopting a real supervision layer such as `s6-overlay`, which also reaps the orphaned processes that a shell entrypoint running as PID 1 leaves as zombies. What does not work is hand-rolling the supervision in that shell script: the failure modes it has to handle — draining on `SIGTERM`, distinguishing a crash loop from a flaky child, reaping grandchildren that still hold a listening socket — are the ones an init system exists to solve.
 
@@ -328,7 +332,7 @@ Set these in the Railway web service dashboard. `DATABASE_URL`, `PORT`, and the 
 - `ALLOWED_HOSTS` — comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`. Also include the Railway origin host Bunny forwards (`<service>.up.railway.app`).
 - `CSRF_TRUSTED_ORIGINS` — full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`.
 - `SITE_ORIGIN` — public origin, no trailing slash, e.g. `https://flipcommons.org`. Baked into prerendered canonical URLs and OG tags; consumed by `/sitemap.xml` and `robots.txt`.
-- `INTERNAL_API_BASE_URL` — base URL SvelteKit SSR uses to reach Django. The image defaults it to `http://127.0.0.1:8000` (Gunicorn loopback); keep that unless the internal address changes.
+- `INTERNAL_API_BASE_URL` — base URL SvelteKit SSR uses to reach Django. Do **not** set this in the dashboard: [`scripts/start-production`](../scripts/start-production) derives it from the runtime-injected `PORT` so SSR goes through Caddy rather than Gunicorn (see [Process model](#process-model)). The entrypoint exports it unconditionally, so a dashboard value is silently ignored rather than honoured — set one and the dashboard and the running process disagree.
 
 #### Auth
 

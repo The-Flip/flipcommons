@@ -144,7 +144,7 @@ Be skeptical of SSR routes that call multiple backend endpoints from `load()`. T
 
 Server-side Svelte routes should call Django through `createServerClient` from `$lib/api/server`, not through ad hoc fetch wrappers or direct backend internals.
 
-`createServerClient(fetch, url, request)` resolves `INTERNAL_API_BASE_URL` (direct-to-Django in production) with a fallback to the request origin (Vite proxy in dev). The `request` argument is required so the user's Cookie header is forwarded across origins. See `docs/Svelte.md` for the full pattern.
+`createServerClient(fetch, url, request)` resolves `INTERNAL_API_BASE_URL` (Caddy's loopback listener in production, which proxies on to Django) with a fallback to the request origin (Vite proxy in dev). The `request` argument is required so the user's Cookie header is forwarded across origins. See `docs/Svelte.md` for the full pattern.
 
 This keeps the boundary clean:
 
