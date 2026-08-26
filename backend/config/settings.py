@@ -1,11 +1,13 @@
 import os
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import dj_database_url
 import django_stubs_ext
 from django.core.exceptions import ImproperlyConfigured
+
+from config.log_format import JSON_FORMATTER_SPEC
 
 # Required for generic model support under django-stubs. Must run before any
 # model class is defined.
@@ -213,7 +215,12 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024  # 25 MB
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-LOGGING = {
+# Production emits JSON so Railway reads the level from the payload instead of
+# inferring it from the stream — see config/log_format.py for why that matters.
+# Dev keeps the plain format; nobody wants to read JSON in a terminal.
+LOG_FORMATTER = "verbose" if DEBUG else "json"
+
+LOGGING: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
@@ -221,11 +228,12 @@ LOGGING = {
             "format": "{asctime} {levelname} {name} {message}",
             "style": "{",
         },
+        "json": JSON_FORMATTER_SPEC,
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "verbose",
+            "formatter": LOG_FORMATTER,
         },
     },
     "root": {
