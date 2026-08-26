@@ -718,6 +718,124 @@ CREATE OR REPLACE VIEW audit_variant_chain AS
 COMMENT ON VIEW audit_variant_chain IS
   'ERROR — one row per model whose variant_of target is itself a variant. A variant names the base model, so the chain has to be flattened; the finding sits on the end that moves.';
 
+-- ─── cross-manufacturer-variant ────────────────────────────────────────────
+-- A variant_of edge whose two ends were built by different manufacturers. A variant is
+-- the same gameplay in different dress — cabinet art, plaques, toppers, colored plastics
+-- (DomainModel.md) — and a second factory does not produce different dress, it produces a
+-- copy, a remake or an export edition. Of the seven relationship types this is the ONLY
+-- one that cannot cross: the other six describe one company taking up another's design,
+-- which is the normal case for four of them.
+--
+-- Nothing in the schema forbids it. self_fk_not_self('variant_of') stops a model being its
+-- OWN variant and the column carries no other constraint, so a cross-manufacturer variant
+-- is writable today and would land silently.
+--
+-- It matters because variants collapse. `first_model_candidates` filters
+-- `variant_of__isnull=True`, so a mislabelled foreign build vanishes from its Title's model
+-- list instead of standing beside the original — the Title stops showing that a second
+-- company ever built the game, and the copy's own manufacturer, year and provenance stop
+-- being reachable from the page.
+--
+-- Both manufacturers must be known: NULL is no signal, not a difference. See
+-- unlinked-foreign-model for why that costs nothing here.
+CREATE OR REPLACE VIEW audit_cross_manufacturer_variant AS
+  SELECT 'error' AS severity,
+         _entity_type_of('catalog_machinemodel') AS entity_type,
+         m.id   AS entity_id,
+         m.slug AS public_id,
+         format('variant of {}, which {} built — a variant is the same game in different dress, so another manufacturer''s build is a copy, remake or export edition',
+                l.target_slug, l.target_manufacturer_name) AS message
+  FROM model_lineage l
+  JOIN models m ON m.id = l.model_id
+  WHERE l.edge_kind = 'variant_of'
+    AND m.manufacturer_slug IS NOT NULL
+    AND l.target_manufacturer_slug IS NOT NULL
+    AND m.manufacturer_slug IS DISTINCT FROM l.target_manufacturer_slug;
+COMMENT ON VIEW audit_cross_manufacturer_variant IS
+  'ERROR — one row per model whose variant_of target was built by a different manufacturer. Variants cannot cross that boundary; the edge wants retyping as copy, remake or export edition. Reported on the variant, the end that moves.';
+
+-- ─── unlinked-foreign-model ────────────────────────────────────────────────
+-- A Title can span manufacturers — Eight Ball Deluxe holds the Bally original, a Taito do
+-- Brasil copy and a Bell Games conversion kit — and when it does, every model outside the
+-- originating company got there by taking up someone else's design. That act is what the
+-- six non-variant relationship types name, and Eight Ball Deluxe states one on each
+-- foreign build, so it is silent here. A foreign model stating none of them asserts that
+-- two companies arrived at one game independently, which is not a thing that happens.
+--
+-- The Title is the scope because it is what makes the omission legible: a lone foreign
+-- model with no edge is just an under-described record, while one sharing a Title with
+-- another company's build has a specific missing fact and usually a specific target.
+--
+-- WHICH end is the original comes from the earliest year in the Title, and ties keep every
+-- manufacturer that shares that year, so an undated or same-year pair is not accused. The
+-- heuristic is deliberate rather than merely cheap: where it picks wrong it does so because
+-- the years are wrong or absent, so the finding is a real defect either way — just not
+-- always the one the rule is named for. Darling and Jubilee both surfaced that way,
+-- Williams originals ranked behind their Segasa copies.
+--
+-- Which is why the message states the EVIDENCE and not the conclusion. "Segasa originated
+-- the Title" is simply false on Darling, and a finding that asserts it is wrong even
+-- though it is pointing at something real. Naming the earliest year instead gives the
+-- reader the number to check and names both repairs, since the rule cannot tell which one
+-- it is looking at.
+--
+-- OUTBOUND edges only. An edge is stated on the end that took up the design, so pointing
+-- at the original is exactly what a derivative owes; a model with only an INBOUND edge has
+-- had its relationship described by someone else and still says nothing itself. Accepting
+-- inbound would also silence on unrelated evidence — Jubilee's one edge is a conversion in
+-- another Title entirely, which says nothing about who built the game.
+--
+-- The edge need not point inside the Title or across a manufacturer: a conversion names a
+-- donor from a different game, and copies chain (a second Taito build copying the first).
+-- Any of the six is enough to say the record knows where it came from.
+--
+-- A variant inherits its base's edges, since a variant states dress and the base states
+-- origin. One hop is the whole walk — deeper chains are variant-chain's finding, and
+-- cross-manufacturer-variant guarantees the base is same-manufacturer.
+--
+-- Manufacturer must be known at both ends, which today costs nothing: of the 377 live
+-- models with no manufacturer, 376 are the only model in their own Title and so can never
+-- be in a cross-manufacturer one. The exception is Metallica (Retheme), which shares
+-- Earthshaker's Title and already states its retheme edge.
+CREATE OR REPLACE VIEW audit_unlinked_foreign_model AS
+  WITH cross_title AS (
+    SELECT title_id FROM models GROUP BY title_id
+    HAVING count(DISTINCT manufacturer_slug) > 1
+  ),
+  -- The manufacturers sharing the Title's earliest year. A Title reaches here only if some
+  -- model in it is dated, so this is never empty for a Title the rule considers.
+  originator AS (
+    SELECT m.title_id, list(DISTINCT m.manufacturer_slug) AS mfrs,
+           string_agg(DISTINCT m.manufacturer_name, ' / ') AS names,
+           -- Every row here shares the Title's earliest year, so min() just reads it back.
+           min(m.year) AS year
+    FROM models m
+    JOIN cross_title c ON c.title_id = m.title_id
+    WHERE m.year IS NOT NULL
+      AND m.manufacturer_slug IS NOT NULL
+      AND m.year = (SELECT min(m2.year) FROM models m2 WHERE m2.title_id = m.title_id)
+    GROUP BY m.title_id
+  ),
+  origin_stated AS (
+    SELECT DISTINCT model_id FROM model_edges
+    WHERE relationship_type IN ('remake_of', 'export_edition_of', 'copy',
+                                'conversion', 'conversion_kit', 'retheme')
+  )
+  SELECT 'warning' AS severity,
+         _entity_type_of('catalog_machinemodel') AS entity_type,
+         m.id   AS entity_id,
+         m.slug AS public_id,
+         format('{} built this, but the Title''s earliest model is {} ({}) — either say how this derives (copy, remake, conversion, conversion kit, re-theme or export edition), or correct the dates if this is the original',
+                m.manufacturer_name, o.names, o.year) AS message
+  FROM models m
+  JOIN originator o ON o.title_id = m.title_id
+  WHERE m.manufacturer_slug IS NOT NULL
+    AND NOT list_contains(o.mfrs, m.manufacturer_slug)
+    -- A variant answers through its base; every other model answers for itself.
+    AND COALESCE(m.variant_of_id, m.id) NOT IN (SELECT model_id FROM origin_stated);
+COMMENT ON VIEW audit_unlinked_foreign_model IS
+  'WARNING — one row per model in a cross-manufacturer Title, built by neither of the Title''s originating manufacturers, that states no relationship explaining how it derives. The originator comes from the Title''s earliest year, so a wrong one is usually a date defect.';
+
 -- ─── vocabulary-cycle ──────────────────────────────────────────────────────
 -- A theme or gameplay feature whose parent chain returns to itself. Nothing forbids one:
 -- ThemeParent and GameplayFeatureParent carry a unique pair and nothing else, so a
@@ -828,6 +946,8 @@ CREATE OR REPLACE TABLE audit_findings AS
   UNION ALL SELECT 'ambiguous-alias',           severity, entity_type, entity_id, public_id, message FROM audit_ambiguous_alias
   UNION ALL SELECT 'redundant-alias',           severity, entity_type, entity_id, public_id, message FROM audit_redundant_alias
   UNION ALL SELECT 'variant-chain',             severity, entity_type, entity_id, public_id, message FROM audit_variant_chain
+  UNION ALL SELECT 'cross-manufacturer-variant', severity, entity_type, entity_id, public_id, message FROM audit_cross_manufacturer_variant
+  UNION ALL SELECT 'unlinked-foreign-model',    severity, entity_type, entity_id, public_id, message FROM audit_unlinked_foreign_model
   UNION ALL SELECT 'vocabulary-cycle',          severity, entity_type, entity_id, public_id, message FROM audit_vocabulary_cycle
   UNION ALL SELECT 'orphan-title',              severity, entity_type, entity_id, public_id, message FROM audit_orphan_title
   UNION ALL SELECT 'shared-cdn-bare-host',      severity, entity_type, entity_id, public_id, message FROM audit_shared_cdn_bare_host;
@@ -928,6 +1048,8 @@ CREATE OR REPLACE VIEW audit_summary AS
   UNION ALL SELECT 'ambiguous-alias',          count(*) FROM audit_ambiguous_alias
   UNION ALL SELECT 'redundant-alias',          count(*) FROM audit_redundant_alias
   UNION ALL SELECT 'variant-chain',            count(*) FROM audit_variant_chain
+  UNION ALL SELECT 'cross-manufacturer-variant', count(*) FROM audit_cross_manufacturer_variant
+  UNION ALL SELECT 'unlinked-foreign-model',    count(*) FROM audit_unlinked_foreign_model
   UNION ALL SELECT 'vocabulary-cycle',         count(*) FROM audit_vocabulary_cycle
   UNION ALL SELECT 'orphan-title',             count(*) FROM audit_orphan_title
   UNION ALL SELECT 'shared-cdn-bare-host',     count(*) FROM audit_shared_cdn_bare_host
