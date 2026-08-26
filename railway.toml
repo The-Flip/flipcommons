@@ -42,3 +42,20 @@ restartPolicyMaxRetries = 10
 # RATE_LIMIT_TRUST_PROXY_HEADERS); warnings stay non-blocking.
 # See docs/Hosting.md § "Client IP trust".
 preDeployCommand = "/app/scripts/predeploy"
+
+# Gate each release on the app actually serving. Railway probes this path
+# after preDeployCommand and holds the deployment out of rotation until it
+# returns 200, so a container that builds but can't serve never takes traffic.
+#
+# The path must be the SvelteKit one, not Django's /api/health. Railway sends
+# `Host: healthcheck.railway.app`, and /__health terminates at Node, which
+# re-originates the Django hop against INTERNAL_API_BASE_URL — so Django sees
+# `Host: 127.0.0.1` and the probe never reaches ALLOWED_HOSTS. Pointing this
+# at /api/health instead puts the probe's Host in front of that check and
+# every deploy fails with a 400 DisallowedHost.
+#
+# The timeout covers Gunicorn, Node and Caddy starting in sequence (see
+# scripts/start-production) plus the /api/health `SELECT 1`. Railway's default
+# is 300s; it's stated here so shrinking it is a deliberate edit.
+healthcheckPath = "/__health"
+healthcheckTimeout = 300
