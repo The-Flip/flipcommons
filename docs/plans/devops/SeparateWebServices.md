@@ -76,7 +76,7 @@ This is the risk that makes a naive split much bigger than it looks.
 
 A split that keeps Caddy in front preserves this exactly — the browser still sees one hostname and nothing about auth changes. A split that instead gives Django its own public domain is not an infrastructure refactor; it is a cross-site cookie and CORS migration, and it should be understood as a different, much larger project.
 
-The Bunny apex pull zone reinforces the same conclusion. It fronts one origin hostname and carries an `X-Origin-Auth` shared secret plus an `X-Client-IP` edge rule that [`Caddyfile`](../../../Caddyfile) validates before promoting the client IP that rate limiting depends on (see [ClientIpTrust.md](../ClientIpTrust.md)). That contract is between Bunny and a single origin.
+The Bunny apex pull zone reinforces the same conclusion. It fronts one origin hostname and carries an `X-Origin-Auth` shared secret plus an `X-Client-IP` edge rule that [`Caddyfile`](../../../Caddyfile) validates before promoting the client IP that rate limiting depends on (see [ClientIpTrust.md](ClientIpTrust.md)). That contract is between Bunny and a single origin.
 
 ### Deploy lockstep is lost
 

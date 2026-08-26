@@ -5,11 +5,11 @@ Audit of this repo's GitHub configuration against best practice for a Django + S
 ## Already in place
 
 - **CI** via GitHub Actions with `dorny/paths-filter` for selective jobs.
-- **Dependabot** across all four ecosystems (pip, npm, github-actions, docker) with grouped minor/patch updates — see [.github/dependabot.yml](../../.github/dependabot.yml).
+- **Dependabot** across all four ecosystems (pip, npm, github-actions, docker) with grouped minor/patch updates — see [.github/dependabot.yml](../../../.github/dependabot.yml).
 - **Branch protection** on `main`.
 - **Auto-delete head branches** after merge.
 - **Allow auto-merge** enabled at the repo level.
-- **Dependabot auto-merge workflow** for patch + minor updates — see [.github/workflows/dependabot-auto-merge.yml](../../.github/workflows/dependabot-auto-merge.yml). Majors still require manual review.
+- **Dependabot auto-merge workflow** for patch + minor updates — see [.github/workflows/dependabot-auto-merge.yml](../../../.github/workflows/dependabot-auto-merge.yml). Majors still require manual review.
 
 ## High-impact gaps
 
@@ -33,7 +33,7 @@ Settings → General → Pull Requests → uncheck "Allow merge commits" and "Al
 
 ### 5. Concurrency groups on CI
 
-[.github/workflows/ci.yml](../../.github/workflows/ci.yml) has no `concurrency:` block. Adding:
+[.github/workflows/ci.yml](../../../.github/workflows/ci.yml) has no `concurrency:` block. Adding:
 
 ```yaml
 concurrency:
