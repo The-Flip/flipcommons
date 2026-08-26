@@ -4,7 +4,7 @@ Make the client IP we use for rate-limiting trustworthy, then bump Caddy and wir
 
 ## Why
 
-`_client_ip` in [apps/core/rate_limits.py](../../backend/apps/core/rate_limits.py) reads the left-most non-empty entry of `X-Forwarded-For`. On Railway, the XFF that arrives at Django holds **Railway's rotating internal proxy IP** (`100.64.0.X`, last octet rotates per request — see [Railway probe results](#railway)), not the real client IP. Consequence: each request from the same client lands in a different rate-limit bucket. The IP-keyed limiters are **non-functional today** — not bypassable by an attacker so much as silently bypassed by Railway's proxy fabric for everyone.
+`_client_ip` in [apps/core/rate_limits.py](../../../backend/apps/core/rate_limits.py) reads the left-most non-empty entry of `X-Forwarded-For`. On Railway, the XFF that arrives at Django holds **Railway's rotating internal proxy IP** (`100.64.0.X`, last octet rotates per request — see [Railway probe results](#railway)), not the real client IP. Consequence: each request from the same client lands in a different rate-limit bucket. The IP-keyed limiters are **non-functional today** — not bypassable by an attacker so much as silently bypassed by Railway's proxy fabric for everyone.
 
 Severity per endpoint (Session 2 onboarding flow):
 
@@ -33,7 +33,7 @@ This asymmetry is permanent — a property of the header shapes, not of any spec
 
 - **Deletes the parsing-bug class entirely.** `_client_ip` becomes one line: read a scalar, fall back to `REMOTE_ADDR`. No `.split(",")`, no left-vs-right-most decision, no trusted-proxy bookkeeping. A future code review never needs to reason about list semantics.
 - **Defense in depth.** The `RATE_LIMIT_TRUST_PROXY_HEADERS=False` default ([Step 2](#step-2-_client_ip-hardening)) is the _second_ fail-closed layer behind this same failure mode — if the env var is unset or rolled back, proxy headers are ignored entirely and bucketing keys off `REMOTE_ADDR`. Two independent layers both fail safely on the same class of drift.
-- **Convention argument for XFF is weak here.** The chain past Caddy is single-hop to Django on loopback. The only readers of the client IP are [apps/core/rate_limits.py](../../backend/apps/core/rate_limits.py) and [apps/provenance/rate_limits.py](../../backend/apps/provenance/rate_limits.py), both of which want a scalar. We're already (per Out of scope) accepting that the XFF chain is discarded at Caddy regardless of header choice, so "preserve the chain for analytics" isn't a lever that exists.
+- **Convention argument for XFF is weak here.** The chain past Caddy is single-hop to Django on loopback. The only readers of the client IP are [apps/core/rate_limits.py](../../../backend/apps/core/rate_limits.py) and [apps/provenance/rate_limits.py](../../../backend/apps/provenance/rate_limits.py), both of which want a scalar. We're already (per Out of scope) accepting that the XFF chain is discarded at Caddy regardless of header choice, so "preserve the chain for analytics" isn't a lever that exists.
 
 **Costs accepted:**
 
@@ -121,7 +121,7 @@ What this does and doesn't do:
 
 ### Step 2: `_client_ip` hardening
 
-In [backend/apps/core/rate_limits.py](../../backend/apps/core/rate_limits.py):
+In [backend/apps/core/rate_limits.py](../../../backend/apps/core/rate_limits.py):
 
 - Add `RATE_LIMIT_TRUST_PROXY_HEADERS` Django setting, **default `False`**. The setting gates whether `_client_ip` reads `X-Real-IP` at all.
 - When `False`: `_client_ip` returns `REMOTE_ADDR` only. Safe default for dev, tests, and any container where the proxy chain isn't sanitized.
@@ -134,7 +134,7 @@ A docstring on `_client_ip` should briefly note both: why it doesn't read XFF (p
 
 Before writing the implementation: **audit existing tests** for any that inject `HTTP_X_FORWARDED_FOR` or `HTTP_X_REAL_IP` expecting distinct-IP behavior. With the default flipped to `False`, those tests will silently bucket on `127.0.0.1` and pass for the wrong reason. They need to either set `RATE_LIMIT_TRUST_PROXY_HEADERS=True` explicitly _and_ switch from XFF to `X-Real-IP` injection, or be rewritten to use `REMOTE_ADDR`.
 
-Add tests in [test_rate_limits.py](../../backend/apps/core/tests/test_rate_limits.py):
+Add tests in [test_rate_limits.py](../../../backend/apps/core/tests/test_rate_limits.py):
 
 - With `RATE_LIMIT_TRUST_PROXY_HEADERS=False` (default), attacker-supplied `X-Real-IP` and `X-Forwarded-For` are both ignored; bucket keys off `REMOTE_ADDR`. **The critical regression test** — if a future deploy accidentally rolls the setting back to default, no bypass.
 - With `RATE_LIMIT_TRUST_PROXY_HEADERS=True`, `X-Real-IP` is read; `X-Forwarded-For` is still ignored (asserts the parsing-bug class is gone).
@@ -142,11 +142,11 @@ Add tests in [test_rate_limits.py](../../backend/apps/core/tests/test_rate_limit
 
 ### Step 3: Caddy 2.11.2 → 2.11.3
 
-Update [Dockerfile:29](../../Dockerfile#L29). One-line bump. Security patches (FastCGI RCE, admin API auth bypass) are unrelated to the XFF work but unsafe to defer.
+Update [Dockerfile:29](../../../Dockerfile#L29). One-line bump. Security patches (FastCGI RCE, admin API auth bypass) are unrelated to the XFF work but unsafe to defer.
 
 ### Step 4: Dependabot for the Dockerfile
 
-**Already done** — discovered during implementation. [.github/dependabot.yml](../../.github/dependabot.yml) has a `docker` ecosystem entry on `/` with a weekly schedule, which covers all base images in the root [Dockerfile](../../Dockerfile) (Caddy, Node, Python). The next 2.11.x → next-version Caddy bump will land as an automated PR.
+**Already done** — discovered during implementation. [.github/dependabot.yml](../../../.github/dependabot.yml) has a `docker` ecosystem entry on `/` with a weekly schedule, which covers all base images in the root [Dockerfile](../../../Dockerfile) (Caddy, Node, Python). The next 2.11.x → next-version Caddy bump will land as an automated PR.
 
 No change needed in this work.
 

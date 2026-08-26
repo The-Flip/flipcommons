@@ -1,6 +1,7 @@
 /**
  * `/sitemap.xml` (and `/sitemap1.xml`, `/sitemap2.xml`, … when the urlset
- * crosses 50k entries) — see `docs/plans/seo/Sitemap.md`.
+ * crosses super-sitemap's 50,000-entry page limit and it emits a
+ * `<sitemapindex>` instead).
  *
  * The handler:
  *   1. Refuses on non-indexable deploys (`ALLOW_SEARCH_ENGINE_INDEXING != "true"`).
@@ -197,10 +198,11 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
         const lastmod = listingLastmodByUrl.get(p.path) ?? STATIC_LASTMOD_BY_URL.get(p.path);
         return lastmod ? { ...p, lastmod } : p;
       }),
-    // super-sitemap defaults to `max-age=0, s-maxage=3600`. We
-    // override because (a) there is no shared cache today (Caddy isn't a
-    // caching reverse proxy, no CDN), so `s-maxage` is a no-op; (b) we want
-    // clients/crawlers to actually cache the response for the TTL.
+    // super-sitemap defaults to `max-age=0, s-maxage=3600` — a shared cache
+    // may hold the response, but every client must revalidate. Bunny fronts
+    // the apex and respects the origin `Cache-Control` (docs/Hosting.md
+    // § Bunny CDN), so `public, max-age=3600` keeps the same edge caching
+    // and additionally lets crawlers reuse their own copy for the TTL.
     headers: { 'Cache-Control': 'public, max-age=3600' },
   });
 };

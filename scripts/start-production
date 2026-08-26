@@ -6,6 +6,23 @@ PORT="${PORT:-8080}"
 NODE_PORT="${NODE_PORT:-3000}"
 DJANGO_PORT="${DJANGO_PORT:-8000}"
 
+# SvelteKit SSR reaches Django through Caddy, not Gunicorn directly, even
+# though both are loopback in this container.
+#
+# Gunicorn's sync worker calls resp.force_close() on every response, so a
+# direct Node -> Gunicorn fetch gets a FIN the instant the body ends. When the
+# response is big enough to pause undici's HTTP/1 parser under backpressure
+# (over 64 KiB on the wire, post-gzip), Node 24 asserts `!this.paused` from a
+# socket 'end' handler: uncatchable, and the SSR process dies. Caddy keeps the
+# Node-facing connection alive, so the parser branch that asserts is never
+# reached. See https://github.com/The-Flip/flipcommons/issues/726.
+#
+# This lives here rather than as a Dockerfile ENV because Railway injects PORT
+# at runtime. Caddy is guaranteed to be listening whenever SSR calls the API:
+# SSR only issues API calls while serving a request, and every request reaches
+# it through Caddy.
+export INTERNAL_API_BASE_URL="http://127.0.0.1:${PORT}"
+
 # Mirror Railway's commit SHA into the PUBLIC_ namespace at runtime so
 # `$env/dynamic/public` in hooks.client.ts resolves to a real release tag
 # in the browser. vite.config.ts does the same mirror at build time for

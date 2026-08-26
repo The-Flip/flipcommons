@@ -1,5 +1,9 @@
 :{$PORT:8080}
 
+# This listener serves public traffic AND SvelteKit SSR's own API calls, which
+# enter on 127.0.0.1 and are routed to Django by the @django handle below. Any
+# directive added at site level therefore applies to internal SSR traffic too.
+
 @www host www.flipcommons.org
 handle @www {
 	redir https://flipcommons.org{uri} permanent
@@ -100,6 +104,13 @@ header @health Cache-Control "no-store"
 # wins. Duplicated across the two reverse_proxy blocks because Caddyfile
 # snippets must be defined at global scope (before any site address),
 # which is awkward to thread here for a single-line directive.
+#
+# This block is also SSR's route to the API: INTERNAL_API_BASE_URL points
+# Node at this listener rather than at Gunicorn, so Node sees a keep-alive
+# upstream. scripts/start-production owns the rationale, and the contract is
+# pinned by backend/tests/test_ssr_api_route.py. Narrowing the /api match, or
+# moving Django's proxy out of this site, breaks SSR — not just public
+# /api callers.
 @django path /api /api/* /djadmin /djadmin/* /media/* /static /static/*
 handle @django {
 	reverse_proxy 127.0.0.1:{$DJANGO_PORT:8000} {

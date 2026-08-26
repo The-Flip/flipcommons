@@ -30,8 +30,8 @@ export function createApiClient(
   });
 
   // SvelteKit's event.fetch only forwards cookies for same-origin requests.
-  // When INTERNAL_API_BASE_URL points SSR at Django on a different origin
-  // (e.g. http://127.0.0.1:8000 in prod), we must forward the user's Cookie
+  // When INTERNAL_API_BASE_URL points SSR at the API on a different origin
+  // (Caddy's loopback listener in prod), we must forward the user's Cookie
   // header manually or authenticated endpoints see an anonymous request.
   const forwardedCookie = incomingRequest?.headers.get('cookie') ?? null;
 

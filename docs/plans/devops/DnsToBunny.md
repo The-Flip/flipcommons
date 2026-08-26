@@ -130,7 +130,7 @@ This is worth a Bunny support report: it reproduces cleanly and does not depend 
 
 **Magnitude remains unexplained.** Nothing above accounts for ~26% of checks failing; the geo-steering defect is a latency and correctness problem, not obviously an availability one. The failure rate did fall — to zero, see [Outcome](#outcome-it-worked) — so the `ALIAS` path was not merely an aggravating factor. But no mechanism was ever found that turns mis-steering into a quarter of connections failing, so this is a fix without an explanation.
 
-Two incidental findings, both corrected in [Hosting.md](../Hosting.md#dns):
+Two incidental findings, both corrected in [Hosting.md](../../Hosting.md#dns):
 
 - **The parent delegation TTL is 3600, not 86400.** This document originally assumed a 1-day registry TTL and put the rollback window at 48 hours. It is about an hour.
 - **Bunny's `PZ` record ignores the TTL field** and serves its own short value. Harmless — the flattened address is anycast, so failover happens in BGP rather than DNS.
