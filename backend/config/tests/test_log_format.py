@@ -5,21 +5,29 @@ Python logs to stderr — INFO and WARNING included — arrives tagged
 ``severity:error`` unless the line is JSON carrying its own ``level``. These
 tests pin the JSON shape, the level vocabulary, and the two config sites that
 have to keep pointing at the formatter for any of it to reach production.
+
+They also pin what the payload will publish. Railway's log store has no
+scrubbing, and ``extra=`` carries whatever Django and its libraries attach to a
+record as well as what this codebase passes deliberately.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from django.conf import settings
+from django.http import HttpResponse
+from django.test import RequestFactory
+from django.utils.log import log_response
 
 from config.log_format import RailwayJSONFormatter, railway_level
 
@@ -36,14 +44,25 @@ def make_record(level: int, msg: str) -> logging.LogRecord:
     )
 
 
-def format_record(record: logging.LogRecord) -> dict[str, Any]:
-    rendered = RailwayJSONFormatter().format(record)
+def reject_json_constant(constant: str) -> NoReturn:
+    """Python's decoder accepts ``NaN``/``Infinity``; the JSON grammar does not."""
+    raise AssertionError(
+        f"{constant} is not valid JSON — Railway would reject the line"
+    )
+
+
+def parse_line(rendered: str) -> dict[str, Any]:
+    """Parse one rendered line, holding it to what Railway will accept."""
     # A record must occupy exactly one line: Railway ingests line by line, so a
     # raw newline anywhere in the output splits one event into two, the second
     # of which isn't valid JSON and falls back to stream-derived severity.
     assert "\n" not in rendered
-    parsed: dict[str, Any] = json.loads(rendered)
+    parsed: dict[str, Any] = json.loads(rendered, parse_constant=reject_json_constant)
     return parsed
+
+
+def format_record(record: logging.LogRecord) -> dict[str, Any]:
+    return parse_line(RailwayJSONFormatter().format(record))
 
 
 @pytest.mark.parametrize(
@@ -155,12 +174,83 @@ def test_extra_cannot_overwrite_the_severity() -> None:
     assert payload["pid"] == record.process
 
 
-def test_unserializable_extra_does_not_break_logging() -> None:
-    """Extras are arbitrary objects; the encoder must not raise on one."""
+def test_non_scalar_extra_is_dropped() -> None:
+    """Only scalars are published, because only scalars were vetted.
+
+    Stringifying whatever an ``extra=`` happens to hold publishes an object's
+    repr to a log store with no scrubbing. Railway can only index scalars
+    anyway, so nothing filterable is lost.
+    """
     record = make_record(logging.INFO, "saving")
     record.entity = object()
+    record.entity_id = 7
 
-    assert str(format_record(record)["entity"]).startswith("<object object at")
+    payload = format_record(record)
+
+    assert "entity" not in payload
+    assert payload["entity_id"] == 7
+
+
+def test_non_finite_float_extra_is_dropped() -> None:
+    """``NaN`` and ``Infinity`` are Python spellings, not JSON ones.
+
+    Emitting one makes the whole line unparseable, so Railway falls back to
+    classifying it by its stream — stderr, therefore ``error`` — which is the
+    misclassification this formatter exists to prevent.
+    """
+    record = make_record(logging.INFO, "timing")
+    record.duration = float("nan")
+    record.overhead = float("inf")
+    record.elapsed = 1.5
+
+    rendered = RailwayJSONFormatter().format(record)
+
+    assert "NaN" not in rendered
+    assert "Infinity" not in rendered
+    payload = parse_line(rendered)
+    assert payload["elapsed"] == 1.5
+    assert "duration" not in payload
+    assert "overhead" not in payload
+
+
+def test_the_request_django_attaches_to_a_500_stays_out_of_the_payload() -> None:
+    """The ``extra=`` caller this codebase does not control.
+
+    ``django.utils.log.log_response`` puts the live ``HttpRequest`` on every
+    record it emits, and ``HttpRequest.__repr__`` carries ``get_full_path()``
+    — query string included. On the WorkOS callback that string holds a live
+    OAuth code, so a formatter willing to stringify the object would publish
+    credentials to a log store with no scrubbing on any unhandled 500.
+
+    Driven through the real ``log_response`` rather than a hand-built record so
+    that Django renaming or re-shaping the extra fails here.
+    """
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(RailwayJSONFormatter())
+    logger = logging.getLogger("config.tests.django_request")
+    logger.addHandler(handler)
+    logger.setLevel(logging.ERROR)
+    logger.propagate = False
+    request = RequestFactory().get("/api/auth/callback/", {"code": "oauth-secret"})
+    try:
+        log_response(
+            "Internal Server Error: %s",
+            request.path,
+            response=HttpResponse(status=500),
+            request=request,
+            logger=logger,
+        )
+    finally:
+        logger.removeHandler(handler)
+
+    rendered = stream.getvalue()
+    assert "oauth-secret" not in rendered
+    payload = parse_line(rendered.rstrip("\n"))
+    assert "request" not in payload
+    # The scalar Django passes alongside it is still worth filtering on.
+    assert payload["status_code"] == 500
+    assert payload["level"] == "error"
 
 
 def test_django_console_handler_uses_the_selected_formatter() -> None:

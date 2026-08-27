@@ -44,9 +44,13 @@ Railway derives the `severity` you filter on in the log explorer from the line i
 
 Both Python processes therefore emit JSON in production: Django via `settings.LOGGING`, gunicorn via `logconfig_dict` in `backend/gunicorn.conf.py`. Both use `RailwayJSONFormatter` from `backend/config/log_format.py`, which also folds tracebacks into the message so a crash is one log event rather than one per stack frame. Dev keeps the plain-text format. Caddy already emits its own structured JSON and needs nothing. Gunicorn's access log stays off — Caddy logs every request with more detail.
 
-Anything passed as `extra=` is flattened into the same JSON object, which is what makes it filterable — `logger.info("authz.deny", extra={"user_id": ...})` becomes a `user_id` attribute you can query on, where the same value inside the message string would not be. The formatter's own fields (`level`, `message`, `logger`, `time`, `pid`) win a name collision, so an `extra` key can never rewrite the severity Railway reads.
+Scalars passed as `extra=` are flattened into the same JSON object, which is what makes them filterable — `logger.info("authz.deny", extra={"user_id": ...})` becomes a `user_id` attribute you can query on, where the same value inside the message string would not be. The formatter's own fields (`level`, `message`, `logger`, `time`, `pid`) win a name collision, so an `extra` key can never rewrite the severity Railway reads.
 
 That flattening makes `extra=` a publish. Railway's log store has none of the scrubbing described under Privacy below — no `EventScrubber`, no server-side rules — so keep personal data out of it. Internal ids, activity names and error codes are fine; emails, tokens, IPs and request bodies are not.
+
+**Only strings, numbers, booleans and `None` are emitted; every other value is dropped.** That rule exists because `extra=` is not a channel we control end to end. `django.utils.log.log_response` attaches the live `HttpRequest` to every record it emits, and `HttpRequest.__repr__` carries the full path _including the query string_ — on `/api/auth/callback/` that is a live OAuth code. A formatter willing to stringify objects would publish it on any unhandled 500. Django's own `status_code` still comes through, and the path is already in the message, so nothing useful is lost. Non-finite floats are dropped for a different reason: `NaN` and `Infinity` are Python spellings that no JSON parser accepts, and one of them makes the whole line unparseable, sending Railway back to classifying it by its stream.
+
+The filter narrows the blast radius of a misconfiguration rather than removing it. At DEBUG, `django.db.backends` logs every query with `extra={"sql": ..., "params": ...}`; the bound params are a sequence and get dropped, but the query text is a string and would be published. That logger is pinned to `WARNING` in `settings.LOGGING` — keep it there.
 
 Four sources still classify by stream, all of them expected:
 
