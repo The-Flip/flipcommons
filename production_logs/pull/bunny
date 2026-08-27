@@ -1,0 +1,327 @@
+#!/usr/bin/env python3
+"""Download Bunny CDN edge logs into production_logs/dumps/bunny/.
+
+Bunny is the outermost hop, so it is the only source that sees a request that
+never reached Railway -- a 502 at the edge, a cache HIT, a bot never let
+through. It is also the most perishable: the logging API keeps **four days**
+and then the day is gone for good. Sentry holds 90, Railway holds whatever a
+deployment holds; Bunny holds until Friday. Run this on a schedule, or turn on
+Permanent Log Storage (see the notes below).
+
+    production_logs/pull/bunny                   # last 4 UTC days, every zone
+    production_logs/pull/bunny --days 1          # today only
+    production_logs/pull/bunny --zone 5969801    # repeatable; default is all
+
+Files land as <zone>.<zone-id>.<YYYY-MM-DD>.log, one per zone per UTC day, next
+to a manifest.json describing what was fetched. Re-runnable: a day is rewritten
+from scratch, so re-pulling today supersedes the partial file from an hour ago.
+
+Needs BUNNY_API_KEY -- the *account* API key from the Bunny dashboard, not a
+storage-zone password -- taken from the environment or read out of the repo's
+.env. Stdlib only, so it runs without a virtualenv.
+
+Three traps, all of which otherwise produce files that look complete:
+
+  1. **Bunny's day is a UTC day, and its path spells it MM-DD-YY.** In US time
+     zones the local date is the previous UTC date for most of the evening, so
+     a script that reasons in local dates asks for yesterday, gets it, and
+     silently never fetches today at all. Every date here is UTC.
+  2. **Today's file is still being written.** It is not truncated and there is
+     no marker in it saying so -- a partial day and a quiet day look identical
+     once the file is on disk. The manifest records `complete`.
+  3. **A zone with logging switched off returns an empty body, not an error.**
+     Indistinguishable, in the file, from a zone that served no traffic. The
+     manifest records the zone's `logging_enabled` so the two stay separable.
+
+Two things worth knowing about the contents. The remote IP is anonymized to a
+/24 unless the account has signed Bunny's DPA and turned anonymization off, so
+field 6 identifies a network and not a client; the manifest records which. And
+the lines within a day arrive in no particular order -- do not assume the file
+is sorted by timestamp.
+
+To keep more than that, enable Permanent Log Storage on the pull zone
+(Security > Logging), which archives gzipped part-files into an Edge Storage
+zone under pullzone-logs/<zone>/<YYYY>/<MM>/. That is a different API with a
+different credential, and Bunny does not guarantee the archive is complete --
+so it is a supplement to this script rather than a replacement for it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import gzip
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from typing import Any, NamedTuple
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUT = Path(__file__).resolve().parent.parent / "dumps" / "bunny"
+
+API_BASE = "https://api.bunny.net"
+LOGGING_BASE = "https://logging.bunnycdn.com"
+
+# What the logging API keeps, measured rather than taken from the docs, which
+# say three days. Retention runs by calendar day and not as a rolling 72 hours,
+# so today plus three whole days are available: probing back from 2026-08-27
+# returned a full 11,913-row file for the 24th and a 404 for the 23rd. Asking
+# for more is allowed and costs one 404, which is why the ceiling only warns.
+#
+# The 404 matters -- it is what separates a day that aged out from a day the
+# zone was quiet, which both arrive as a zero-row file. The manifest keeps the
+# status for exactly that reason.
+RETENTION_DAYS = 4
+
+
+# LogAnonymizationType is an integer enum on the wire. Spelled out here because
+# a bare 0 in the manifest reads as "no anonymization", which is its opposite.
+ANONYMIZATION = {0: "OneDigit", 1: "Drop"}
+
+
+class Zone(NamedTuple):
+    """One pull zone, with the settings that change how its logs read."""
+
+    id: int
+    name: str
+    logging_enabled: bool
+    anonymization: str | None  # None when the account logs whole client IPs
+
+
+class Fetched(NamedTuple):
+    """One day of one zone's logs, as pulled."""
+
+    body: bytes
+    status: int
+
+
+def log(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def read_key() -> str:
+    """BUNNY_API_KEY from the environment, falling back to the repo's .env."""
+    if key := os.environ.get("BUNNY_API_KEY"):
+        return key
+    env = REPO_ROOT / ".env"
+    if env.is_file():
+        for line in env.read_text().splitlines():
+            name, _, value = line.partition("=")
+            if name.strip() == "BUNNY_API_KEY":
+                return value.strip().strip("\"'")
+    sys.exit(
+        "BUNNY_API_KEY not set and not found in .env\n"
+        "Create an account API key at https://dash.bunny.net/account/settings "
+        "and add BUNNY_API_KEY=... to .env"
+    )
+
+
+def request(url: str, key: str) -> Fetched:
+    """GET a URL with the account key, retrying what is worth retrying.
+
+    Asks for gzip because a busy day is tens of megabytes of plain text, and
+    urllib will not negotiate or decode it on its own.
+    """
+    for attempt in range(5):
+        req = urllib.request.Request(
+            url, headers={"AccessKey": key, "Accept-Encoding": "gzip", "Accept": "*/*"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=180) as response:
+                body = response.read()
+                if response.headers.get("Content-Encoding") == "gzip":
+                    body = gzip.decompress(body)
+                return Fetched(body, response.status)
+        except urllib.error.HTTPError as error:
+            # 404 is the ordinary answer for a day outside retention, so it is
+            # data rather than a failure; the caller records the empty haul.
+            if error.code == 404:
+                return Fetched(b"", 404)
+            if error.code == 401:
+                raise SystemExit(
+                    f"HTTP 401 on {url}\nBUNNY_API_KEY rejected -- it must be the "
+                    "account API key, not a storage-zone password."
+                ) from error
+            if error.code not in (429, 500, 502, 503, 504):
+                detail = error.read()[:300].decode(errors="replace")
+                raise SystemExit(f"HTTP {error.code} on {url}\n{detail}") from error
+            delay = int(error.headers.get("Retry-After") or 2**attempt)
+            log(f"  {error.code}; retrying in {delay}s")
+            time.sleep(delay)
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            log(f"  {error}; retrying")
+            time.sleep(2**attempt)
+    raise SystemExit(f"gave up after repeated failures on {url}")
+
+
+def list_zones(key: str) -> list[Zone]:
+    """Every pull zone on the account.
+
+    Zone ids are read rather than hardcoded because rebinding the apex to a new
+    zone changes the id, and a hardcoded list would then keep pulling a zone
+    that no longer serves anything while reporting success.
+    """
+    body, _ = request(f"{API_BASE}/pullzone?page=0&perPage=1000", key)
+    payload: Any = json.loads(body)
+    rows = payload["Items"] if isinstance(payload, dict) else payload
+    return [
+        Zone(
+            id=row["Id"],
+            name=row.get("Name") or str(row["Id"]),
+            logging_enabled=bool(row.get("EnableLogging")),
+            anonymization=_anonymization(row),
+        )
+        for row in rows
+    ]
+
+
+def _anonymization(row: dict[str, Any]) -> str | None:
+    """How this zone masks the client IP, or None if it does not mask it."""
+    if not row.get("LoggingIPAnonymizationEnabled"):
+        return None
+    kind = row.get("LogAnonymizationType", 0)
+    return ANONYMIZATION.get(kind, f"type-{kind}")
+
+
+def slug(name: str) -> str:
+    """A zone name reduced to something safe to put in a filename."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "zone"
+
+
+def utc_days(count: int) -> list[date]:
+    """The last `count` UTC days, oldest first, ending with today."""
+    today = datetime.now(UTC).date()
+    return [today - timedelta(days=n) for n in reversed(range(count))]
+
+
+def pull_day(zone: Zone, day: date, key: str, out: Path) -> dict[str, Any]:
+    """Fetch one zone-day, write it, and describe it for the manifest."""
+    # Bunny addresses the day as MM-DD-YY, not ISO.
+    url = f"{LOGGING_BASE}/{day:%m-%d-%y}/{zone.id}.log"
+    body, status = request(url, key)
+
+    dest = out / f"{slug(zone.name)}.{zone.id}.{day:%Y-%m-%d}.log"
+    dest.write_bytes(body)
+
+    stamps = _timestamps(body)
+    return {
+        "file": dest.name,
+        "zone_id": zone.id,
+        "zone_name": zone.name,
+        "date": f"{day:%Y-%m-%d}",
+        "http": status,
+        "rows": len(body.splitlines()),
+        "bytes": len(body),
+        "first_ts": _iso(min(stamps)) if stamps else None,
+        "last_ts": _iso(max(stamps)) if stamps else None,
+        # False for today, whose file keeps growing after this pull.
+        "complete": day < datetime.now(UTC).date(),
+        "logging_enabled": zone.logging_enabled,
+        "ip_anonymization": zone.anonymization,
+        "pulled_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+def _timestamps(body: bytes) -> list[int]:
+    """Every line's epoch-millisecond stamp, the third pipe-delimited field.
+
+    Lines are not ordered by time within a day, so the window has to be a min
+    and a max rather than the first and last line.
+    """
+    stamps: list[int] = []
+    for line in body.splitlines():
+        fields = line.split(b"|")
+        if len(fields) >= 12 and fields[2].isdigit():
+            stamps.append(int(fields[2]))
+    return stamps
+
+
+def _iso(epoch_ms: int) -> str:
+    return datetime.fromtimestamp(epoch_ms / 1000, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def write_manifest(out: Path, records: list[dict[str, Any]]) -> None:
+    """Merge this run's records into manifest.json.
+
+    Merged rather than replaced, because a run is usually scoped -- one zone, a
+    --days 1 top-up -- while the dumps directory accumulates across runs. A
+    manifest holding only the latest run would leave most files on disk
+    unaccounted for, and `complete` is the one fact about a file that cannot be
+    recovered by reading it.
+    """
+    path = out / "manifest.json"
+    merged: dict[str, dict[str, Any]] = {}
+    if path.is_file():
+        for old in json.loads(path.read_text()).get("files", []):
+            merged[old["file"]] = old
+    # Drop records whose file is gone, so a deleted dump does not linger in the
+    # manifest claiming coverage nothing can read.
+    merged = {k: v for k, v in merged.items() if (out / k).exists()}
+    for record in records:
+        merged[record["file"]] = record
+
+    files = sorted(merged.values(), key=lambda r: (r["zone_id"], r["date"]))
+    path.write_text(
+        json.dumps({"retention_days": RETENTION_DAYS, "files": files}, indent=2) + "\n"
+    )
+    partial = sum(1 for r in files if not r["complete"])
+    log(f"\n{len(records)} file(s) written to {out}")
+    log(f"manifest.json: {len(files)} file(s) tracked, {partial} still accumulating")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--days", type=int, default=RETENTION_DAYS,
+        help=f"UTC days back, including today (default {RETENTION_DAYS})",
+    )
+    parser.add_argument(
+        "--zone", type=int, action="append", default=[],
+        help="pull zone id; repeatable. Default is every zone on the account.",
+    )
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    args = parser.parse_args()
+
+    if args.days < 1:
+        sys.exit("--days must be at least 1")
+    if args.days > RETENTION_DAYS:
+        log(
+            f"warning: Bunny keeps {RETENTION_DAYS} days; the older files will "
+            "come back empty, with a 404 recorded in the manifest"
+        )
+
+    key = read_key()
+    zones = list_zones(key)
+    if args.zone:
+        wanted = set(args.zone)
+        known = {z.id for z in zones}
+        if missing := wanted - known:
+            unknown = ", ".join(str(z) for z in sorted(missing))
+            sys.exit(f"no such pull zone on this account: {unknown}")
+        zones = [z for z in zones if z.id in wanted]
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    days = utc_days(args.days)
+    records: list[dict[str, Any]] = []
+
+    for zone in zones:
+        note = "" if zone.logging_enabled else "  (logging DISABLED on this zone)"
+        log(f"== {zone.name} [{zone.id}]{note}")
+        for day in days:
+            record = pull_day(zone, day, key, args.out)
+            marker = "" if record["complete"] else " (partial: today)"
+            log(f"   {record['date']}  {record['rows']:>7} rows{marker}")
+            records.append(record)
+
+    write_manifest(args.out, records)
+
+
+if __name__ == "__main__":
+    main()

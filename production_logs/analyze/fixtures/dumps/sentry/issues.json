@@ -1,0 +1,17 @@
+[
+ {
+  "shortId": "FLIPCOMMONS-FRONTEND-1",
+  "_project": "flipcommons-frontend",
+  "title": "Kaboom",
+  "culprit": "app",
+  "level": "error",
+  "issueCategory": "error",
+  "issueType": "error",
+  "status": "unresolved",
+  "count": "1",
+  "userCount": "1",
+  "firstSeen": "2026-08-20T10:00:05",
+  "lastSeen": "2026-08-20T10:00:05",
+  "permalink": "https://sentry.io/x"
+ }
+]

@@ -323,3 +323,7 @@ This project has three sister projects:
 ### Catalog seed records
 
 **[pindata](https://github.com/deanmoses/pindata)**: canonical seed catalog source records (markdown files + JSON schemas). Originally bulk-ingested to bootstrap the database; flipcommons no longer ingests it directly. It remains a source repo for catalog facts and feeds pinexplore, but at this point is quite obsolete.
+
+## Production Logs
+
+For production incidents — errors, outages, latency — use [`production_logs/`](production_logs/README.md): scripts that pull logs from Sentry and Railway, and a DuckDB layer over the dumps.

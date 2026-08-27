@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""Download Sentry issues, events and releases into production_logs/dumps/sentry/.
+
+Re-runnable: every file is rewritten from scratch, so a second run with a wider
+window simply supersedes the first. Nothing here interprets the data -- shaping
+and grain rules belong to production_logs/analyze/sql/.
+
+    production_logs/pull/sentry                  # last 30 days
+    production_logs/pull/sentry --days 90        # Sentry's retention ceiling
+    production_logs/pull/sentry --org some-org --out /tmp/dump
+
+Needs SENTRY_API_TOKEN, taken from the environment or read out of the repo's
+.env. Stdlib only, so it runs without a virtualenv.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, Iterator, NamedTuple
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUT = Path(__file__).resolve().parent.parent / "dumps" / "sentry"
+TIME_FMT = "%Y-%m-%dT%H:%M:%S"
+
+# Discover fields worth having as a flat table. Anything nested stays in the
+# full event payloads rather than being flattened into a column here.
+DISCOVER_FIELDS = (
+    "id", "timestamp", "message", "title", "level", "project.name", "release",
+    "environment", "transaction", "culprit", "url", "user.id", "user.email",
+    "user.ip", "browser.name", "os.name", "sdk.name", "sdk.version", "issue",
+    "server_name",
+)
+
+
+class Page(NamedTuple):
+    """One API response: its rows, and the cursor URL for the next page if any."""
+
+    rows: list[dict[str, Any]]
+    next_url: str | None
+
+
+def read_token() -> str:
+    """SENTRY_API_TOKEN from the environment, falling back to the repo's .env."""
+    if token := os.environ.get("SENTRY_API_TOKEN"):
+        return token
+    env = REPO_ROOT / ".env"
+    if env.is_file():
+        for line in env.read_text().splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "SENTRY_API_TOKEN":
+                return value.strip().strip("\"'")
+    sys.exit("SENTRY_API_TOKEN not set and not found in .env")
+
+
+class Sentry:
+    """A thin paginating client. Retries the failures that are worth retrying."""
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+        # Overwritten with the org's own region host once an org is resolved;
+        # sentry.io redirects region-owned resources rather than serving them.
+        self.base = "https://sentry.io/api/0"
+
+    def _get(self, url: str) -> Page:
+        for attempt in range(6):
+            request = urllib.request.Request(
+                url, headers={"Authorization": f"Bearer {self._token}"}
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=90) as response:
+                    body = json.loads(response.read())
+                    rows = body["data"] if isinstance(body, dict) and "data" in body else body
+                    return Page(rows, _next_cursor(response.headers.get("Link", "")))
+            except urllib.error.HTTPError as error:
+                if error.code not in (429, 502, 503, 504):
+                    detail = error.read()[:300].decode(errors="replace")
+                    raise SystemExit(f"HTTP {error.code} on {url}\n{detail}") from error
+                # 429 carries the wait; the 5xxs get exponential backoff.
+                delay = int(error.headers.get("Retry-After") or 2**attempt)
+                log(f"  {error.code}; retrying in {delay}s")
+                time.sleep(delay)
+            except (urllib.error.URLError, TimeoutError) as error:
+                log(f"  {error}; retrying")
+                time.sleep(2**attempt)
+        raise SystemExit(f"gave up after repeated failures on {url}")
+
+    def get(self, path: str, **params: str) -> list[dict[str, Any]]:
+        """Every row from every page of one endpoint."""
+        # Some paths arrive carrying their own query string (the Discover
+        # endpoints need repeated `field=` keys, which urlencode cannot express).
+        separator = "&" if "?" in path else "?"
+        url = f"{self.base}{path}{separator}{urllib.parse.urlencode(params)}" if params else f"{self.base}{path}"
+        rows: list[dict[str, Any]] = []
+        while url:
+            page = self._get(url)
+            if not page.rows:
+                break
+            rows.extend(page.rows)
+            url = page.next_url or ""
+            time.sleep(0.25)  # deliberately unhurried; these are bulk pulls
+        return rows
+
+
+def _next_cursor(link_header: str) -> str | None:
+    """The next-page URL, but only when Sentry says a next page has results.
+
+    Sentry always emits a `next` link. It sets results="false" on the last page,
+    so following the link blindly loops forever on an empty response.
+    """
+    for part in link_header.split(","):
+        match = re.search(r'<([^>]+)>;\s*rel="next".*?results="(\w+)"', part)
+        if match and match.group(2) == "true":
+            return match.group(1)
+    return None
+
+
+def log(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def write_json(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, indent=1, sort_keys=True))
+    report(path, len(payload) if isinstance(payload, list) else 1)
+
+
+def write_ndjson(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows))
+    report(path, len(rows))
+
+
+def report(path: Path, rows: int) -> None:
+    log(f"  {path.name}: {rows} rows, {path.stat().st_size:,} bytes")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--days", type=int, default=30, help="window to pull (default 30)")
+    parser.add_argument("--org", help="org slug (default: the only org the token can see)")
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output directory")
+    args = parser.parse_args()
+
+    client = Sentry(read_token())
+    org = resolve_org(client, args.org)
+
+    end = datetime.now(UTC)
+    start = end - timedelta(days=args.days)
+    window = {"start": start.strftime(TIME_FMT), "end": end.strftime(TIME_FMT)}
+    log(f"pulling {args.days}d for {org}: {window['start']} -> {window['end']}")
+
+    out: Path = args.out
+    (out / "events").mkdir(parents=True, exist_ok=True)
+
+    projects = client.get(f"/organizations/{org}/projects/")
+    write_json(out / "projects.json", projects)
+
+    issues, events = [], []
+    for issue, issue_events in pull_issues(client, org, projects, window):
+        issues.append(issue)
+        events.extend(issue_events)
+        if issue_events:
+            write_ndjson(out / "events" / f"{issue['shortId']}.ndjson", issue_events)
+
+    write_json(out / "issues.json", issues)
+    write_ndjson(out / "events.ndjson", events)
+
+    # The Discover errors dataset: one flat row per error event. Cheaper to query
+    # than the full payloads, and it is what verifies the pull is complete --
+    # compare its per-issue counts against the aggregate below.
+    log("discover: errors dataset")
+    fields = "&".join(f"field={urllib.parse.quote(f)}" for f in DISCOVER_FIELDS)
+    discover = client.get(
+        f"/organizations/{org}/events/?dataset=errors&{fields}",
+        per_page="100", sort="-timestamp", **window,
+    )
+    write_ndjson(out / "discover_errors.ndjson", discover)
+
+    log("releases")
+    write_json(out / "releases.json", client.get(f"/organizations/{org}/releases/", per_page="100"))
+
+    verify(client, org, window, discover)
+
+
+def resolve_org(client: Sentry, requested: str | None) -> str:
+    """Pick the org and point the client at its region host.
+
+    Sentry shards orgs across regions, and the global host only redirects. Taking
+    regionUrl from the org itself avoids hardcoding `us.` and breaking for an EU org.
+    """
+    orgs = client.get("/organizations/")
+    if requested:
+        match = next((o for o in orgs if o["slug"] == requested), None)
+        if match is None:
+            sys.exit(f"org {requested!r} not visible to this token; saw {[o['slug'] for o in orgs]}")
+    elif len(orgs) == 1:
+        match = orgs[0]
+    else:
+        sys.exit(f"token sees {len(orgs)} orgs; pass --org from {[o['slug'] for o in orgs]}")
+    client.base = f"{match['links']['regionUrl']}/api/0"
+    return str(match["slug"])
+
+
+def pull_issues(
+    client: Sentry, org: str, projects: list[dict[str, Any]], window: dict[str, str]
+) -> Iterator[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Each issue in the window, with its full event payloads.
+
+    Per-issue rather than one bulk call because uptime and other non-error issue
+    types are absent from the Discover errors dataset entirely -- this endpoint is
+    the only way to reach their events.
+    """
+    for project in projects:
+        slug = project["slug"]
+        # An empty `query` overrides the default "is:unresolved", so resolved and
+        # ignored issues come through too. statsPeriod is rejected on this
+        # endpoint for anything past 14d, hence the explicit start/end.
+        issues = client.get(f"/projects/{org}/{slug}/issues/", query="", limit="100", **window)
+        log(f"{slug}: {len(issues)} issues")
+        for issue in issues:
+            issue["_project"] = slug
+            log(f"  {issue['shortId']} ({issue['issueType']})")
+            events = client.get(f"/issues/{issue['id']}/events/", full="true", limit="100", **window)
+            for event in events:
+                event |= {
+                    "_project": slug,
+                    "_issue_id": issue["id"],
+                    "_short_id": issue["shortId"],
+                    "_issue_title": issue["title"],
+                    "_issue_category": issue.get("issueCategory"),
+                    "_issue_type": issue.get("issueType"),
+                    "_level": issue.get("level"),
+                }
+            yield issue, events
+
+
+def verify(client: Sentry, org: str, window: dict[str, str], discover: list[dict[str, Any]]) -> None:
+    """Compare the pulled error events against Sentry's own count() aggregate.
+
+    A silent short pull -- a dropped cursor, a mid-run rate limit -- otherwise
+    looks exactly like a quiet week. Worth one extra request to rule out.
+    """
+    log("verifying against Sentry's aggregate")
+    counts = client.get(
+        f"/organizations/{org}/events/?dataset=errors&field=count()",
+        per_page="1", **window,
+    )
+    expected = int(counts[0]["count()"]) if counts else 0
+    if expected == len(discover):
+        log(f"  OK: {expected} error events")
+    else:
+        log(f"  MISMATCH: Sentry reports {expected} error events, pulled {len(discover)}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

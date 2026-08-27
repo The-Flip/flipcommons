@@ -1,0 +1,66 @@
+#!/usr/bin/env sh
+# Rebuild if stale, then hand the query to duckdb.
+#
+# The point is that freshness stops being something anyone has to remember:
+# every query goes through a build, which is a no-op unless an input changed.
+#
+#   production_logs/query "FROM coverage;"
+#   production_logs/query                      # interactive session
+#   production_logs/query -c "FROM summary;" -json
+#   production_logs/query --stale "FROM coverage;"   # query without rebuilding
+#
+# A bare word is taken as SQL and runs last, after any flags; anything starting
+# with `-` is passed to duckdb
+# untouched, so its own flags (-json, -csv, -line, -readonly off) all still work.
+# Data goes to stdout and diagnostics to stderr, so output can be piped.
+#
+# A FAILED BUILD BLOCKS THE QUERY. The database that survives a failed build is
+# the previous one, which is coherent but describes the dumps as they were before
+# whatever just changed -- and during an incident an hour-old answer presented as
+# a current one is worse than no answer, because nothing about it looks wrong.
+# So this refuses, and says how to opt in deliberately.
+#
+# `--stale` is that opt-in: it skips the build entirely and queries whatever is
+# on disk, after saying how old it is. It exists because being locked out
+# completely is its own hazard -- a dump that breaks the build is exactly when
+# you most want to read the last database that worked.
+#
+# FAILING CHECKS STILL WARN RATHER THAN BLOCK, which is a different case: the
+# build succeeded, so the database describes the current dumps, and an invariant
+# that has tripped is precisely what you need to query in order to understand.
+set -eu
+
+DIR=$(cd "$(dirname "$0")" && pwd)         # not a cd, so relative paths in COPY TO
+DB="$DIR/analyze/production_logs.duckdb"  # still resolve against the caller's cwd
+
+STALE=0
+[ "${1:-}" = "--stale" ] && { STALE=1; shift; }
+
+if [ "$STALE" = 1 ]; then
+  [ -f "$DB" ] || { echo "no database at $DB, and --stale cannot conjure one" >&2; exit 1; }
+  # BSD and GNU stat spell this differently and neither accepts the other's flag.
+  built=$(stat -f %m "$DB" 2>/dev/null || stat -c %Y "$DB")
+  echo "WARNING: --stale. Skipping the build; this database was built $(( ($(date +%s) - built) / 60 ))" \
+       "minutes ago and does NOT reflect the current dumps." >&2
+elif ! "$DIR/analyze/sql/build" --quiet; then
+  echo "" >&2
+  echo "Refusing to query: the build failed, so the db describes the" >&2
+  echo "dumps as they were before whatever just changed." >&2
+  echo "" >&2
+  echo "  $DIR/analyze/sql/build          # see why it failed" >&2
+  echo "  $0 --stale \"<sql>\"            # query the last good database anyway" >&2
+  exit 1
+fi
+
+if [ "$STALE" = 0 ]; then
+  findings=$(duckdb -readonly -noheader -list "$DB" -c "SELECT count(*) FROM checks;")
+  [ "$findings" = "0" ] || {
+    echo "warning: $findings failing check(s); run build to see them" >&2
+  }
+fi
+
+case "${1:-}" in
+  "")  exec duckdb -readonly "$DB" ;;
+  -*)  exec duckdb -readonly "$DB" "$@" ;;
+  *)   sql="$1"; shift; exec duckdb -readonly "$DB" "$@" -c "$sql" ;;
+esac

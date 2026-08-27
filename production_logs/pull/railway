@@ -1,0 +1,232 @@
+#!/usr/bin/env sh
+# Download Railway logs into production_logs/dumps/railway/.
+#
+#   production_logs/pull/railway                  # default: 10 deployments/service
+#   production_logs/pull/railway --limit 25
+#   production_logs/pull/railway --service Web    # repeatable; default is all
+#   production_logs/pull/railway --deployment ID  # repeatable; re-fetch just these
+#
+# Files land as <service>.<kind>.<stamp>.<deployment>.jsonl, one per deployment
+# per kind (deploy, http), next to a manifest.json describing what was fetched.
+# Railway resolves the project from the linked directory, so this runs from the
+# repo root regardless of where it is invoked.
+#
+# Railway addresses logs per deployment, not per service, so this enumerates
+# deployments and fetches each one's window. Three traps it works around, all
+# of which otherwise produce files that look complete and are not:
+#
+#   1. `railway logs` STREAMS unless --lines, --since or --until is passed.
+#      Every fetch here carries --since so it terminates.
+#   2. A fetch returns the most RECENT rows of the window, not the earliest, and
+#      --lines decides how many. The CLI defaults to 500 and the API tops out at
+#      5000, which is what every fetch here asks for -- a default-sized fetch of
+#      a busy deployment silently drops most of it. Deploy logs page backwards
+#      with --until beyond that, but the bound resolves to whole seconds, so a
+#      page turn landing mid-second could straddle the boundary. Each turn steps
+#      back a further second and the merge de-dupes, which costs one redundant
+#      second per page and guarantees no gap either way.
+#   3. HTTP logs CANNOT be paged: --until returns "Problem processing request"
+#      instead of data, in every time format, while the same flag works on
+#      deploy logs. So an http fetch is one shot and CAP is a hard ceiling for
+#      it -- a deployment serving more than that loses its oldest end, and the
+#      truncation is recorded rather than worked around.
+#
+# Which makes a re-pull ADDITIVE rather than a replacement. An http fetch that
+# hits the ceiling returns the newest CAP rows of a deployment that is still
+# serving, so each run covers a later slice than the last; writing the file from
+# scratch would drop the earlier slice, and the moment you re-pull is the middle
+# of an incident. Every fetch merges into whatever is already on disk.
+#
+# Truncation is recorded in manifest.json, per file, so the SQL layer can flag
+# it instead of the dump quietly under-reporting. What makes a file truncated is
+# WHY the fetch stopped, not how many rows it holds: a short final page means the
+# window was exhausted and the file is whole at any size, while stopping on the
+# round guard (deploy) or on the unpageable cap (http) leaves rows that nothing
+# here can reach. Row count cannot stand in for this -- a fully paged deploy file
+# runs to thousands of rows and is complete. Paging walks backwards from the
+# newest line, so what a cut-off file loses is always its OLDEST end: the
+# deployment's own startup, which is what correlating an onset against a release
+# needs most.
+set -eu
+
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"   # $0 breaks after the cd
+cd "$(dirname "$0")/../.."          # repo root, where `railway link` applies
+OUT=production_logs/dumps/railway
+CAP=5000                            # Railway's per-request maximum; 5001 is rejected
+MAX_ROUNDS=200                      # runaway backstop; 200 x CAP = 1M lines/deployment
+
+command -v railway >/dev/null || { echo "railway CLI not on PATH; brew install railway" >&2; exit 1; }
+railway whoami >/dev/null 2>&1 || { echo "not logged in; run: railway login" >&2; exit 1; }
+railway status >/dev/null 2>&1 || { echo "no linked project; run: railway link" >&2; exit 1; }
+
+LIMIT=10
+SERVICES=""
+DEPLOYMENTS=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --limit)      LIMIT="$2"; shift 2 ;;
+    --service)    SERVICES="$SERVICES $2"; shift 2 ;;
+    --deployment) DEPLOYMENTS="$DEPLOYMENTS $2"; shift 2 ;;
+    -h|--help) sed -n '2,38p' "$SELF"; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+[ -n "$SERVICES" ] || SERVICES=$(railway service list --json | python3 -c \
+  'import json,sys; print(" ".join(s["name"] for s in json.load(sys.stdin)))')
+
+# A wanted id can sit deep in the history, so --deployment widens enumeration
+# rather than making the caller guess a --limit that reaches it.
+ENUM_LIMIT="$LIMIT"
+[ -n "$DEPLOYMENTS" ] && ENUM_LIMIT=100
+
+mkdir -p "$OUT"
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+: > "$WORK/manifest.ndjson"
+
+# fetch_paged <service> <deployment-id> <since> <outfile> [--http]
+# Pages backwards until a short response, then merges and de-dupes. Sets $stop to
+# why it stopped -- complete, capped, unpaged or refused -- which is what decides
+# truncation below; only `complete` means the window was exhausted.
+fetch_paged() {
+  svc="$1"; dep="$2"; since="$3"; dest="$4"; mode="${5:-}"
+  rm -rf "$WORK/pages"; mkdir -p "$WORK/pages"
+  until_ts=""; round=0; stop=complete
+  while :; do
+    round=$((round + 1))
+    page="$WORK/pages/p$round.jsonl"
+    if [ -z "$until_ts" ]; then
+      railway logs "$dep" --service "$svc" ${mode:+$mode} --since "$since" --lines "$CAP" --json > "$page" 2>/dev/null || true
+    else
+      railway logs "$dep" --service "$svc" ${mode:+$mode} --since "$since" --until "$until_ts" --lines "$CAP" --json > "$page" 2>/dev/null || true
+    fi
+    # A non-JSON body means the endpoint refused the window (the --http case).
+    head -c 1 "$page" 2>/dev/null | grep -q '{' || { : > "$page"; stop=refused; break; }
+    n=$(wc -l < "$page" | tr -d ' ')
+    [ "$n" -lt "$CAP" ] && break                 # short page: window exhausted
+    [ -n "$mode" ] && { stop=unpaged; break; }   # HTTP logs cannot be paged
+    until_ts=$(python3 -c '
+import json, sys, datetime as dt
+lo = min(json.loads(l)["timestamp"] for l in open(sys.argv[1]) if l.strip())
+head, frac = lo[:19], lo[19:]
+t = dt.datetime.strptime(head, "%Y-%m-%dT%H:%M:%S") - dt.timedelta(seconds=1)
+print(t.strftime("%Y-%m-%dT%H:%M:%SZ"))
+' "$page")
+    [ "$round" -ge "$MAX_ROUNDS" ] && { stop=capped; break; }
+  done
+  python3 -c '
+import json, sys, glob, os
+dest, svc, dep, cap, stop = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[6]
+
+def read(path):
+    with open(path) as fh:
+        for line in fh:
+            if line.strip():
+                yield json.loads(line)
+
+fresh = [r for f in sorted(glob.glob(os.path.join(sys.argv[5], "*.jsonl"))) for r in read(f)]
+# An empty haul leaves the dump and its manifest record untouched, rather than
+# overwriting a good file with nothing.
+if not fresh:
+    sys.exit(9)
+
+# The dump already on disk is an INPUT. It holds the window an earlier run
+# caught, which for an unpageable http fetch is a window this one cannot reach.
+# Deduped on the same key the SQL layer uses, so a row fetched twice collapses
+# and a genuine repeat -- distinguished by its request id -- does not.
+prior = list(read(dest)) if os.path.exists(dest) else []
+seen, rows = set(), []
+for r in fresh + prior:
+    key = (r.get("timestamp"), r.get("message"), r.get("requestId"))
+    if key in seen:
+        continue
+    seen.add(key)
+    rows.append(r)
+rows.sort(key=lambda r: r.get("timestamp") or "")
+# Written beside the dump and renamed over it, because the dump is now an input
+# to its own rewrite: an interrupt partway through a plain truncating write would
+# destroy the earlier window rather than merely failing to extend it, and that
+# window is exactly what no later fetch can get back.
+tmp = dest + ".tmp"
+with open(tmp, "w") as fh:
+    for r in rows:
+        fh.write(json.dumps(r) + "\n")
+os.replace(tmp, dest)
+print(json.dumps({
+    "file": os.path.basename(dest), "service": svc, "deployment": dep,
+    "rows": len(rows), "first_ts": rows[0].get("timestamp"),
+    "last_ts": rows[-1].get("timestamp"), "row_cap": cap,
+    "stop_reason": stop,
+}))
+' "$dest" "$svc" "$dep" "$CAP" "$WORK/pages" "$stop" >> "$WORK/manifest.ndjson" || return 1
+}
+
+for svc in $SERVICES; do
+  echo "== $svc"
+  railway deployment list --service "$svc" --limit "$ENUM_LIMIT" --json \
+    | WANT="$DEPLOYMENTS" python3 -c 'import json,os,sys
+want = set(os.environ.get("WANT", "").split())
+for d in json.load(sys.stdin):
+    if want and d["id"] not in want:
+        continue
+    print(d["id"], d["createdAt"], d.get("status",""))' > "$WORK/deps.txt"
+
+  while read -r id created status; do
+    stamp=$(printf '%s' "$created" | tr -d ':-' | cut -c1-15)
+    slug=$(printf '%s' "$svc" | tr '[:upper:]' '[:lower:]')
+    printf '   %s %s %-8s' "$stamp" "$(printf '%s' "$id" | cut -c1-8)" "$status"
+    for kind in deploy http; do
+      dest="$OUT/$slug.$kind.$stamp.$id.jsonl"
+      [ "$kind" = http ] && mode=--http || mode=""
+      if fetch_paged "$svc" "$id" "$created" "$dest" "$mode"; then
+        printf ' %s=%s' "$kind" "$(wc -l < "$dest" | tr -d ' ')"
+      else
+        printf ' %s=0' "$kind"
+      fi
+    done
+    printf '\n'
+  done < "$WORK/deps.txt"
+done
+
+# Fold the per-file records into manifest.json, marking truncation.
+#
+# MERGED into any existing manifest rather than replacing it. A run is usually
+# scoped -- one service, a --limit, a single re-fetch -- while the dumps
+# directory accumulates across runs, so a manifest holding only the latest run
+# would leave most files on disk unaccounted for and the analysis layer unable
+# to tell a complete file from a capped one. Re-fetching a file supersedes its
+# older record; every other record is carried forward.
+python3 -c '
+import json, sys, os
+out = sys.argv[1]
+recs = [json.loads(l) for l in open(sys.argv[2]) if l.strip()]
+
+path = os.path.join(out, "manifest.json")
+merged = {}
+if os.path.exists(path):
+    with open(path) as fh:
+        for old in json.load(fh).get("files", []):
+            # Predates stop_reason; its truncated flag came from the row-count
+            # rule and cannot be recomputed without re-fetching the file.
+            old.setdefault("stop_reason", "unknown")
+            merged[old["file"]] = old
+# Drop records whose file is no longer on disk, so a deleted dump does not
+# linger in the manifest claiming coverage nothing can read.
+merged = {k: v for k, v in merged.items() if os.path.exists(os.path.join(out, k))}
+
+for r in recs:
+    # Only a short final page proves the window was exhausted. Row count says
+    # nothing: a fully paged deploy file runs to thousands of rows and is whole.
+    # Not carried over from the previous record for this file either -- a fetch
+    # that stopped short leaves a hole a later, larger fetch can fill.
+    r["truncated"] = r["stop_reason"] != "complete"
+    merged[r["file"]] = r
+
+files = sorted(merged.values(), key=lambda r: r["file"])
+with open(path, "w") as fh:
+    json.dump({"row_cap": recs[0]["row_cap"] if recs else None, "files": files}, fh, indent=2)
+n = sum(1 for r in files if r["truncated"])
+print(f"\n{len(recs)} file(s) written to {out}")
+print(f"manifest.json: {len(files)} file(s) tracked, {n} truncated")
+' "$OUT" "$WORK/manifest.ndjson"

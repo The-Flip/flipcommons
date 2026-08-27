@@ -380,6 +380,8 @@ Per-user rate limits ([backend/apps/provenance/rate_limits.py](../backend/apps/p
 
 ## Troubleshooting
 
+Every item below starts with reading production logs. [production_logs/](../production_logs/README.md) pulls them from Railway and Sentry and builds a queryable database over them.
+
 **Health check fails after deploy**:
 `/__health` is served by the SvelteKit Node runtime and checks Django in turn via an internal `/api/health` call, which runs a `SELECT 1`. So a failing probe means Node is down, Django is down, or the database is unreachable — check the deploy logs for Node or Python startup errors. Common causes: missing `SECRET_KEY`, database connection issues, a bad migration or the SSR process failing to start. Railway will not promote the deployment while this fails, so the previous container stays live.
 
