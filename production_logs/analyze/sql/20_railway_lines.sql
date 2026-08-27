@@ -25,17 +25,22 @@
 -- boot line arrived tagged `error`.
 --
 -- RailwayJSONFormatter (backend/config/log_format.py) fixed that for both Python
--- processes, and Caddy already emitted JSON. `level_confidence` records whether a
--- given row benefits:
+-- processes and $lib/log (frontend/src/lib/log.ts) for Node SSR, while Caddy
+-- already emitted JSON. `level_confidence` records whether a given row benefits:
 --
 --   'json'         The line carried its own level. Trust it.
---   'stream_app'   Unstructured on the web service. Python `warnings` and Node
---                  SSR bypass logging entirely; console.error genuinely is an
---                  error but console.warn reads as one too. Directionally right,
+--   'stream_app'   Unstructured on the web service. Python `warnings` bypass
+--                  logging entirely, and SSR lines from before $lib/log landed
+--                  are here too: console.error genuinely is an error but
+--                  console.warn read as one as well. Directionally right,
 --                  inflated at the warn boundary.
 --   'stream_noise' Unstructured on the Postgres service, whose image writes every
 --                  routine `LOG:` and pgBackRest `INFO:` line to stderr. All of it
 --                  reads as `error`. Do not count it as one.
+--
+-- Both fixes are forward-only: a dump reaching back past a deploy holds rows the
+-- formatter never touched, which is why `level_confidence` stays a per-row column
+-- rather than a fact about the service.
 --
 -- The formatter also folds tracebacks into the message, so a structured crash is
 -- ONE row with embedded newlines. Legacy stderr tracebacks are one row per frame
@@ -100,9 +105,14 @@ SELECT
   -- `unknown_railway_service`.
   CASE WHEN m.is_structured THEN 'json'
        ELSE coalesce(svc.unstructured_confidence, 'stream_app') END AS level_confidence,
+  -- Which process wrote the line, inferred from the field only that one sets.
+  -- Order matters: `logger` is the weakest of the three -- every python line and
+  -- half of caddy's carry one -- so both must be claimed by their own field
+  -- first. `json_line_without_emitter` guards the inference.
   CASE
-    WHEN json_exists(m.payload, '$.pid') THEN 'python'
-    WHEN json_exists(m.payload, '$.ts')  THEN 'caddy'
+    WHEN json_exists(m.payload, '$.pid')    THEN 'python'
+    WHEN json_exists(m.payload, '$.ts')     THEN 'caddy'
+    WHEN json_exists(m.payload, '$.logger') THEN 'node'
     ELSE 'unstructured'
   END AS emitter,
   m.payload ->> 'logger' AS logger,

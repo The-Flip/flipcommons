@@ -103,7 +103,27 @@ case_missing_level() {
     "$(q "$w" "SELECT count(*) FROM checks WHERE detail LIKE 'Level NULL%';")"
 }
 
-for c in baseline empty_sentry bunny_extra_pipe missing_level; do
+# --- an SSR line is a named emitter, not unstructured noise --------------------
+# Production has not deployed $lib/log yet, so no live dump can contain one of
+# its lines. Without this the `emitter` CASE could silently pool them with
+# container lifecycle text and the level they carry would look accidental.
+case_ssr_json() {
+  w=$1
+  f=$w/dumps/railway/web.deploy.20260820T100000.cccccccc-1111-2222-3333-444444444444.jsonl
+  printf '{"timestamp":"2026-08-20T10:00:08.000000000Z","status":404,"level":"warn","message":"[404] GET /nope","logger":"handle-error","time":"2026-08-20T10:00:08.000Z"}\n' >> "$f"
+  expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
+  expect "no findings" "0" "$(q "$w" 'SELECT count(*) FROM checks;')"
+  expect "resolves to the node emitter" "node" \
+    "$(q "$w" "SELECT emitter FROM railway_lines WHERE logger='handle-error';")"
+  # The whole point: warn survives as warn instead of being read off stderr.
+  expect "keeps its own warn level" "warn|json" \
+    "$(q "$w" "SELECT level || '|' || level_confidence FROM railway_lines WHERE logger='handle-error';")"
+  # `status` is a caller attribute, not one of the formatter's own fields.
+  expect "publishes status as an attribute" "[status]" \
+    "$(q "$w" "SELECT extra_keys FROM railway_lines WHERE logger='handle-error';")"
+}
+
+for c in baseline empty_sentry bunny_extra_pipe missing_level ssr_json; do
   name=$(echo "$c" | tr '_' '-')
   skip_case "$name" && continue
   printf '  %s\n' "$name"

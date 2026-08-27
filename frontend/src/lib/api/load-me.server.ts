@@ -9,12 +9,15 @@
  *   - 200 with is_authenticated: false             → throw redirect('/login')
  *
  * SvelteKit's error() does NOT invoke handleError, so we log explicitly
- * before throwing to keep the failure visible in stderr.
+ * before throwing to keep the failure visible in the container logs.
  */
 import { error, redirect } from '@sveltejs/kit';
 import { resolve } from '$app/paths';
+import { getLogger } from '$lib/log';
 import type { createServerClient } from './server';
 import type { AuthStatusSchema } from './schema';
+
+const log = getLogger('load-me');
 
 type ServerClient = ReturnType<typeof createServerClient>;
 type AuthenticatedMe = AuthStatusSchema & { is_authenticated: true };
@@ -24,7 +27,7 @@ export async function loadAuthenticatedMe(
   contextLabel: string,
 ): Promise<AuthenticatedMe> {
   const result = await client.GET('/api/auth/me/').catch((cause: unknown) => {
-    console.error(`${contextLabel}: /me/ fetch failed`, cause);
+    log.error(`${contextLabel}: /me/ fetch failed`, { cause });
     return null;
   });
   if (result === null) throw error(503, 'Auth service unavailable');
@@ -40,7 +43,9 @@ export async function loadAuthenticatedMe(
   // 400..599 and would throw otherwise.
   if (!result.data || typeof result.data.is_authenticated !== 'boolean') {
     const status = result.response?.status;
-    console.error(`${contextLabel}: /me/ returned ${status} with no/malformed data`);
+    log.error(`${contextLabel}: /me/ returned ${status} with no/malformed data`, {
+      attributes: { status: status ?? null },
+    });
     throw error(status && status >= 400 ? status : 500, 'Auth service error');
   }
   if (!result.data.is_authenticated) throw redirect(302, resolve('/login'));
