@@ -1,0 +1,117 @@
+#!/usr/bin/env sh
+# Build the SQL layer against committed fixtures and assert what comes out.
+#
+#   production_logs/analyze/test                # every case
+#   production_logs/analyze/test empty-sentry   # one case, by name
+#
+# Beside `sql/` rather than inside it, because `build`'s staleness scan covers
+# that directory: a fixture edited there would mark the real database out of
+# date and trigger a rebuild of production data on a change that has nothing to
+# do with it. And under analyze/ rather than at the top of production_logs/,
+# which is the incident surface -- `query` and `pull/` are for USING the layer,
+# this is for changing it, like `sql/build`.
+#
+# WHY THIS EXISTS SEPARATELY FROM `checks`. The checks in 90_checks.sql run
+# against whatever is in dumps/, which is gitignored, private and always
+# changing -- so they can only ever assert things that happen to be true of
+# today's production. The failures worth guarding against are the ones the live
+# dumps cannot contain: an export that is EMPTY, a line that is MALFORMED, a
+# field that VANISHED. Those need data authored on purpose, which is what
+# fixtures/dumps/ is.
+#
+# Each case builds a throwaway copy of the layer -- the real sql/ beside a
+# fixture dumps/ -- in a temp directory, so nothing here touches the real
+# database and the cases cannot interfere with each other.
+set -eu
+
+cd "$(dirname "$0")"
+ROOT=$(pwd)
+PASS=0
+FAIL=0
+ONLY=${1:-}
+
+setup() {  # $1 = workdir; lays out analyze/sql + dumps as the build expects them
+  mkdir -p "$1/analyze"
+  cp -R "$ROOT/sql" "$1/analyze/sql"
+  cp -R "$ROOT/fixtures/dumps" "$1/dumps"
+}
+
+build() { "$1/analyze/sql/build" --quiet >"$1/build.log" 2>&1; }
+q() { duckdb -readonly -noheader -list "$1/analyze/production_logs.duckdb" -c "$2" 2>&1 | tail -1; }
+
+expect() {  # label, want, got
+  if [ "$2" = "$3" ]; then
+    PASS=$((PASS + 1)); printf '    ok   %s\n' "$1"
+  else
+    FAIL=$((FAIL + 1)); printf '    FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"
+  fi
+}
+
+skip_case() { [ -n "$ONLY" ] && [ "$ONLY" != "$1" ]; }
+
+# --- the layer builds clean on well-formed input, and every check passes -------
+case_baseline() {
+  w=$1
+  expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
+  expect "no findings"    "0" "$(q "$w" 'SELECT count(*) FROM checks;')"
+  expect "app lines"      "3" "$(q "$w" "SELECT count(*) FROM railway_lines WHERE service='app';")"
+  expect "postgres lines" "1" "$(q "$w" "SELECT count(*) FROM railway_lines WHERE service='postgres';")"
+  expect "cdn requests"   "3" "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
+  # one structured app error, one CDN 502 and one Sentry event, each counted at
+  # its own tier; the Postgres line is stream_noise and excluded
+  expect "problem tiers"  "cdn|container|sentry" \
+    "$(q "$w" "SELECT string_agg(DISTINCT tier,'|' ORDER BY tier) FROM problems;")"
+}
+
+# --- a quiet Sentry window is not a broken build -------------------------------
+case_empty_sentry() {
+  w=$1
+  : > "$w/dumps/sentry/discover_errors.ndjson"
+  : > "$w/dumps/sentry/events.ndjson"
+  echo '[]' > "$w/dumps/sentry/issues.json"
+  echo '[]' > "$w/dumps/sentry/releases.json"
+  expect "build survives empty exports" "0" "$(build "$w" && echo 0 || echo 1)"
+  expect "no findings"      "0" "$(q "$w" 'SELECT count(*) FROM checks;')"
+  expect "sentry errors"    "0" "$(q "$w" 'SELECT count(*) FROM sentry_errors;')"
+  expect "sentry uptime"    "0" "$(q "$w" 'SELECT count(*) FROM sentry_uptime;')"
+  expect "other sources unaffected" "3" "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
+}
+
+# --- an unescaped delimiter is recovered, reported, and never silently dropped -
+case_bunny_extra_pipe() {
+  w=$1
+  f=$w/dumps/bunny/flipcommons-html.5969801.2026-08-20.log
+  ts=$(head -1 "$f" | cut -d'|' -f3)
+  printf 'MISS|200|%s|100|5969801|1.2.3.0|-|https://flipcommons.org/s?q=a|b|ASB|ua|reqD|US\n' "$ts" >> "$f"
+  expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
+  expect "reported as malformed" "1" "$(q "$w" 'SELECT count(*) FROM bunny_malformed_lines;')"
+  expect "check fires" "1" \
+    "$(q "$w" "SELECT count(*) FROM checks WHERE check_name='bunny_malformed_lines';")"
+  expect "still readable, pipe kept in the url" "/s?q=a|b" \
+    "$(q "$w" "SELECT path || '?' || query FROM bunny_requests WHERE request_id='reqD';")"
+}
+
+# --- a level field vanishing must not slip past the vocabulary guard -----------
+case_missing_level() {
+  w=$1
+  f=$w/dumps/railway/web.deploy.20260820T100000.cccccccc-1111-2222-3333-444444444444.jsonl
+  printf '{"timestamp":"2026-08-20T10:00:09.000000000Z","message":"no level here","logger":"x","pid":7}\n' >> "$f"
+  expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
+  expect "unnormalised_level fires on NULL" "1" \
+    "$(q "$w" "SELECT count(*) FROM checks WHERE check_name='unnormalised_level';")"
+  expect "and names it" "1" \
+    "$(q "$w" "SELECT count(*) FROM checks WHERE detail LIKE 'Level NULL%';")"
+}
+
+for c in baseline empty_sentry bunny_extra_pipe missing_level; do
+  name=$(echo "$c" | tr '_' '-')
+  skip_case "$name" && continue
+  printf '  %s\n' "$name"
+  w=$(mktemp -d)
+  setup "$w"
+  "case_$c" "$w"
+  rm -rf "$w"
+done
+
+printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
+[ "$FAIL" = 0 ]

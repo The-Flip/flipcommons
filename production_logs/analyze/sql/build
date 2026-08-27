@@ -1,0 +1,121 @@
+#!/usr/bin/env sh
+# Build ../production_logs.duckdb from the dumps in ../../dumps/ plus every
+# .sql file beside this script, in filename order.
+#
+# Rebuilds only when something changed -- any .sql here, this script, or anything
+# under ../../dumps/, newer than the database. A full build takes about a second,
+# so the point of the check is not speed: it is that running this before every
+# query costs nothing, which is what makes "am I looking at current data" a
+# question nobody has to remember to ask. Querying the file directly is how you
+# get yesterday's answers out of today's dumps.
+#
+# The database is a derived artifact: gitignored, built from scratch, and safe to
+# delete. The SQL is the thing that is committed.
+#
+#   production_logs/analyze/sql/build           # build if stale, then report
+#   production_logs/analyze/sql/build --quiet    # build if stale, say nothing
+#   production_logs/analyze/sql/build --force    # rebuild regardless
+#
+# THE DATABASE IS REPLACED ATOMICALLY, OR NOT AT ALL. A build writes to a
+# temporary file and moves it into place only after duckdb exits clean, so a
+# reader sees either the previous database or the new one and never a half-built
+# mixture. When a build fails the previous database is left exactly as it was,
+# still older than the inputs -- which is what makes the next run try again and
+# fail again rather than settling into serving something incomplete.
+#
+# Add new dumps by dropping them into ../../dumps/railway/ or ../../dumps/sentry/
+# and rebuilding; the readers glob, so more of the same shape needs no SQL change.
+set -eu
+
+cd "$(dirname "$0")"
+DB=../production_logs.duckdb
+TMP=$DB.building
+LOCK=$DB.lock
+
+QUIET=0
+FORCE=0
+for arg in "$@"; do
+  case "$arg" in
+    --quiet) QUIET=1 ;;
+    --force) FORCE=1 ;;
+    *) echo "unknown option: $arg" >&2; exit 1 ;;
+  esac
+done
+
+command -v duckdb >/dev/null || { echo "duckdb not on PATH; brew install duckdb" >&2; exit 1; }
+[ -d ../../dumps ] || { echo "no dumps/ directory; the dumps are gitignored and must be fetched first" >&2; exit 1; }
+
+# One build at a time. mkdir is atomic on any POSIX filesystem, which a
+# test-then-create is not, so two shells racing cannot both think they won.
+# Waiting rather than failing, because the common case is a second `query` in
+# another terminal and the right answer there is the fresh database a moment
+# later, not an error.
+waited=0
+while ! mkdir "$LOCK" 2>/dev/null; do
+  if [ "$waited" -ge 180 ]; then
+    echo "another build has held $LOCK for ${waited}s; if no build is running, rm -rf $LOCK" >&2
+    exit 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+trap 'rm -rf "$LOCK" "$TMP" "$TMP.wal"' EXIT INT TERM HUP
+
+# Stale when the database is missing, or when any input is newer than it.
+#
+# The directories are in the search, not just the files, because `mv` preserves
+# mtime: renaming a .sql file leaves it older than the database and the rebuild
+# is skipped, which is silent and produces the previous schema. A directory's
+# own mtime does change when a file inside it is added, renamed or removed.
+#
+# -print -quit stops at the first hit rather than walking every dump.
+is_stale() {
+  [ -f "$DB" ] || return 0
+  [ -n "$(find . ../../dumps -newer "$DB" -print -quit 2>/dev/null)" ]
+}
+
+if [ "$FORCE" = 1 ] || is_stale; then
+  # Into a temporary database, moved into place only on success.
+  #
+  # duckdb's CLI does not stop at the first failed statement: it reports the
+  # error, runs the rest of the script and exits nonzero at the end. Building in
+  # place therefore leaves a database missing exactly the relation whose reader
+  # broke -- and, being freshly written, NEWER than every input, so the next run
+  # finds it up to date and serves it. A single malformed dump would poison
+  # every later query while this script reported "Up to date" and "checks: OK".
+  rm -f "$TMP" "$TMP.wal"
+  if ! cat ./*.sql | duckdb "$TMP"; then
+    rm -f "$TMP" "$TMP.wal"
+    echo "" >&2
+    echo "BUILD FAILED. $(basename "$DB") is unchanged and does not reflect the current dumps." >&2
+    echo "It is still older than its inputs, so every later build retries and fails here" >&2
+    echo "until the cause is fixed -- nothing will quietly start answering from it." >&2
+    exit 1
+  fi
+  rm -f "$DB.wal"     # a checkpoint left by the database being replaced
+  mv "$TMP" "$DB"     # atomic within a directory: readers see old or new, never both
+  BUILT=1
+else
+  BUILT=0
+fi
+
+[ "$QUIET" = 1 ] && exit 0
+
+if [ "$BUILT" = 1 ]; then
+  echo "Built $(cd "$(dirname "$DB")" && pwd)/$(basename "$DB")"
+else
+  echo "Up to date: $(cd "$(dirname "$DB")" && pwd)/$(basename "$DB")"
+fi
+
+duckdb -readonly "$DB" -c "FROM summary;"
+
+# Checks are views, so they are re-evaluated here even when the build was
+# skipped -- the gate holds either way.
+findings=$(duckdb -readonly -noheader -list "$DB" -c "SELECT count(*) FROM checks;")
+if [ "$findings" = "0" ]; then
+  echo "checks: OK"
+else
+  echo "checks: $findings finding(s)"
+  duckdb -readonly "$DB" -c "FROM checks;"
+  exit 1
+fi

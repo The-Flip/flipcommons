@@ -68,12 +68,13 @@ backend/cache/
 # Ingest sources (pulled from R2, not committed)
 data/ingest_sources/
 
-# DuckDB databases: the baked analytics snapshot, the scratch builds for plan-doc
-# analysis (see docs/plans/**/*.sql), their write-ahead logs, and the tmp pairs a
-# build stranded when something killed it before the rename.
+# DuckDB databases: the baked analytics snapshot, the production-log build
+# (production_logs/analyze/), the scratch builds for plan-doc analysis (see
+# docs/plans/**/*.sql), their write-ahead logs, and the tmp pairs a build
+# stranded when something killed it before the rename.
 *.duckdb
 *.duckdb.wal
 *.duckdb.tmp.*
 
-# Production logs pulled down for local inspection
-production_logs/
+# Production logs
+production_logs/dumps/

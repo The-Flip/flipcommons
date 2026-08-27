@@ -1,0 +1,24 @@
+{
+ "files": [
+  {
+   "file": "web.deploy.20260820T100000.cccccccc-1111-2222-3333-444444444444.jsonl",
+   "service": "web",
+   "deployment": "cccccccc-1111-2222-3333-444444444444",
+   "rows": 2,
+   "first_ts": "2026-08-20T10:00:02.000000000Z",
+   "last_ts": "2026-08-20T10:00:03.000000000Z",
+   "row_cap": 5000,
+   "truncated": false
+  },
+  {
+   "file": "web.http.20260820T100000.cccccccc-1111-2222-3333-444444444444.jsonl",
+   "service": "web",
+   "deployment": "cccccccc-1111-2222-3333-444444444444",
+   "rows": 1,
+   "first_ts": "2026-08-20T10:00:04.000000000Z",
+   "last_ts": "2026-08-20T10:00:04.000000000Z",
+   "row_cap": 5000,
+   "truncated": false
+  }
+ ]
+}
