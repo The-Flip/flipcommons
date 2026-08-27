@@ -15,6 +15,7 @@
  */
 
 import { env } from '$env/dynamic/private';
+import { getLogger } from '$lib/log';
 import * as sitemap from 'super-sitemap/sveltekit';
 import type { RequestHandler } from './$types';
 import type { RouteId } from '$app/types';
@@ -31,6 +32,8 @@ import { STATIC_LASTMOD } from '$lib/static-lastmod';
 import { stripRouteGroups, routeIdToRegex } from '$lib/sitemap-helpers';
 import { createServerClient } from '$lib/api/server';
 import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
+
+const log = getLogger('sitemap');
 
 /**
  * Type guard for the `feed.kind` wire boundary. Django serializes
@@ -56,7 +59,7 @@ function safeIsIndexable(id: RouteId): boolean {
   try {
     return isSearchEngineIndexable(id);
   } catch (e) {
-    console.warn(`[sitemap] route ${id} unclassified; treating as non-indexable`, e);
+    log.warn(`route ${id} unclassified; treating as non-indexable`, { cause: e });
     return false;
   }
 }

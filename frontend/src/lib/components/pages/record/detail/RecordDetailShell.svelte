@@ -4,6 +4,9 @@
   import type { Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
   import Page from '$lib/components/layout/page/Page.svelte';
   import TwoColumnLayout from '$lib/components/layout/page/TwoColumnLayout.svelte';
+  import { getLogger } from '$lib/log';
+
+  const log = getLogger('RecordDetailShell');
 
   type MetaItem = { text: string; href?: string };
   type ParentLink = { text: string; href: string };
@@ -46,9 +49,7 @@
   if (import.meta.env.DEV) {
     $effect(() => {
       if (parentLink && breadcrumbs) {
-        console.warn(
-          'RecordDetailShell: parentLink and breadcrumbs are mutually exclusive; breadcrumbs wins',
-        );
+        log.warn('parentLink and breadcrumbs are mutually exclusive; breadcrumbs wins');
       }
     });
   }

@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
 """Download Sentry issues, events and releases into production_logs/dumps/sentry/.
 
-Re-runnable: every file is rewritten from scratch, so a second run with a wider
-window simply supersedes the first. Nothing here interprets the data -- shaping
-and grain rules belong to production_logs/analyze/sql/.
+Re-runnable in either direction, which is what a --days smaller than the last
+run's makes necessary. The two kinds of file here differ in whether the copy on
+disk is replaceable:
+
+  * Event streams (events.ndjson, discover_errors.ndjson, events/*.ndjson) are
+    APPEND-shaped and MERGE. Sentry drops events at 90 days, so a dump pulled
+    at --days 90 months ago holds events the API can no longer return, and
+    rewriting it from a narrower window would destroy the only copy. Deduped on
+    the event id; a re-fetched event supersedes the stored one.
+  * Snapshots (projects, issues, releases) are window-scoped state -- an issue's
+    status, its all-time count, its lastSeen -- and are REPLACED. Merging them
+    would carry an issue with no activity in this window forward with stale
+    counts, which is precisely what sentry_issues' grain says it is not.
+
+Narrowing therefore costs reach in the snapshots and nothing in the events, and
+each merged file reports how many rows it carried over so a shrinking pull says
+so out loud. Nothing here interprets the data -- shaping and grain rules belong
+to production_logs/analyze/sql/.
 
     production_logs/pull/sentry                  # last 30 days
     production_logs/pull/sentry --days 90        # Sentry's retention ceiling
@@ -129,17 +144,56 @@ def log(message: str) -> None:
 
 
 def write_json(path: Path, payload: object) -> None:
-    path.write_text(json.dumps(payload, indent=1, sort_keys=True))
+    """Replace a snapshot file. See the module docstring for why these do not merge."""
+    write_atomic(path, json.dumps(payload, indent=1, sort_keys=True))
     report(path, len(payload) if isinstance(payload, list) else 1)
 
 
+def event_key(row: dict[str, Any]) -> str:
+    """Identity of an event. Sentry's event id is unique across both streams."""
+    return str(row.get("id") or json.dumps(row, sort_keys=True))
+
+
+def event_time(row: dict[str, Any]) -> str:
+    """Sort key. Discover rows carry `timestamp`, full payloads carry `dateCreated`."""
+    return str(row.get("timestamp") or row.get("dateCreated") or "")
+
+
+def read_ndjson(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
 def write_ndjson(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows))
-    report(path, len(rows))
+    """Merge an event stream into the dump on disk, newest first.
+
+    The dump is an INPUT to its own rewrite: it may hold events past Sentry's
+    retention that no later fetch can return.
+    """
+    prior = {event_key(row): row for row in read_ndjson(path)}
+    fresh = {event_key(row): row for row in rows}
+    merged = prior | fresh          # a re-fetched event supersedes the stored copy
+    ordered = sorted(merged.values(), key=event_time, reverse=True)
+    write_atomic(path, "".join(json.dumps(row, sort_keys=True) + "\n" for row in ordered))
+    report(path, len(ordered), carried=len(prior.keys() - fresh.keys()))
 
 
-def report(path: Path, rows: int) -> None:
-    log(f"  {path.name}: {rows} rows, {path.stat().st_size:,} bytes")
+def write_atomic(path: Path, text: str) -> None:
+    """Write beside the target and rename over it.
+
+    A merged file is written from its own previous contents, so an interrupt
+    partway through a plain truncating write would destroy the window that
+    Sentry can no longer serve rather than merely failing to extend it.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
+
+
+def report(path: Path, rows: int, carried: int = 0) -> None:
+    detail = f" ({rows - carried} fetched, {carried} carried over)" if carried else ""
+    log(f"  {path.name}: {rows} rows{detail}, {path.stat().st_size:,} bytes")
 
 
 def main() -> None:

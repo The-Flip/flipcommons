@@ -18,6 +18,19 @@ SELECT 'unknown_railway_service',
 FROM railway_lines WHERE service LIKE 'unknown:%' GROUP BY service
 
 UNION ALL
+-- A line carrying its own level came from a process that chose to emit JSON, so
+-- every 'json' row should resolve to a named `emitter`. One that does not means
+-- a structured writer appeared -- or an existing one renamed the field the CASE
+-- keys on -- and its lines are now pooled with unstructured container noise,
+-- where nothing distinguishes them. This is what Node SSR looked like before
+-- `emitter` learned the 'node' branch.
+SELECT 'json_line_without_emitter',
+       count(*) || ' JSON lines resolve to emitter=unstructured; '
+         || 'a structured writer is unaccounted for in railway_lines.emitter'
+FROM railway_lines WHERE level_confidence = 'json' AND emitter = 'unstructured'
+HAVING count(*) > 0
+
+UNION ALL
 -- RailwayJSONFormatter always sets logger and pid. A python-emitted line lacking
 -- them means its field names changed and the columns here are silently NULL.
 -- Scoped to python because Caddy legitimately omits logger on lifecycle lines.

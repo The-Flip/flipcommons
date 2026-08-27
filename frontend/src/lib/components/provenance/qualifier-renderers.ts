@@ -9,6 +9,10 @@
  * gets the same rendering for free.
  */
 
+import { getLogger } from '$lib/log';
+
+const log = getLogger('ClaimValue');
+
 export type QualifierValue = boolean | number | string | null | undefined;
 type QualifierRenderer = (value: QualifierValue) => string;
 
@@ -32,7 +36,7 @@ const warnedKeys = new Set<string>();
 
 /**
  * Render one qualifier entry. Unknown keys go through `renderDefaultQualifier`
- * and emit a one-shot `console.warn` per key — the chip still shows the data
+ * and emit a one-shot warning per key — the chip still shows the data
  * (edit history's whole job is transparency about what changed) and the
  * dev-team alert flags the missing rendering rule.
  */
@@ -41,7 +45,7 @@ export function renderQualifier(key: string, value: QualifierValue): string {
   if (renderer) return renderer(value);
   if (!warnedKeys.has(key)) {
     warnedKeys.add(key);
-    console.warn(`[ClaimValue] No qualifier renderer registered for key "${key}"`);
+    log.warn(`No qualifier renderer registered for key "${key}"`);
   }
   return renderDefaultQualifier(key, value);
 }

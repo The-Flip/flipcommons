@@ -42,7 +42,9 @@ Some of the things we explicitly don't capture:
 
 Railway derives the `severity` you filter on in the log explorer from the line itself: a JSON line's `level` field wins, and a plain-text line is classified by the stream it arrived on — stdout becomes `info`, stderr becomes `error`. Python's `StreamHandler` writes to stderr, so unformatted output arrives tagged as an error whatever its real level, and `severity:error` stops meaning anything.
 
-Both Python processes therefore emit JSON in production: Django via `settings.LOGGING`, gunicorn via `logconfig_dict` in `backend/gunicorn.conf.py`. Both use `RailwayJSONFormatter` from `backend/config/log_format.py`, which also folds tracebacks into the message so a crash is one log event rather than one per stack frame. Dev keeps the plain-text format. Caddy already emits its own structured JSON and needs nothing. Gunicorn's access log stays off — Caddy logs every request with more detail.
+Everything the app logs on purpose therefore emits JSON in production. Both Python processes use `RailwayJSONFormatter` from `backend/config/log_format.py` — Django via `settings.LOGGING`, gunicorn via `logconfig_dict` in `backend/gunicorn.conf.py` — and Node SSR uses `getLogger()` from `frontend/src/lib/log.ts`. The two emit the same field names so one query spans both, and each folds a traceback or stack into the message, so a crash is one log event rather than one per frame. Dev keeps the plain-text format on both sides. Caddy already emits its own structured JSON and needs nothing. Gunicorn's access log stays off — Caddy logs every request with more detail.
+
+On the frontend the fix matters most for warnings: Node writes `console.warn` to stderr alongside `console.error`, so before `$lib/log` every SSR warning was indistinguishable from a fault. An ESLint rule (`no-restricted-syntax` on `console.*`, in `frontend/eslint.config.js`) keeps new code from reintroducing one; repo scripts under `frontend/scripts/` are exempt, being CLI tools that never touch the request path. Off the server the logger falls through to `console.*` — devtools' object inspector and source-mapped stacks beat a JSON string there, and no aggregator reads browser console output. Both branches are selected by `import.meta.env` flags, so each bundle keeps only its own.
 
 Scalars passed as `extra=` are flattened into the same JSON object, which is what makes them filterable — `logger.info("authz.deny", extra={"user_id": ...})` becomes a `user_id` attribute you can query on, where the same value inside the message string would not be. The formatter's own fields (`level`, `message`, `logger`, `time`, `pid`) win a name collision, so an `extra` key can never rewrite the severity Railway reads.
 
@@ -55,11 +57,11 @@ The filter narrows the blast radius of a misconfiguration rather than removing i
 Four sources still classify by stream, all of them expected:
 
 - **The Postgres service.** Its image writes every `LOG:` line to stderr, so routine checkpoints and WAL archiving read as errors. Not fixable without forking the image — scope the log explorer to the web service instead.
-- **Python `warnings` and Node SSR.** Warnings bypass `logging` entirely. In Node, `console.error` genuinely is an error, but `console.warn` reads as one too.
-- **Node SSR request logging.** SvelteKit's server writes a line per request (`[404] GET /wp-login.php`) straight to the console, so on a service taking real traffic these outnumber everything that went through Python logging.
+- **Python `warnings`.** They bypass `logging` entirely, so they reach stderr unformatted and read as errors.
+- **Runtime output that isn't ours.** adapter-node announces its own boot (`Listening on http://0.0.0.0:3000`), and a dependency writing straight to the console bypasses `$lib/log` — the ESLint rule reaches our source, not `node_modules`. Both land on stdout and read as `info`, which is harmless.
 - **Container start and the predeploy step.** Railway narrates its own lifecycle (`Starting Container`), and the predeploy script's `manage.py check` and `migrate` run before gunicorn and write to stdout, where `self.stdout.write` never touches `logging`.
 
-Most app lines therefore do not carry a level of their own, and that is the healthy state rather than a symptom. Whether the formatter is running is answered by whether Python lines appear **at all** — they carry `pid`, which nothing else emits — and not by what share of lines lack it, which mostly measures how much traffic the site is taking.
+Whether the Python formatter is running is answered by whether Python lines appear **at all**. They carry `pid`, which nothing else emits — the SSR logger deliberately omits it, since SSR is one process and the field would carry no information there. That absence is also what tells the two structured emitters apart: an SSR line carries `logger` without `pid`, which is how `railway_lines.emitter` classifies it.
 
 ## Privacy
 

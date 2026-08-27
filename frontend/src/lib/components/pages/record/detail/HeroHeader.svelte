@@ -1,5 +1,8 @@
 <script lang="ts">
   import Breadcrumb, { type Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
+  import { getLogger } from '$lib/log';
+
+  const log = getLogger('HeroHeader');
 
   let {
     name,
@@ -28,9 +31,7 @@
   if (import.meta.env.DEV) {
     $effect(() => {
       if (parentLink && breadcrumbs) {
-        console.warn(
-          'HeroHeader: parentLink and breadcrumbs are mutually exclusive; breadcrumbs wins',
-        );
+        log.warn('parentLink and breadcrumbs are mutually exclusive; breadcrumbs wins');
       }
     });
   }

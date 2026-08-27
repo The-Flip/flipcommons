@@ -117,6 +117,17 @@ export default ts.config(
           message:
             "Use a named import from '$lib/api/schema' instead of components['schemas'][...].",
         },
+        // Node writes console.warn to stderr alongside console.error, and
+        // Railway classifies a plain-text stderr line as an error — so an SSR
+        // console.warn is indistinguishable from a fault in the log explorer.
+        // $lib/log emits JSON carrying its own level, which Railway reads
+        // instead. Browser-only code gains nothing from the rule but loses
+        // nothing either: the logger falls back to console off the server.
+        {
+          selector: "MemberExpression[object.name='console']",
+          message:
+            'Use `getLogger()` from $lib/log instead of console.* — a plain SSR console line is classified by its stream, so warnings read as errors in Railway.',
+        },
       ],
     },
   },
@@ -212,6 +223,17 @@ export default ts.config(
     files: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
     rules: {
       'no-restricted-imports': ['error', { paths: [NO_POSTHOG], patterns: [NO_API_INTERNAL] }],
+    },
+  },
+  {
+    // One-off codemod scripts are CLI tools, not app code: they run under plain
+    // node with a terminal attached, never on the SSR request path, so console
+    // is their correct output channel and $lib is not importable from them.
+    // (Dropping the whole rule also drops the schema selector, which is a
+    // TS-only concern these .mjs files can't express anyway.)
+    files: ['scripts/**'],
+    rules: {
+      'no-restricted-syntax': 'off',
     },
   },
   {

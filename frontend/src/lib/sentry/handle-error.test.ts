@@ -35,15 +35,14 @@ describe('handleServerError', () => {
       event: fakeEvent('GET', '/api/foo'),
     });
 
-    // 4xx is an expected outcome, not a server fault — it must go to
-    // console.info, not console.error, so log aggregators don't tag it
-    // as severity=error.
+    // 4xx is an expected outcome, not a server fault — it must log at info,
+    // not error, so log aggregators don't tag it as severity=error.
     expect(errorSpy).not.toHaveBeenCalled();
     expect(infoSpy).toHaveBeenCalledTimes(1);
-    const logged = infoSpy.mock.calls[0][0] as string;
-    expect(logged).toContain('[404] GET /api/foo');
-    expect(logged).not.toContain('at frame1');
-    expect(logged).not.toContain('at frame2');
+    // No second argument at all: the error carrying the stack is never passed,
+    // so no sink can reach the frames.
+    expect(infoSpy.mock.calls[0]).toHaveLength(1);
+    expect(infoSpy.mock.calls[0][0] as string).toContain('[404] GET /api/foo');
   });
 
   it('logs status line and stack for 5xx', () => {
@@ -58,9 +57,10 @@ describe('handleServerError', () => {
     });
 
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    const logged = errorSpy.mock.calls[0][0] as string;
-    expect(logged).toContain('[500] POST /api/bar');
-    expect(logged).toContain('at frame1');
+    expect(errorSpy.mock.calls[0][0] as string).toContain('[500] POST /api/bar');
+    // The stack rides as the cause, which the console sink passes through and
+    // the Railway sink folds into the JSON `message`.
+    expect(errorSpy.mock.calls[0][1]).toBe(err);
   });
 
   it('treats undefined status as 5xx', () => {
@@ -102,9 +102,8 @@ describe('handleClientError', () => {
     });
 
     expect(errorSpy).not.toHaveBeenCalled();
-    const logged = infoSpy.mock.calls[0][0] as string;
-    expect(logged).toContain('[404] Not Found');
-    expect(logged).not.toContain('at frame1');
+    expect(infoSpy.mock.calls[0]).toHaveLength(1);
+    expect(infoSpy.mock.calls[0][0] as string).toContain('[404] Not Found');
   });
 
   it('logs status line and stack for 5xx', () => {
@@ -118,8 +117,7 @@ describe('handleClientError', () => {
       event: {} as Parameters<typeof handleClientError>[0]['event'],
     });
 
-    const logged = errorSpy.mock.calls[0][0] as string;
-    expect(logged).toContain('[500] Internal Error');
-    expect(logged).toContain('at frame1');
+    expect(errorSpy.mock.calls[0][0] as string).toContain('[500] Internal Error');
+    expect(errorSpy.mock.calls[0][1]).toBe(err);
   });
 });
