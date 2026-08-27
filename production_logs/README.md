@@ -19,7 +19,7 @@ production_logs/analyze/test             # build against fixtures and assert
 
 # Acquire
 production_logs/pull/sentry              # last 30 days; --days 90 is the ceiling
-production_logs/pull/railway             # 10 deployments per service; --limit, --service
+production_logs/pull/railway             # 10 deployments per service; --limit, --service, --since
 production_logs/pull/bunny               # last 4 UTC days, every pull zone; --days, --zone
 ```
 
@@ -47,7 +47,7 @@ UNION ALL SELECT view_name, comment FROM duckdb_views() WHERE internal = false;
 ## Acquire
 
 - `pull/sentry` needs `SENTRY_API_TOKEN`, and fails if its haul disagrees with Sentry's own `count()` — a silently short pull looks exactly like a quiet week.
-- `pull/railway` needs the `railway` CLI, logged in and linked. Its HTTP export cannot be paged, so a deployment serving more than the API's 5000-row maximum keeps only its newest 5000, and each fetch merges into the dump already on disk rather than replacing it — which is what makes re-pulling mid-incident safe. Truncation goes in `manifest.json`, because it cannot be recovered from the files afterwards.
+- `pull/railway` needs the `railway` CLI, logged in and linked. It addresses logs per deployment, so a time window — `--since 12h`, or an ISO 8601 instant — selects deployments by the window instead of by `--limit` (every one created inside it, plus the one already serving when it opened) and then clamps each to the floor, since the deployment serving most of a window usually predates it. A clamped fetch is narrower than its deployment, so it never clears a `truncated` flag it did not repair. Its HTTP export cannot be paged, so a deployment serving more than the API's 5000-row maximum keeps only its newest 5000, and each fetch merges into the dump already on disk rather than replacing it — which is what makes re-pulling mid-incident safe. Truncation goes in `manifest.json`, because it cannot be recovered from the files afterwards.
 - `pull/bunny` needs `BUNNY_API_KEY` — the account API key from [the Bunny dashboard](https://dash.bunny.net/account/settings), not a storage-zone password.
 
 **Bunny logs expire after four days.** Sentry keeps 90 and Railway keeps whatever a deployment keeps, so those tolerate being pulled after the fact; Bunny does not, and the edge is the only source that sees a request the origin never received.

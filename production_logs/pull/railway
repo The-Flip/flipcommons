@@ -5,6 +5,7 @@
 #   production_logs/pull/railway --limit 25
 #   production_logs/pull/railway --service Web    # repeatable; default is all
 #   production_logs/pull/railway --deployment ID  # repeatable; re-fetch just these
+#   production_logs/pull/railway --since 12h      # a window, not a deployment count
 #
 # Files land as <service>.<kind>.<stamp>.<deployment>.jsonl, one per deployment
 # per kind (deploy, http), next to a manifest.json describing what was fetched.
@@ -12,8 +13,26 @@
 # repo root regardless of where it is invoked.
 #
 # Railway addresses logs per deployment, not per service, so this enumerates
-# deployments and fetches each one's window. Three traps it works around, all
-# of which otherwise produce files that look complete and are not:
+# deployments and fetches each one's window -- by default the whole of it, from
+# the deployment's own creation, for the newest --limit of them.
+#
+# --since asks a different question, and answers it in two moves. A window is a
+# span of time, so it decides WHICH deployments by the window rather than by a
+# count: every deployment created inside it, plus the one already serving when it
+# opened, which is found by walking back past the SKIPPED deployments that never
+# ran. --limit does not bound this; a caller cannot know how many deployments a
+# span contains, and this service has managed six in one hour. It then CLAMPS
+# each of those deployments to the floor, because the deployment serving most of
+# a window is usually older than the window. Deployments enumerated but silent
+# inside it return nothing and write no file.
+#
+# The floor makes a fetch NARROWER than its deployment, which is what the
+# truncation bookkeeping at the bottom has to account for: a windowed fetch can
+# exhaust everything it asked for and still sit on a file missing the rows before
+# the floor.
+#
+# Three traps it works around, all of which otherwise produce files that look
+# complete and are not:
 #
 #   1. `railway logs` STREAMS unless --lines, --since or --until is passed.
 #      Every fetch here carries --since so it terminates.
@@ -62,35 +81,72 @@ railway status >/dev/null 2>&1 || { echo "no linked project; run: railway link" 
 LIMIT=10
 SERVICES=""
 DEPLOYMENTS=""
+SINCE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --limit)      LIMIT="$2"; shift 2 ;;
     --service)    SERVICES="$SERVICES $2"; shift 2 ;;
     --deployment) DEPLOYMENTS="$DEPLOYMENTS $2"; shift 2 ;;
-    -h|--help) sed -n '2,38p' "$SELF"; exit 0 ;;
+    --since)      SINCE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,13p' "$SELF"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
+
+# A relative --since is resolved to an absolute instant ONCE, here. Deploy logs
+# page backwards over many requests, and a floor re-evaluated per request would
+# creep forward between pages -- clipping the oldest end of the window, which is
+# the end paging exists to reach.
+WINDOW_START=""
+if [ -n "$SINCE" ]; then
+  WINDOW_START=$(python3 -c '
+import datetime as dt, re, sys
+arg = sys.argv[1]
+m = re.fullmatch(r"(\d+)([smhdw])", arg)
+if m:
+    scale = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}[m.group(2)]
+    t = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=int(m.group(1)) * scale)
+else:
+    try:
+        t = dt.datetime.fromisoformat(arg.replace("Z", "+00:00"))
+    except ValueError:
+        sys.exit("--since: want a relative time (30s, 5m, 2h, 1d, 1w) or an ISO 8601 timestamp")
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.UTC)
+print(t.astimezone(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+' "$SINCE") || exit 1
+  echo "window starts $WINDOW_START"
+fi
 
 [ -n "$SERVICES" ] || SERVICES=$(railway service list --json | python3 -c \
   'import json,sys; print(" ".join(s["name"] for s in json.load(sys.stdin)))')
 
 # A wanted id can sit deep in the history, so --deployment widens enumeration
-# rather than making the caller guess a --limit that reaches it.
+# rather than making the caller guess a --limit that reaches it. --since widens
+# it for the same reason: a window is a span of time, and how many deployments
+# fall inside one is not something the caller can know in advance. This service
+# has managed six in a single hour, so a --limit that bounded a windowed pull
+# would drop the window's OLDEST deployments -- the listing is newest-first --
+# which is the end that holds the onset.
 ENUM_LIMIT="$LIMIT"
 [ -n "$DEPLOYMENTS" ] && ENUM_LIMIT=100
+# A floor needs at least 100 to have a chance of reaching back to it, but a
+# caller who asks for more than that keeps it -- 100 is a floor here, not a cap.
+[ -n "$WINDOW_START" ] && [ "$ENUM_LIMIT" -lt 100 ] && ENUM_LIMIT=100
 
 mkdir -p "$OUT"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 : > "$WORK/manifest.ndjson"
 
-# fetch_paged <service> <deployment-id> <since> <outfile> [--http]
+# fetch_paged <service> <deployment-id> <since> <outfile> <mode> <clamped>
 # Pages backwards until a short response, then merges and de-dupes. Sets $stop to
-# why it stopped -- complete, capped, unpaged or refused -- which is what decides
-# truncation below; only `complete` means the window was exhausted.
+# why it stopped -- complete, capped, unpaged or refused. Only `complete` means
+# the requested window was exhausted, which is not the same as the file covering
+# the deployment: $clamped records whether a --since floor moved the start of the
+# request off the deployment's creation, and the fold below needs both.
 fetch_paged() {
-  svc="$1"; dep="$2"; since="$3"; dest="$4"; mode="${5:-}"
+  svc="$1"; dep="$2"; since="$3"; dest="$4"; mode="${5:-}"; clamped="${6:-0}"
   rm -rf "$WORK/pages"; mkdir -p "$WORK/pages"
   until_ts=""; round=0; stop=complete
   while :; do
@@ -157,29 +213,66 @@ print(json.dumps({
     "file": os.path.basename(dest), "service": svc, "deployment": dep,
     "rows": len(rows), "first_ts": rows[0].get("timestamp"),
     "last_ts": rows[-1].get("timestamp"), "row_cap": cap,
-    "stop_reason": stop,
+    "stop_reason": stop, "clamped": sys.argv[7] == "1",
 }))
-' "$dest" "$svc" "$dep" "$CAP" "$WORK/pages" "$stop" >> "$WORK/manifest.ndjson" || return 1
+' "$dest" "$svc" "$dep" "$CAP" "$WORK/pages" "$stop" "$clamped" >> "$WORK/manifest.ndjson" || return 1
 }
 
 for svc in $SERVICES; do
   echo "== $svc"
   railway deployment list --service "$svc" --limit "$ENUM_LIMIT" --json \
-    | WANT="$DEPLOYMENTS" python3 -c 'import json,os,sys
+    | WANT="$DEPLOYMENTS" FLOOR="$WINDOW_START" CEIL="$ENUM_LIMIT" python3 -c 'import datetime as dt, json, os, sys
 want = set(os.environ.get("WANT", "").split())
-for d in json.load(sys.stdin):
-    if want and d["id"] not in want:
-        continue
-    print(d["id"], d["createdAt"], d.get("status",""))' > "$WORK/deps.txt"
+floor = os.environ.get("FLOOR", "")
+ceil = int(os.environ["CEIL"])
 
-  while read -r id created status; do
+def at(s):
+    return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+deps = json.load(sys.stdin)          # newest first
+picked, spanned = [], False
+for d in deps:
+    if want:
+        if d["id"] not in want:
+            continue
+    elif floor and at(d["createdAt"]) < at(floor):
+        # Below the floor. Take deployments until one that actually SERVED has
+        # been taken -- that is the deployment live when the window opened, and
+        # its logs inside the window are the oldest the window has. Tested for
+        # positively: a status meaning built-but-never-served (SKIPPED, FAILED,
+        # or one not seen here) then walks back one further, costing an empty
+        # fetch, where treating it as the server would silently lose whatever
+        # the real one logged inside the window.
+        if spanned:
+            break
+        if d.get("status") in ("SUCCESS", "REMOVED"):
+            spanned = True
+    picked.append(d)
+
+# Reaching the end of the listing without crossing a deployment that ran means
+# the window opens before anything enumerated. Harmless when that is the whole
+# history; a silent hole when the listing was merely cut off, so say so.
+if floor and not want and not spanned and len(deps) >= ceil:
+    print(f"warning: {ceil} deployments do not reach back to {floor}; "
+          "the oldest part of the window is not covered", file=sys.stderr)
+
+for d in picked:
+    created = d["createdAt"]
+    clamped = bool(floor) and at(floor) > at(created)
+    since = floor if clamped else created
+    # The stamp in the filename stays the deployment createdAt whatever the
+    # floor is, so a windowed pull extends the same per-deployment dump a full
+    # pull writes instead of forking a second file for the same deployment.
+    print(d["id"], created, since, "1" if clamped else "0", d.get("status", ""))' > "$WORK/deps.txt"
+
+  while read -r id created since clamped status; do
     stamp=$(printf '%s' "$created" | tr -d ':-' | cut -c1-15)
     slug=$(printf '%s' "$svc" | tr '[:upper:]' '[:lower:]')
     printf '   %s %s %-8s' "$stamp" "$(printf '%s' "$id" | cut -c1-8)" "$status"
     for kind in deploy http; do
       dest="$OUT/$slug.$kind.$stamp.$id.jsonl"
       [ "$kind" = http ] && mode=--http || mode=""
-      if fetch_paged "$svc" "$id" "$created" "$dest" "$mode"; then
+      if fetch_paged "$svc" "$id" "$since" "$dest" "$mode" "$clamped"; then
         printf ' %s=%s' "$kind" "$(wc -l < "$dest" | tr -d ' ')"
       else
         printf ' %s=0' "$kind"
@@ -216,11 +309,26 @@ if os.path.exists(path):
 merged = {k: v for k, v in merged.items() if os.path.exists(os.path.join(out, k))}
 
 for r in recs:
-    # Only a short final page proves the window was exhausted. Row count says
-    # nothing: a fully paged deploy file runs to thousands of rows and is whole.
-    # Not carried over from the previous record for this file either -- a fetch
-    # that stopped short leaves a hole a later, larger fetch can fill.
-    r["truncated"] = r["stop_reason"] != "complete"
+    # `truncated` is a fact about the FILE -- does it reach back to the first
+    # line the deployment logged -- not about the fetch that last touched it,
+    # and the two come apart in both directions.
+    #
+    # Only a short final page proves a window was exhausted; row count says
+    # nothing, since a fully paged deploy file runs to thousands of rows and is
+    # whole. But an exhausted window only reaches back to where a deployment
+    # started if the request started there too, so a clamped fetch reporting
+    # `complete` says nothing about the rows before its floor.
+    #
+    # Nothing carries over from the previous record either. A fetch cannot
+    # inherit completeness from an earlier one unless the two join up, and they
+    # need not: a floor can sit long after the last row already on disk, and an
+    # http fetch that hits the cap returns a slice with no bearing on where the
+    # last one ended. Both merge into a file whose coverage has a hole in the
+    # middle. So only a fetch that itself ran from the deployment start and
+    # exhausted it marks a file whole -- which over-reports truncation after a
+    # windowed pull, the direction that sends you to re-pull rather than to
+    # trust a count that is missing rows.
+    r["truncated"] = not (r["stop_reason"] == "complete" and not r.get("clamped"))
     merged[r["file"]] = r
 
 files = sorted(merged.values(), key=lambda r: r["file"])
