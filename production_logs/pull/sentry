@@ -1,49 +1,56 @@
 #!/usr/bin/env python3
 """Download Sentry issues, events and releases into production_logs/dumps/sentry/.
 
-Re-runnable in either direction, which is what a --days smaller than the last
-run's makes necessary. The two kinds of file here differ in whether the copy on
-disk is replaceable:
+    production_logs/pull/sentry --start 2026-08-01              # through today
+    production_logs/pull/sentry --start 2026-08-01 --end 2026-08-14
+    production_logs/pull/sentry --start 2026-06-01 --org some-org
 
-  * Event streams (events.ndjson, discover_errors.ndjson, events/*.ndjson) are
-    APPEND-shaped and MERGE. Sentry drops events at 90 days, so a dump pulled
-    at --days 90 months ago holds events the API can no longer return, and
-    rewriting it from a narrower window would destroy the only copy. Deduped on
-    the event id; a re-fetched event supersedes the stored one.
-  * Snapshots (projects, issues, releases) are window-scoped state -- an issue's
-    status, its all-time count, its lastSeen -- and are REPLACED. Merging them
-    would carry an issue with no activity in this window forward with stale
-    counts, which is precisely what sentry_issues' grain says it is not.
+Sentry keeps events for 90 days; the dump on disk can therefore outlive what
+the API can return, and no pull, however narrow, discards what a wider one
+reached. The files differ in how a re-run combines with the copy on disk:
 
-Narrowing therefore costs reach in the snapshots and nothing in the events, and
-each merged file reports how many rows it carried over so a shrinking pull says
-so out loud. Nothing here interprets the data -- shaping and grain rules belong
-to production_logs/analyze/sql/.
+  * Event streams (events.ndjson, discover_errors.ndjson, events/*.ndjson)
+    MERGE on the event id; a re-fetched event supersedes the stored one.
+  * issues.json is a windowed snapshot of MUTABLE state -- an issue's status,
+    its all-time count, its lastSeen -- so it has no timestamp axis to append
+    along. It merges on the issue id, and every row carries `_observed_at`, the
+    instant the pull that wrote it read Sentry. Without the stamp a carried
+    row would silently claim to be current; read it before trusting a count.
+  * projects.json and releases.json are fetched org-wide rather than windowed,
+    so a window cannot narrow them and they are simply REPLACED.
 
-    production_logs/pull/sentry                  # last 30 days
-    production_logs/pull/sentry --days 90        # Sentry's retention ceiling
-    production_logs/pull/sentry --org some-org --out /tmp/dump
-
-Needs SENTRY_API_TOKEN, taken from the environment or read out of the repo's
-.env. Stdlib only, so it runs without a virtualenv.
+The pull fails (exit 1) if its haul disagrees with Sentry's own count()
+aggregate -- a silently short pull looks exactly like a quiet week. Nothing
+here interprets the data; shaping and grain rules belong to
+production_logs/analyze/sql/. Needs SENTRY_API_TOKEN.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator, NamedTuple
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pull_common import (  # noqa: E402
+    Row,
+    add_window_args,
+    log,
+    manifest_record,
+    merge_ndjson,
+    preflight,
+    update_manifest,
+    window,
+)
+
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "dumps" / "sentry"
 TIME_FMT = "%Y-%m-%dT%H:%M:%S"
 
@@ -60,25 +67,17 @@ DISCOVER_FIELDS = (
 class Page(NamedTuple):
     """One API response: its rows, and the cursor URL for the next page if any."""
 
-    rows: list[dict[str, Any]]
+    rows: list[Row]
     next_url: str | None
 
 
-def read_token() -> str:
-    """SENTRY_API_TOKEN from the environment, falling back to the repo's .env."""
-    if token := os.environ.get("SENTRY_API_TOKEN"):
-        return token
-    env = REPO_ROOT / ".env"
-    if env.is_file():
-        for line in env.read_text().splitlines():
-            key, _, value = line.partition("=")
-            if key.strip() == "SENTRY_API_TOKEN":
-                return value.strip().strip("\"'")
-    sys.exit("SENTRY_API_TOKEN not set and not found in .env")
-
-
 class Sentry:
-    """A thin paginating client. Retries the failures that are worth retrying."""
+    """A thin paginating client. Retries the failures that are worth retrying.
+
+    Keeps its own request loop rather than using pull_common.http_request
+    because pagination lives in the Link response header, which that helper
+    does not surface.
+    """
 
     def __init__(self, token: str) -> None:
         self._token = token
@@ -109,13 +108,13 @@ class Sentry:
                 time.sleep(2**attempt)
         raise SystemExit(f"gave up after repeated failures on {url}")
 
-    def get(self, path: str, **params: str) -> list[dict[str, Any]]:
+    def get(self, path: str, **params: str) -> list[Row]:
         """Every row from every page of one endpoint."""
         # Some paths arrive carrying their own query string (the Discover
         # endpoints need repeated `field=` keys, which urlencode cannot express).
         separator = "&" if "?" in path else "?"
         url = f"{self.base}{path}{separator}{urllib.parse.urlencode(params)}" if params else f"{self.base}{path}"
-        rows: list[dict[str, Any]] = []
+        rows: list[Row] = []
         while url:
             page = self._get(url)
             if not page.rows:
@@ -139,109 +138,59 @@ def _next_cursor(link_header: str) -> str | None:
     return None
 
 
-def log(message: str) -> None:
-    print(message, file=sys.stderr)
-
-
-def write_json(path: Path, payload: object) -> None:
-    """Replace a snapshot file. See the module docstring for why these do not merge."""
-    write_atomic(path, json.dumps(payload, indent=1, sort_keys=True))
-    report(path, len(payload) if isinstance(payload, list) else 1)
-
-
-def event_key(row: dict[str, Any]) -> str:
+def event_key(row: Row) -> str:
     """Identity of an event. Sentry's event id is unique across both streams."""
     return str(row.get("id") or json.dumps(row, sort_keys=True))
 
 
-def event_time(row: dict[str, Any]) -> str:
+def event_time(row: Row) -> str:
     """Sort key. Discover rows carry `timestamp`, full payloads carry `dateCreated`."""
     return str(row.get("timestamp") or row.get("dateCreated") or "")
 
 
-def read_ndjson(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+def write_events(path: Path, rows: list[Row], kind: str, complete: bool) -> Row:
+    """Merge an event stream into its dump and describe it for the manifest."""
+    merged = merge_ndjson(path, rows, key=event_key, ts_of=event_time)
+    log(f"  {path.name}: {merged.rows} rows ({merged.carried} carried over)")
+    name = path.name if path.parent.name != "events" else f"events/{path.name}"
+    return manifest_record(
+        name, kind=kind, rows=merged.rows, first_ts=merged.first_ts or None,
+        last_ts=merged.last_ts or None, complete=complete,
+    )
 
 
-def write_ndjson(path: Path, rows: list[dict[str, Any]]) -> None:
-    """Merge an event stream into the dump on disk, newest first.
+def write_snapshot(path: Path, payload: list[Row], kind: str) -> Row:
+    """Replace an org-wide snapshot file whole. See the module docstring."""
+    _write_atomic(path, json.dumps(payload, indent=1, sort_keys=True))
+    log(f"  {path.name}: {len(payload)} rows")
+    return manifest_record(
+        path.name, kind=kind, rows=len(payload), first_ts=None, last_ts=None, complete=True
+    )
 
-    The dump is an INPUT to its own rewrite: it may hold events past Sentry's
-    retention that no later fetch can return.
+
+def merge_issues(path: Path, rows: list[Row], observed_at: str) -> Row:
+    """Merge the issues snapshot on the issue id, stamping each fresh row.
+
+    Issue rows are mutable state, so two rows in this file can describe
+    different instants; `_observed_at` is what tells them apart.
     """
-    prior = {event_key(row): row for row in read_ndjson(path)}
-    fresh = {event_key(row): row for row in rows}
-    merged = prior | fresh          # a re-fetched event supersedes the stored copy
-    ordered = sorted(merged.values(), key=event_time, reverse=True)
-    write_atomic(path, "".join(json.dumps(row, sort_keys=True) + "\n" for row in ordered))
-    report(path, len(ordered), carried=len(prior.keys() - fresh.keys()))
+    prior: dict[str, Row] = {}
+    if path.exists():
+        prior = {str(row["id"]): row for row in json.loads(path.read_text())}
+    fresh = {str(row["id"]): row | {"_observed_at": observed_at} for row in rows}
+    merged = prior | fresh
+    ordered = [merged[key] for key in sorted(merged)]
+    _write_atomic(path, json.dumps(ordered, indent=1, sort_keys=True))
+    log(f"  {path.name}: {len(ordered)} rows ({len(prior.keys() - fresh.keys())} carried over)")
+    return manifest_record(
+        path.name, kind="issues", rows=len(ordered), first_ts=None, last_ts=None, complete=True
+    )
 
 
-def write_atomic(path: Path, text: str) -> None:
-    """Write beside the target and rename over it.
-
-    A merged file is written from its own previous contents, so an interrupt
-    partway through a plain truncating write would destroy the window that
-    Sentry can no longer serve rather than merely failing to extend it.
-    """
+def _write_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text)
     tmp.replace(path)
-
-
-def report(path: Path, rows: int, carried: int = 0) -> None:
-    detail = f" ({rows - carried} fetched, {carried} carried over)" if carried else ""
-    log(f"  {path.name}: {rows} rows{detail}, {path.stat().st_size:,} bytes")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--days", type=int, default=30, help="window to pull (default 30)")
-    parser.add_argument("--org", help="org slug (default: the only org the token can see)")
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output directory")
-    args = parser.parse_args()
-
-    client = Sentry(read_token())
-    org = resolve_org(client, args.org)
-
-    end = datetime.now(UTC)
-    start = end - timedelta(days=args.days)
-    window = {"start": start.strftime(TIME_FMT), "end": end.strftime(TIME_FMT)}
-    log(f"pulling {args.days}d for {org}: {window['start']} -> {window['end']}")
-
-    out: Path = args.out
-    (out / "events").mkdir(parents=True, exist_ok=True)
-
-    projects = client.get(f"/organizations/{org}/projects/")
-    write_json(out / "projects.json", projects)
-
-    issues, events = [], []
-    for issue, issue_events in pull_issues(client, org, projects, window):
-        issues.append(issue)
-        events.extend(issue_events)
-        if issue_events:
-            write_ndjson(out / "events" / f"{issue['shortId']}.ndjson", issue_events)
-
-    write_json(out / "issues.json", issues)
-    write_ndjson(out / "events.ndjson", events)
-
-    # The Discover errors dataset: one flat row per error event. Cheaper to query
-    # than the full payloads, and it is what verifies the pull is complete --
-    # compare its per-issue counts against the aggregate below.
-    log("discover: errors dataset")
-    fields = "&".join(f"field={urllib.parse.quote(f)}" for f in DISCOVER_FIELDS)
-    discover = client.get(
-        f"/organizations/{org}/events/?dataset=errors&{fields}",
-        per_page="100", sort="-timestamp", **window,
-    )
-    write_ndjson(out / "discover_errors.ndjson", discover)
-
-    log("releases")
-    write_json(out / "releases.json", client.get(f"/organizations/{org}/releases/", per_page="100"))
-
-    verify(client, org, window, discover)
 
 
 def resolve_org(client: Sentry, requested: str | None) -> str:
@@ -264,39 +213,39 @@ def resolve_org(client: Sentry, requested: str | None) -> str:
 
 
 def pull_issues(
-    client: Sentry, org: str, projects: list[dict[str, Any]], window: dict[str, str]
-) -> Iterator[tuple[dict[str, Any], list[dict[str, Any]]]]:
-    """Each issue in the window, with its full event payloads.
+    client: Sentry, org: str, api_window: dict[str, str]
+) -> Iterator[tuple[Row, list[Row]]]:
+    """Each issue with activity in the window, org-wide, with its full events.
 
-    Per-issue rather than one bulk call because uptime and other non-error issue
-    types are absent from the Discover errors dataset entirely -- this endpoint is
-    the only way to reach their events.
+    One org-level listing rather than a per-project loop -- every issue type
+    comes through it, uptime included, with its project inline. The per-issue
+    events endpoint stays, because it is the only source of full payloads for
+    non-error issue types. An empty `query` overrides the default
+    "is:unresolved", so resolved and ignored issues come through too.
     """
-    for project in projects:
-        slug = project["slug"]
-        # An empty `query` overrides the default "is:unresolved", so resolved and
-        # ignored issues come through too. statsPeriod is rejected on this
-        # endpoint for anything past 14d, hence the explicit start/end.
-        issues = client.get(f"/projects/{org}/{slug}/issues/", query="", limit="100", **window)
-        log(f"{slug}: {len(issues)} issues")
-        for issue in issues:
-            issue["_project"] = slug
-            log(f"  {issue['shortId']} ({issue['issueType']})")
-            events = client.get(f"/issues/{issue['id']}/events/", full="true", limit="100", **window)
-            for event in events:
-                event |= {
-                    "_project": slug,
-                    "_issue_id": issue["id"],
-                    "_short_id": issue["shortId"],
-                    "_issue_title": issue["title"],
-                    "_issue_category": issue.get("issueCategory"),
-                    "_issue_type": issue.get("issueType"),
-                    "_level": issue.get("level"),
-                }
-            yield issue, events
+    issues = client.get(
+        f"/organizations/{org}/issues/", query="", limit="100", project="-1", **api_window
+    )
+    log(f"{org}: {len(issues)} issues in the window")
+    for issue in issues:
+        slug = issue["project"]["slug"]
+        issue["_project"] = slug
+        log(f"  {issue['shortId']} ({issue['issueType']})")
+        events = client.get(f"/issues/{issue['id']}/events/", full="true", limit="100", **api_window)
+        for event in events:
+            event |= {
+                "_project": slug,
+                "_issue_id": issue["id"],
+                "_short_id": issue["shortId"],
+                "_issue_title": issue["title"],
+                "_issue_category": issue.get("issueCategory"),
+                "_issue_type": issue.get("issueType"),
+                "_level": issue.get("level"),
+            }
+        yield issue, events
 
 
-def verify(client: Sentry, org: str, window: dict[str, str], discover: list[dict[str, Any]]) -> None:
+def verify(client: Sentry, org: str, api_window: dict[str, str], pulled: int) -> bool:
     """Compare the pulled error events against Sentry's own count() aggregate.
 
     A silent short pull -- a dropped cursor, a mid-run rate limit -- otherwise
@@ -305,14 +254,74 @@ def verify(client: Sentry, org: str, window: dict[str, str], discover: list[dict
     log("verifying against Sentry's aggregate")
     counts = client.get(
         f"/organizations/{org}/events/?dataset=errors&field=count()",
-        per_page="1", **window,
+        per_page="1", **api_window,
     )
     expected = int(counts[0]["count()"]) if counts else 0
-    if expected == len(discover):
+    if expected == pulled:
         log(f"  OK: {expected} error events")
-    else:
-        log(f"  MISMATCH: Sentry reports {expected} error events, pulled {len(discover)}")
-        sys.exit(1)
+        return True
+    log(f"  MISMATCH: Sentry reports {expected} error events, pulled {pulled}")
+    return False
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    add_window_args(parser)
+    parser.add_argument("--org", help="org slug (default: the only org the token can see)")
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output directory")
+    args = parser.parse_args()
+    win = window(args)
+    token = preflight("SENTRY_API_TOKEN")["SENTRY_API_TOKEN"]
+
+    client = Sentry(token)
+    org = resolve_org(client, args.org)
+    api_window = {"start": win.start.strftime(TIME_FMT), "end": win.end.strftime(TIME_FMT)}
+    observed_at = datetime.now(UTC).isoformat()
+    log(f"pulling {org}: {api_window['start']} -> {api_window['end']}")
+
+    out: Path = args.out
+    (out / "events").mkdir(parents=True, exist_ok=True)
+    records: list[Row] = []
+
+    projects = client.get(f"/organizations/{org}/projects/")
+    records.append(write_snapshot(out / "projects.json", projects, kind="projects"))
+
+    pulled = list(pull_issues(client, org, api_window))
+
+    # The count() verification below covers the Discover stream; the manifest
+    # marks the event files complete only when it passes.
+    log("discover: errors dataset")
+    fields = "&".join(f"field={urllib.parse.quote(f)}" for f in DISCOVER_FIELDS)
+    discover = client.get(
+        f"/organizations/{org}/events/?dataset=errors&{fields}",
+        per_page="100", sort="-timestamp", **api_window,
+    )
+    verified = verify(client, org, api_window, len(discover))
+
+    records.append(merge_issues(out / "issues.json", [issue for issue, _ in pulled], observed_at))
+    all_events: list[Row] = []
+    for issue, issue_events in pulled:
+        all_events.extend(issue_events)
+        if issue_events:
+            records.append(
+                write_events(
+                    out / "events" / f"{issue['shortId']}.ndjson", issue_events,
+                    kind="issue_events", complete=verified,
+                )
+            )
+    records.append(write_events(out / "events.ndjson", all_events, kind="events", complete=verified))
+    records.append(
+        write_events(out / "discover_errors.ndjson", discover, kind="discover", complete=verified)
+    )
+    log("releases")
+    releases = client.get(f"/organizations/{org}/releases/", per_page="100")
+    records.append(write_snapshot(out / "releases.json", releases, kind="releases"))
+
+    update_manifest(out, records)
+    if not verified:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

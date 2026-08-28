@@ -61,15 +61,6 @@ WHERE service = 'app' AND ts > (SELECT deployed_at FROM json_logging_deployed)
 HAVING count(*) > 20 AND count(*) FILTER (emitter = 'python') = 0
 
 UNION ALL
--- A line of any other width is either a request carrying a raw `|` -- recoverable,
--- and read from both ends -- or the export having changed shape, which is not.
-SELECT 'bunny_malformed_lines',
-       count(*) || ' Bunny log lines are not 12 fields (widths: '
-         || string_agg(DISTINCT fields::VARCHAR, ', ') || '); see bunny_malformed_lines'
-FROM bunny_malformed_lines
-HAVING count(*) > 0
-
-UNION ALL
 -- A level outside the shared vocabulary means norm_level needs a new case.
 SELECT 'unnormalised_level',
        'Level ' || coalesce(level, 'NULL') || ' is not one of debug/info/warn/error/fatal ('
@@ -99,34 +90,12 @@ WHERE level_confidence NOT IN ('json', 'sentry')
 GROUP BY level_confidence
 
 UNION ALL
--- The per-deployment export carries no service tag, so its service is read off the
--- filename prefix and falls back to the web service when there is none. Where a
--- deployment id also appears in a legacy dump, whose rows are tagged, the two can
--- be compared instead of the derivation being trusted.
-SELECT 'deployment_service_mismatch',
-       'Deployment ' || d.deployment_id || ' reads as ' || any_value(d.service)
-         || ' from ' || any_value(d.source_file) || ', but is tagged '
-         || any_value(l.service) || ' in the legacy dumps'
-FROM railway_lines d
-JOIN railway_lines l ON l.deployment_id = d.deployment_id AND l.origin = 'legacy_export'
-WHERE d.origin = 'deploy_export' AND d.service <> l.service
-GROUP BY d.deployment_id
-
-UNION ALL
--- HTTP rows are not deduped, so reading two overlapping exports of one deployment
--- silently doubles its traffic. The manifest is supposed to make that impossible;
--- this proves it did.
-SELECT 'http_deployment_double_read',
-       'Deployment ' || deployment_id || ' read from ' || count(DISTINCT source_file)
-         || ' files; its request counts are inflated'
-FROM railway_requests GROUP BY deployment_id HAVING count(DISTINCT source_file) > 1
-
-UNION ALL
--- The same failure with a sharper signal, for two files that disagree about their
--- filenames but describe the same requests.
+-- The puller buckets each request into the day file of its own timestamp and
+-- merges on requestId within it, so one request in two files is a day-bucketing
+-- bug -- and every affected request is counted twice.
 SELECT 'http_duplicate_request_ids',
-       count(*) || ' request ids appear more than once across the HTTP dumps'
-FROM (SELECT request_id FROM railway_requests GROUP BY 1 HAVING count(*) > 1)
+       count(*) || ' request ids appear in more than one Railway HTTP day file'
+FROM (SELECT request_id FROM railway_requests GROUP BY 1 HAVING count(DISTINCT source_file) > 1)
 HAVING count(*) > 0
 
 UNION ALL
@@ -144,21 +113,11 @@ FROM railway_requests WHERE status IS NULL
 HAVING count(*) > 0
 
 UNION ALL
--- Bunny's format is positional and unlabelled, so a column inserted upstream
--- shifts every field after it without anything failing to parse. The url is the
--- canary: it is the one field whose shape is unmistakable, so a row whose url is
--- not a url means every column here is off by one.
-SELECT 'bunny_column_order_shifted',
-       count(*) || ' CDN rows have a url that is not a url; the pipe field order may have changed'
-FROM bunny_requests WHERE url NOT LIKE 'http://%' AND url NOT LIKE 'https://%'
-HAVING count(*) > 0
-
-UNION ALL
--- The other half of that failure: a shift landing a plausible number in the
--- timestamp column parses fine and silently dates the traffic to 1970 or the far
--- future. Bounded against now() rather than a hardcoded date so it ages well.
+-- A timestamp far outside the plausible range means the export changed its time
+-- format and the cast is misreading it. Bounded against now() rather than a
+-- hardcoded date so it ages well.
 SELECT 'bunny_ts_out_of_range',
-       count(*) || ' CDN rows fall outside 2020..now; epoch-millisecond parsing may be wrong'
+       count(*) || ' CDN rows fall outside 2020..now; timestamp parsing may be wrong'
 FROM bunny_requests WHERE ts < TIMESTAMP '2020-01-01' OR ts > now() + INTERVAL 1 DAY
 HAVING count(*) > 0
 

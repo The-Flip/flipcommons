@@ -77,25 +77,20 @@ case_empty_sentry() {
   expect "other sources unaffected" "3" "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
 }
 
-# --- an unescaped delimiter is recovered, reported, and never silently dropped -
-case_bunny_extra_pipe() {
+# --- a malformed line fails the build loudly, never parses as data -------------
+# Every reader declares its columns, so a corrupt line is a build error rather
+# than a silently mis-read row. This pins that failure mode.
+case_bunny_bad_json() {
   w=$1
-  f=$w/dumps/bunny/flipcommons-html.5969801.2026-08-20.log
-  ts=$(head -1 "$f" | cut -d'|' -f3)
-  printf 'MISS|200|%s|100|5969801|1.2.3.0|-|https://flipcommons.org/s?q=a|b|ASB|ua|reqD|US\n' "$ts" >> "$f"
-  expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
-  expect "reported as malformed" "1" "$(q "$w" 'SELECT count(*) FROM bunny_malformed_lines;')"
-  expect "check fires" "1" \
-    "$(q "$w" "SELECT count(*) FROM checks WHERE check_name='bunny_malformed_lines';")"
-  expect "still readable, pipe kept in the url" "/s?q=a|b" \
-    "$(q "$w" "SELECT path || '?' || query FROM bunny_requests WHERE request_id='reqD';")"
+  printf 'not json at all\n' >> "$w/dumps/bunny/flipcommons-html.5969801.2026-08-20.ndjson"
+  expect "malformed line fails the build" "1" "$(build "$w" && echo 0 || echo 1)"
 }
 
 # --- a level field vanishing must not slip past the vocabulary guard -----------
 case_missing_level() {
   w=$1
-  f=$w/dumps/railway/web.deploy.20260820T100000.cccccccc-1111-2222-3333-444444444444.jsonl
-  printf '{"timestamp":"2026-08-20T10:00:09.000000000Z","message":"no level here","logger":"x","pid":7}\n' >> "$f"
+  f=$w/dumps/railway/deploy.2026-08-20.ndjson
+  printf '{"timestamp":"2026-08-20T10:00:09.000000000Z","message":"no level here","tags":{"serviceId":"7e443a50-b7c2-4a0a-8357-400683eebcee","deploymentId":"cccccccc-1111-2222-3333-444444444444"},"attributes":[{"key":"logger","value":"\\"x\\""},{"key":"pid","value":"7"}]}\n' >> "$f"
   expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
   expect "unnormalised_level fires on NULL" "1" \
     "$(q "$w" "SELECT count(*) FROM checks WHERE check_name='unnormalised_level';")"
@@ -109,8 +104,8 @@ case_missing_level() {
 # container lifecycle text and the level they carry would look accidental.
 case_ssr_json() {
   w=$1
-  f=$w/dumps/railway/web.deploy.20260820T100000.cccccccc-1111-2222-3333-444444444444.jsonl
-  printf '{"timestamp":"2026-08-20T10:00:08.000000000Z","status":404,"level":"warn","message":"[404] GET /nope","logger":"handle-error","time":"2026-08-20T10:00:08.000Z"}\n' >> "$f"
+  f=$w/dumps/railway/deploy.2026-08-20.ndjson
+  printf '{"timestamp":"2026-08-20T10:00:08.000000000Z","message":"[404] GET /nope","severity":"warn","tags":{"serviceId":"7e443a50-b7c2-4a0a-8357-400683eebcee","deploymentId":"cccccccc-1111-2222-3333-444444444444"},"attributes":[{"key":"level","value":"\\"warn\\""},{"key":"logger","value":"\\"handle-error\\""},{"key":"time","value":"\\"2026-08-20T10:00:08.000Z\\""},{"key":"status","value":"404"}]}\n' >> "$f"
   expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
   expect "no findings" "0" "$(q "$w" 'SELECT count(*) FROM checks;')"
   expect "resolves to the node emitter" "node" \
@@ -123,7 +118,7 @@ case_ssr_json() {
     "$(q "$w" "SELECT extra_keys FROM railway_lines WHERE logger='handle-error';")"
 }
 
-for c in baseline empty_sentry bunny_extra_pipe missing_level ssr_json; do
+for c in baseline empty_sentry bunny_bad_json missing_level ssr_json; do
   name=$(echo "$c" | tr '_' '-')
   skip_case "$name" && continue
   printf '  %s\n' "$name"

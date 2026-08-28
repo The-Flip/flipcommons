@@ -1,18 +1,17 @@
 {
  "files": [
   {
-   "file": "flipcommons-html.5969801.2026-08-20.log",
-   "zone_id": 5969801,
-   "zone_name": "flipcommons-html",
-   "date": "2026-08-20",
-   "http": 200,
-   "rows": 3,
-   "first_ts": "2026-08-20T10:00:04Z",
-   "last_ts": "2026-08-20T10:00:04Z",
    "complete": true,
-   "logging_enabled": true,
+   "file": "flipcommons-html.5969801.2026-08-20.ndjson",
+   "first_ts": "2026-08-20T10:00:04.12+00:00",
    "ip_anonymization": "OneDigit",
-   "pulled_at": "2026-08-21T00:00:00Z"
+   "kind": "edge",
+   "last_ts": "2026-08-20T10:00:05.00+00:00",
+   "logging_enabled": true,
+   "pulled_at": "2026-08-21T00:00:00.000000Z",
+   "rows": 3,
+   "zone_id": 5969801,
+   "zone_name": "flipcommons-html"
   }
  ]
 }

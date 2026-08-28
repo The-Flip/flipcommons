@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Pull production logs from every source: Bunny, Railway and Sentry.
+
+    production_logs/pull/all --start 2026-08-26                # through today
+    production_logs/pull/all --start 2026-08-26 --end 2026-08-26
+
+Preflights every credential first -- a missing key is reported before anything
+is pulled -- then runs the three pullers in order of perishability (Bunny keeps
+a rolling 3 days, Railway what the plan allows, Sentry 90 days), continuing
+past a failure so one broken source cannot block the others. Exits with the
+worst child's code.
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pull_common import add_window_args, log, preflight, window  # noqa: E402
+
+PULLERS = [
+    ("bunny", "BUNNY_API_KEY"),
+    ("railway", "RAILWAY_TOKEN"),
+    ("sentry", "SENTRY_API_TOKEN"),
+]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    add_window_args(parser)
+    args = parser.parse_args()
+    window(args)  # validates the dates up front; each puller re-parses its own
+    preflight(*(key for _, key in PULLERS))
+
+    here = Path(__file__).resolve().parent
+    flags = ["--start", args.start, *(["--end", args.end] if args.end else [])]
+    results: dict[str, int] = {}
+    for name, _ in PULLERS:
+        log(f"==== {name}")
+        results[name] = subprocess.run([str(here / name), *flags]).returncode
+        log("")
+
+    for name, code in results.items():
+        log(f"{name}: {'ok' if code == 0 else f'FAILED (exit {code})'}")
+    raise SystemExit(max(results.values()))
+
+
+if __name__ == "__main__":
+    main()

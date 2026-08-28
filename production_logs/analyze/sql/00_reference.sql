@@ -4,11 +4,9 @@
 -- Railway service UUIDs are stable per service but appear nowhere in the message
 -- text, so this mapping has to be declared. Unknown UUIDs fall through to a
 -- truncated id rather than NULL, so a new service shows up in every view instead
--- of vanishing, and `unknown_railway_service` names it.
---
--- Two spellings reach us for one service: a UUID in the legacy export's tags, and
--- Railway's display name in the puller's filenames. Both are listed so either
--- resolves to one canonical `service`.
+-- of vanishing, and `unknown_railway_service` names it. `railway_name` is
+-- Railway's own display name for the service, kept so a row here can be matched
+-- against the dashboard.
 --
 -- `unstructured_confidence` is what a line from this service means when it is NOT
 -- self-describing JSON. It lives here so adding a service is a row rather than an
@@ -82,19 +80,3 @@ INSERT INTO bunny_pull_zones VALUES
    'iDrive e2 media bucket. NULL origin: nothing behind it is Railway, so a media row has no downstream row to correlate with');
 
 COMMENT ON TABLE bunny_pull_zones IS 'One row per known Bunny pull zone. Hand-maintained: a CDN log line names its zone only by numeric id.';
-
--- Which Railway exporter produced a file, read off its name. pull/railway writes
--- <service>.<kind>.<stamp>.<deployment>.jsonl and the hand-made exports are named
--- for their kind too, so the name is the only place this lives.
-CREATE OR REPLACE MACRO railway_export_kind(path) AS
-  CASE WHEN path LIKE '%http%' THEN 'http' ELSE 'deploy' END;
-
--- The row cap each Railway exporter returns on, for files the manifest does not
--- cover -- hand-made exports, and anything pulled before the manifest started
--- accumulating. A pulled file uses railway_manifest.truncated instead, which
--- records why a fetch stopped rather than inferring it from a row count landing
--- on a known cap.
-CREATE OR REPLACE TABLE railway_export_caps (kind VARCHAR, row_cap BIGINT);
-INSERT INTO railway_export_caps VALUES ('http', 500), ('deploy', 1000);
-
-COMMENT ON TABLE railway_export_caps IS 'One row per Railway exporter: the row count at which an untracked file is assumed cut off. Pulled files use railway_manifest.truncated instead.';

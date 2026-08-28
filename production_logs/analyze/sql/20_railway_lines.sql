@@ -1,20 +1,9 @@
 -- Railway container logs.
 --
--- SOURCE: ../dumps/railway/, in two export shapes that overlap and are merged:
---
---   logs.*.json    The log-viewer export. A JSON array; severity in `severity`,
---                  service/replica/deployment in `tags`, and a JSON line's own
---                  fields nested under `attributes`. The only shape carrying the
---                  Postgres service, and the only one reaching back before the
---                  per-deployment exports begin.
---   *deploy*.jsonl The per-deployment export, one JSON object per line. Railway
---                  flattens a structured line's fields to TOP LEVEL here rather
---                  than nesting them, so `logger`, `pid`, `time` sit beside
---                  `message`.
---
--- The windows overlap, and a line present in both is identical to the nanosecond.
--- Deduped preferring the deploy shape, which carries the flattened fields; the
--- legacy rows that survive are the Postgres service and the earlier history.
+-- SOURCE: ../../dumps/railway/deploy.*.ndjson, one JSON object per line, the
+-- GraphQL environmentLogs row written verbatim: severity in `severity`,
+-- service/deployment/replica UUIDs in `tags`, and a structured line's own
+-- fields as a key/value list under `attributes`, each value JSON-encoded.
 --
 -- HOW SEVERITY WORKS, because it decides what every other view can claim.
 --
@@ -43,97 +32,57 @@
 -- rather than a fact about the service.
 --
 -- The formatter also folds tracebacks into the message, so a structured crash is
--- ONE row with embedded newlines. Legacy stderr tracebacks are one row per frame
--- -- see is_continuation.
+-- ONE row with embedded newlines. Unstructured stderr tracebacks are one row per
+-- frame -- see is_continuation.
+
+-- The value of one named attribute, unwrapped from its JSON encoding
+-- ('"gunicorn"' -> gunicorn). NULL when the line does not carry it.
+CREATE OR REPLACE MACRO attr(attrs, name) AS
+  list_extract(list_filter(attrs, lambda a: a.key = name), 1).value::JSON ->> '$';
 
 CREATE OR REPLACE TABLE railway_lines AS
-WITH legacy AS (
-  SELECT
-    'legacy_export' AS origin,
-    (regexp_replace(json ->> 'timestamp', '(\.\d{6})\d*Z$', '\1Z')::TIMESTAMPTZ AT TIME ZONE 'UTC') AS ts,
-    json -> 'tags' ->> 'service'     AS service_id,
-    json -> 'tags' ->> 'deployment'  AS deployment_id,
-    json -> 'tags' ->> 'replica'     AS replica_id,
-    json -> 'tags' ->> 'environment' AS environment,
-    json ->> 'severity' AS level_raw,
-    json ->> 'message'  AS message,
-    -- An unstructured line gets exactly one attribute, `level`, mirroring the
-    -- severity it was assigned. So the key count alone separates the two.
-    json -> 'attributes' AS payload,
-    list_filter(json_keys(json -> 'attributes'),
-      lambda k: k NOT IN ('level', 'logger', 'time', 'ts', 'pid')) AS extra_keys,
-    len(json_keys(json -> 'attributes')) > 1 AS is_structured,
-    regexp_replace(filename, '^.*/', '') AS source_file
-  FROM read_json_objects('../../dumps/railway/logs.*.json', format = 'array', filename = true)
-),
-deploy AS (
-  SELECT
-    'deploy_export',
-    (regexp_replace(json ->> 'timestamp', '(\.\d{6})\d*Z$', '\1Z')::TIMESTAMPTZ AT TIME ZONE 'UTC'),
-    -- The puller names the service in the filename. Older hand-made exports do
-    -- not, and were all taken from the web service; `deployment_service_mismatch`
-    -- tests that against the legacy tags rather than leaving it an assumption.
-    (SELECT service_id FROM railway_services svc
-      WHERE svc.railway_name = coalesce(
-        nullif(lower(regexp_extract(filename, '([a-z0-9-]+)\.deploy\.', 1)), ''), 'web')),
-    regexp_extract(filename, '([0-9a-f]{8}-[0-9a-f-]{20,})\.jsonl$', 1),
-    NULL, NULL,
-    json ->> 'level',
-    json ->> 'message',
-    json,
-    list_filter(json_keys(json),
-      lambda k: k NOT IN ('level', 'message', 'timestamp', 'logger', 'time', 'ts', 'pid')),
-    len(list_filter(json_keys(json), lambda k: k NOT IN ('level', 'message', 'timestamp'))) > 0,
-    regexp_replace(filename, '^.*/', '')
-  FROM read_json_objects('../../dumps/railway/*deploy*.jsonl', filename = true)
-  WHERE is_canonical_dump(filename)
-),
-merged AS (
-  SELECT *, row_number() OVER (
-    PARTITION BY ts, message
-    -- deploy_export sorts first, so the flattened shape wins a tie.
-    ORDER BY origin, source_file
-  ) AS dup_rank
-  FROM (SELECT * FROM legacy UNION ALL SELECT * FROM deploy)
-)
 SELECT
-  m.ts,
-  coalesce(svc.service, 'unknown:' || substr(m.service_id, 1, 8)) AS service,
-  norm_level(m.level_raw) AS level,
-  -- What an unstructured line means is a property OF the service, declared in
-  -- railway_services. An unmapped service is assumed countable and flagged by
-  -- `unknown_railway_service`.
-  CASE WHEN m.is_structured THEN 'json'
+  (r."timestamp"::TIMESTAMPTZ AT TIME ZONE 'UTC') AS ts,
+  coalesce(svc.service, 'unknown:' || substr(r.tags ->> 'serviceId', 1, 8), 'untagged') AS service,
+  norm_level(r.severity) AS level,
+  -- An unstructured line gets exactly one attribute, `level`, mirroring the
+  -- severity Railway assigned it. So the attribute count alone separates the
+  -- two. What an unstructured line means is a property OF the service, declared
+  -- in railway_services; an unmapped service is assumed countable and flagged
+  -- by `unknown_railway_service`.
+  CASE WHEN len(r.attributes) > 1 THEN 'json'
        ELSE coalesce(svc.unstructured_confidence, 'stream_app') END AS level_confidence,
   -- Which process wrote the line, inferred from the field only that one sets.
   -- Order matters: `logger` is the weakest of the three -- every python line and
   -- half of caddy's carry one -- so both must be claimed by their own field
   -- first. `json_line_without_emitter` guards the inference.
   CASE
-    WHEN json_exists(m.payload, '$.pid')    THEN 'python'
-    WHEN json_exists(m.payload, '$.ts')     THEN 'caddy'
-    WHEN json_exists(m.payload, '$.logger') THEN 'node'
+    WHEN attr(r.attributes, 'pid') IS NOT NULL    THEN 'python'
+    WHEN attr(r.attributes, 'ts') IS NOT NULL     THEN 'caddy'
+    WHEN attr(r.attributes, 'logger') IS NOT NULL THEN 'node'
     ELSE 'unstructured'
   END AS emitter,
-  m.payload ->> 'logger' AS logger,
-  (m.payload ->> 'pid')::BIGINT AS pid,
-  m.message,
-  contains(m.message, chr(10)) AS is_multiline,
-  -- Legacy only: a stderr traceback arrives one frame per row, and the frames
-  -- carry no level of their own. Always false for structured lines.
-  (NOT m.is_structured AND (m.message ~ '^\s' OR m.message = '')) AS is_continuation,
+  attr(r.attributes, 'logger') AS logger,
+  attr(r.attributes, 'pid')::BIGINT AS pid,
+  r.message,
+  contains(r.message, chr(10)) AS is_multiline,
+  -- Unstructured only: a stderr traceback arrives one frame per row, and the
+  -- frames carry no level of their own. Always false for structured lines.
+  (len(r.attributes) <= 1 AND (r.message ~ '^\s' OR r.message = '')) AS is_continuation,
   -- Whatever the caller passed as extra=, which is what the JSON flattening is
   -- for: these are the fields Railway lets you filter a query on.
-  m.extra_keys,
-  m.payload,
-  m.origin,
-  m.replica_id,
-  m.deployment_id,
-  m.environment,
-  m.service_id,
-  m.source_file
-FROM merged m
-LEFT JOIN railway_services svc ON svc.service_id = m.service_id
-WHERE m.dup_rank = 1;
+  list_filter(list_transform(r.attributes, lambda a: a.key),
+    lambda k: k NOT IN ('level', 'logger', 'time', 'ts', 'pid')) AS extra_keys,
+  r.attributes,
+  r.tags ->> 'deploymentInstanceId' AS replica_id,
+  r.tags ->> 'deploymentId' AS deployment_id,
+  r.tags ->> 'environmentId' AS environment,
+  r.tags ->> 'serviceId' AS service_id,
+  regexp_replace(r.filename, '^.*/', '') AS source_file
+FROM read_json('../../dumps/railway/deploy.*.ndjson',
+  format = 'newline_delimited', filename = true, columns = {
+    'timestamp': 'VARCHAR', 'message': 'VARCHAR', 'severity': 'VARCHAR',
+    'tags': 'JSON', 'attributes': 'STRUCT(key VARCHAR, value VARCHAR)[]'}) r
+LEFT JOIN railway_services svc ON svc.service_id = (r.tags ->> 'serviceId')::VARCHAR;
 
-COMMENT ON TABLE railway_lines IS 'GRAIN: one row per container log line, deduped across the legacy and per-deployment exports. Structured lines are one row per EVENT (traceback folded in); legacy stderr tracebacks are one row per frame. Check level_confidence before trusting level.';
+COMMENT ON TABLE railway_lines IS 'GRAIN: one row per container log line, every service, merged by the puller on (timestamp, message). Structured lines are one row per EVENT (traceback folded in); unstructured stderr tracebacks are one row per frame. Check level_confidence before trusting level.';
