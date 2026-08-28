@@ -15,6 +15,8 @@ Permanent Log Storage (see the notes below).
 Files land as <zone>.<zone-id>.<YYYY-MM-DD>.log, one per zone per UTC day, next
 to a manifest.json describing what was fetched. Re-runnable: a day is rewritten
 from scratch, so re-pulling today supersedes the partial file from an hour ago.
+A day that comes back thinner than the file it would replace is never written
+-- see trap 3.
 
 Needs BUNNY_API_KEY -- the *account* API key from the Bunny dashboard, not a
 storage-zone password -- taken from the environment or read out of the repo's
@@ -29,9 +31,16 @@ Three traps, all of which otherwise produce files that look complete:
   2. **Today's file is still being written.** It is not truncated and there is
      no marker in it saying so -- a partial day and a quiet day look identical
      once the file is on disk. The manifest records `complete`.
-  3. **A zone with logging switched off returns an empty body, not an error.**
-     Indistinguishable, in the file, from a zone that served no traffic. The
-     manifest records the zone's `logging_enabled` so the two stay separable.
+  3. **A day at the retention edge comes back trimmed, not absent.** The
+     answer is an ordinary 200 carrying a fraction of the rows the day held,
+     so nothing about it reads as a failure. An empty answer is as ambiguous:
+     404 is a day past retention *or* a zone that has served nothing yet
+     today, and an empty 200 is logging switched off *or* no traffic. None of
+     these can be told apart once the thin file is on disk, or from the full
+     dump it replaced -- which, for a source keeping four days, may be the
+     only copy that will ever exist. So a haul shorter than the dump is a hard
+     failure: the file is left alone, every remaining zone-day is still
+     attempted, and the run exits non-zero naming what came back short.
 
 Two things worth knowing about the contents. The remote IP is anonymized to a
 /24 unless the account has signed Bunny's DPA and turned anonymization off, so
@@ -71,17 +80,24 @@ LOGGING_BASE = "https://logging.bunnycdn.com"
 # say three days. Retention runs by calendar day and not as a rolling 72 hours,
 # so today plus three whole days are available: probing back from 2026-08-27
 # returned a full 11,913-row file for the 24th and a 404 for the 23rd. Asking
-# for more is allowed and costs one 404, which is why the ceiling only warns.
-#
-# The 404 matters -- it is what separates a day that aged out from a day the
-# zone was quiet, which both arrive as a zero-row file. The manifest keeps the
-# status for exactly that reason.
+# for more is allowed; the days past the edge come back trimmed and then empty,
+# and are reported as failures, which is why the ceiling warns rather than clamps.
 RETENTION_DAYS = 4
 
 
 # LogAnonymizationType is an integer enum on the wire. Spelled out here because
 # a bare 0 in the manifest reads as "no anonymization", which is its opposite.
 ANONYMIZATION = {0: "OneDigit", 1: "Drop"}
+
+
+class ShortHaul(Exception):
+    """Bunny answered a zone-day with less than the dump already holds.
+
+    Carries the reason, which is the only place the causes are still
+    distinguishable -- once a thin file has landed on top of a full one,
+    nothing can tell a trimmed day from a quiet one. Raised in place of the
+    write so the dump survives the run that failed.
+    """
 
 
 class Zone(NamedTuple):
@@ -138,8 +154,9 @@ def request(url: str, key: str) -> Fetched:
                     body = gzip.decompress(body)
                 return Fetched(body, response.status)
         except urllib.error.HTTPError as error:
-            # 404 is the ordinary answer for a day outside retention, so it is
-            # data rather than a failure; the caller records the empty haul.
+            # 404 is the ordinary answer for a day outside retention, so it
+            # comes back as a status for the caller to judge rather than as a
+            # transport error worth retrying.
             if error.code == 404:
                 return Fetched(b"", 404)
             if error.code == 401:
@@ -200,12 +217,41 @@ def utc_days(count: int) -> list[date]:
 
 
 def pull_day(zone: Zone, day: date, key: str, out: Path) -> dict[str, Any]:
-    """Fetch one zone-day, write it, and describe it for the manifest."""
+    """Fetch one zone-day, write it, and describe it for the manifest.
+
+    Raises ShortHaul, without touching the file on disk, when the answer
+    carries fewer rows than the dump it would replace.
+    """
     # Bunny addresses the day as MM-DD-YY, not ISO.
     url = f"{LOGGING_BASE}/{day:%m-%d-%y}/{zone.id}.log"
     body, status = request(url, key)
+    if status == 404:
+        # A 404 is the absence of a log file, which today and a day past the
+        # edge share: Bunny does not create one until the zone serves a request.
+        cause = (
+            "the zone has served nothing yet today"
+            if day >= datetime.now(UTC).date()
+            else f"the day is past Bunny's {RETENTION_DAYS}-day retention"
+        )
+        raise ShortHaul(f"HTTP 404, no log file for this day -- {cause}")
+    if not body.strip():
+        cause = (
+            "logging is switched off on this zone"
+            if not zone.logging_enabled
+            else "logging is on, so the zone served nothing in this window"
+        )
+        raise ShortHaul(f"HTTP {status} with an empty body -- {cause}")
 
     dest = out / f"{slug(zone.name)}.{zone.id}.{day:%Y-%m-%d}.log"
+    rows = len(body.splitlines())
+    # Retention trims a day rather than removing it, so the last answers before
+    # a day ages out are ordinary 200s carrying a fraction of what it held.
+    held = len(dest.read_bytes().splitlines()) if dest.is_file() else 0
+    if rows < held:
+        raise ShortHaul(
+            f"{rows} rows against the {held} already on disk -- Bunny is "
+            "trimming this day, and the dump is the fuller copy"
+        )
     dest.write_bytes(body)
 
     stamps = _timestamps(body)
@@ -215,7 +261,7 @@ def pull_day(zone: Zone, day: date, key: str, out: Path) -> dict[str, Any]:
         "zone_name": zone.name,
         "date": f"{day:%Y-%m-%d}",
         "http": status,
-        "rows": len(body.splitlines()),
+        "rows": rows,
         "bytes": len(body),
         "first_ts": _iso(min(stamps)) if stamps else None,
         "last_ts": _iso(max(stamps)) if stamps else None,
@@ -293,8 +339,8 @@ def main() -> None:
         sys.exit("--days must be at least 1")
     if args.days > RETENTION_DAYS:
         log(
-            f"warning: Bunny keeps {RETENTION_DAYS} days; the older files will "
-            "come back empty, with a 404 recorded in the manifest"
+            f"warning: Bunny keeps {RETENTION_DAYS} days; the older days come "
+            "back trimmed or empty and will be reported as failures"
         )
 
     key = read_key()
@@ -310,17 +356,35 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     days = utc_days(args.days)
     records: list[dict[str, Any]] = []
+    refused: list[str] = []
 
     for zone in zones:
         note = "" if zone.logging_enabled else "  (logging DISABLED on this zone)"
         log(f"== {zone.name} [{zone.id}]{note}")
         for day in days:
-            record = pull_day(zone, day, key, args.out)
+            try:
+                record = pull_day(zone, day, key, args.out)
+            except ShortHaul as short:
+                # Days are fetched oldest first, and the oldest is the one at
+                # the retention edge -- so giving up here would abandon today,
+                # the only day that cannot be pulled again tomorrow.
+                log(f"   {day:%Y-%m-%d}  REFUSED: {short}")
+                refused.append(f"{zone.name} {day:%Y-%m-%d}: {short}")
+                continue
             marker = "" if record["complete"] else " (partial: today)"
             log(f"   {record['date']}  {record['rows']:>7} rows{marker}")
             records.append(record)
 
     write_manifest(args.out, records)
+
+    if refused:
+        log("")
+        for line in refused:
+            log(f"REFUSED  {line}")
+        raise SystemExit(
+            f"\n{len(refused)} zone-day(s) came back short and were not written. "
+            "Every dump already on disk is untouched."
+        )
 
 
 if __name__ == "__main__":
