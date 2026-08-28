@@ -1,4 +1,5 @@
 import { SITE_NAME } from '$lib/constants';
+import { pageIdentity, publicUrl } from '$lib/public-url';
 import { resolveHref } from '$lib/utils';
 
 export type JsonLdNode = Record<string, unknown>;
@@ -16,15 +17,16 @@ export function jsonLdGraph(nodes: JsonLdNode[]): Record<string, unknown> {
  * hrefs look like and avoiding a base-vs-no-base mismatch between the
  * visible breadcrumb and the JSON-LD one. `resolveHref()` returns a path
  * relative to the current route (e.g. `../`), so it is resolved against
- * `pageUrl` rather than concatenated onto the origin.
+ * `publicUrl(pageUrl)` — same pathname, pinned to the public origin —
+ * rather than concatenated onto an origin.
  *
  * `pageUrl.pathname` already includes the base prefix, so callers reading
- * the *current* page's URL should use `pageUrl.origin + pageUrl.pathname`
- * directly rather than running pathname back through this helper.
+ * the *current* page's URL should use `pageIdentity(pageUrl)` rather than
+ * running pathname back through this helper.
  */
 export function absolutize(pageUrl: URL, path: string): string {
   if (/^https?:\/\//.test(path)) return path;
-  return new URL(resolveHref(path), pageUrl).href;
+  return new URL(resolveHref(path), publicUrl(pageUrl)).href;
 }
 
 /**
@@ -46,7 +48,7 @@ export function breadcrumbList(pageUrl: URL, crumbs: Crumb[], currentLabel: stri
       '@type': 'ListItem',
       position: crumbs.length + 1,
       name: currentLabel,
-      item: pageUrl.origin + pageUrl.pathname,
+      item: pageIdentity(pageUrl),
     },
   ];
   return { '@type': 'BreadcrumbList', itemListElement: items };
@@ -79,7 +81,7 @@ export function pageNode(
   name: string,
   description?: string,
 ): JsonLdNode {
-  const self = pageUrl.origin + pageUrl.pathname;
+  const self = pageIdentity(pageUrl);
   const node: JsonLdNode = {
     '@type': type,
     '@id': self,

@@ -29,3 +29,11 @@ window.matchMedia ??= (() => ({
   media: '',
   onchange: null,
 })) as unknown as typeof window.matchMedia;
+
+// In browser-transformed modules SvelteKit compiles `$env/dynamic/public` to
+// `export const env = globalThis.__sveltekit_dev.env;` — a global only the
+// real client runtime defines, so importing it here would otherwise throw.
+// Provide an empty env; tests that need values mock the module instead.
+(globalThis as { __sveltekit_dev?: { env: Record<string, string> } }).__sveltekit_dev ??= {
+  env: {},
+};

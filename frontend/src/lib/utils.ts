@@ -1,5 +1,6 @@
 import { asset, resolve } from '$app/paths';
 import type { CorporateEntityDetailSchema } from '$lib/api/schema';
+import { publicUrl } from '$lib/public-url';
 
 /** Years within which an unknown operating status is presumed to still be producing. */
 const UNKNOWN_RECENCY_YEARS = 6;
@@ -70,7 +71,7 @@ export function formatActiveRange(
  * transformation.
  */
 export function absoluteAssetUrl(path: string, pageUrl: URL): string {
-  return new URL(asset(path), pageUrl.origin).href;
+  return new URL(asset(path), publicUrl(pageUrl).origin).href;
 }
 
 export function websiteHostname(url: string): string {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { SITE_NAME } from '$lib/constants';
+  import { publicUrl } from '$lib/public-url';
   import { absoluteAssetUrl } from '$lib/utils';
   import {
     buildFullTitle,
@@ -25,7 +26,8 @@
     ogType?: 'website' | 'article' | 'profile';
   } = $props();
 
-  let canonicalUrl = $derived(buildCanonicalUrl(url));
+  let pageUrl = $derived(publicUrl(new URL(url)));
+  let canonicalUrl = $derived(buildCanonicalUrl(pageUrl.href));
   let fullTitle = $derived(buildFullTitle(title));
   let metaDescription = $derived(truncateMetaDescription(description));
   let ogDescription = $derived(truncateOgDescription(description));
@@ -34,7 +36,6 @@
   // branded 1200×630 default. Previewers overwhelmingly render og:image and
   // ignore Twitter's small-card mode, so one landscape asset covers every
   // surface; alt mirrors whichever image is used.
-  let pageUrl = $derived(new URL(url));
   let defaultSocialImageUrl = $derived(absoluteAssetUrl(DEFAULT_SOCIAL_IMAGE.path, pageUrl));
   let shareImageUrl = $derived(image ?? defaultSocialImageUrl);
   let shareImageAlt = $derived(image ? imageAlt : DEFAULT_SOCIAL_IMAGE.alt);

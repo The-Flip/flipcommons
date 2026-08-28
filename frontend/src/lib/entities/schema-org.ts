@@ -1,4 +1,5 @@
 import type { RichTextSchema } from '$lib/api/schema';
+import { pageIdentity } from '$lib/public-url';
 import { ENTITY_META, type CatalogEntityKey, type EntityRelationship } from './entity-meta';
 import {
   jsonLdGraph,
@@ -221,7 +222,7 @@ export function buildListingJsonLd(
   const nodes: JsonLdNode[] = [collection];
 
   if (pageUrl.search === '') {
-    const itemListId = `${pageUrl.origin + pageUrl.pathname}#items`;
+    const itemListId = `${pageIdentity(pageUrl)}#items`;
     collection.mainEntity = { '@id': itemListId };
     nodes.push({
       '@type': 'ItemList',

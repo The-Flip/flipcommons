@@ -1,111 +1,96 @@
 # Canonical URL
 
-This is the plan for emitting `<link rel="canonical" href="...">` on every indexable page, so search engines consolidate ranking signals on one authoritative URL when the same content is reachable via multiple paths (trailing-slash variants, query-string variants, scheme/host variants).
+Every indexable page emits `<link rel="canonical" href="...">` so search engines consolidate ranking signals on one authoritative URL when the same content is reachable via multiple paths (trailing-slash variants, query-string variants, scheme/host variants).
 
 Addresses the "canonical URLs" concern in [`SearchEngines.md`](SearchEngines.md).
 
-## Scope — what this plan does and doesn't cover
+## Open questions
 
-**In scope:** a `<link rel="canonical">` tag injected into every indexable page's `<head>`, pointing to the normalized URL for the current page.
+**Faceted and paginated listing URLs** (`?page=2`, `?manufacturer=stern`). Canonical strips the query string for every route, which points every filter combination at the base listing. Whether that is the right policy — versus preserving `?page=` so deep pages stay individually indexable, or `noindex` on filter combinations — is tracked as its own concern in [`SearchEngines.md`](SearchEngines.md). A per-route allowlist of canonical-bearing query params is the natural shape if the answer is "preserve some".
 
-**Out of scope (already handled elsewhere):**
+## Scope
 
-- **Single-Model-Title duplication.** The `/models/[slug]` route already 301-redirects to the Title route when the parent Title has exactly one Model. A 301 collapses the duplicate at the HTTP layer and consolidates signals on the target; canonical tags are not load-bearing for this case. `ModelSitemapFeed` also excludes these Models per [`Sitemap.md`](Sitemap.md).
-- **Slug renames.** Handled by 301 redirects in the slug-edit flow per the "URL stability across slug changes" concern in [`SearchEngines.md`](SearchEngines.md).
-- **Faceted/paginated listing URLs** (`?page=2`, `?manufacturer=stern`). Tracked as a separate concern in [`SearchEngines.md`](SearchEngines.md); the canonical strategy there (canonicalize filters back to the base listing vs. `noindex` filter combinations) needs its own decision and may end up using this same `<link rel="canonical">` mechanism with route-specific rules.
+**In scope:** a `<link rel="canonical">` on every indexable page, pointing at the normalized URL for the current page, always on the site's public origin.
 
-What's left for this plan: mechanical canonicalization — strip the query string, normalize the trailing slash, ensure the canonical href uses the production origin (not the request host).
+**Handled elsewhere:**
 
-## Goals
-
-- Every indexable page emits exactly one `<link rel="canonical">` pointing to the normalized URL.
-- Canonical href always uses `SITE_ORIGIN`, never the request host — so a request to a preview origin or an unexpected hostname still points search engines at production.
-- Query strings are stripped by default; routes that legitimately use query params for distinct content opt in.
-- Non-indexable routes don't emit a canonical (they're already `noindex` per [`NoindexMeta.md`](NoindexMeta.md); a canonical would be noise).
+- **Single-Model-Title duplication.** `/models/[slug]` 301-redirects to the Title route when the parent Title has exactly one Model (`frontend/src/routes/models/[slug]/+page.server.ts`). A 301 collapses the duplicate at the HTTP layer, so canonical tags are not load-bearing here. `ModelSitemapFeed` also excludes these Models per [`Sitemap.md`](Sitemap.md).
+- **Slug renames.** 301 redirects in the slug-edit flow, per the "URL stability across slug changes" concern in [`SearchEngines.md`](SearchEngines.md).
 
 ## Mechanism
 
-A `handle` hook (`canonicalHandle` in `frontend/src/hooks.server.ts`) added to the existing `sequence()` alongside `noindexHandle`. It computes the canonical URL from `event.url` + `event.route.id` and string-inserts the tag into the rendered HTML's `<head>` via `transformPageChunk` — exactly mirroring how `noindexHandle` injects the noindex meta tag (see [`NoindexMeta.md`](NoindexMeta.md) § "Mechanism" for the architectural rationale; the same reasoning applies here):
+`MetaTags` (`frontend/src/lib/components/layout/page/head/MetaTags.svelte`) emits the tag from a `<svelte:head>` block, alongside the page's other head content. Callers pass the current `page.url`; the component pins it to the public origin and strips the query and fragment:
 
-```ts
-export const canonicalHandle: Handle = async ({ event, resolve }) => {
-  if (!shouldIndex(event.route.id)) return resolve(event);
-
-  const canonical = canonicalUrl(event.url, event.route.id);
-  const tag = `<link rel="canonical" href="${escapeHtmlAttribute(canonical)}" />`;
-  return resolve(event, {
-    transformPageChunk: ({ html }) =>
-      html.replace("</head>", `${tag}\n</head>`),
-  });
-};
-
-export const handle = sequence(
-  Sentry.sentryHandle(),
-  noindexHandle,
-  canonicalHandle,
-);
+```svelte
+let pageUrl = $derived(publicUrl(new URL(url)));
+let canonicalUrl = $derived(buildCanonicalUrl(pageUrl.href));
 ```
 
-`shouldIndex(id)` is already defined in `hooks.server.ts` for the noindex case — same predicate, opposite direction. Reuse it directly: a route is canonical-eligible iff it's indexable. Null and unclassified routes (`+server.ts` endpoints) get neither signal.
+`buildCanonicalUrl` (`meta-tags.ts`) drops everything from `?` or `#` onward. `og:url` uses the same value, so the two never disagree.
 
-`canonicalUrl(url, routeId)` lives in `frontend/src/lib/seo/canonical.ts`:
+Because the tag renders through `<svelte:head>`, Svelte escapes the attribute value — dynamic segments (`[slug]`, `[...path]`) need no separate escaping step.
 
-- Replace the origin with `SITE_ORIGIN` (read via `$env/static/public`; the value is also referenced by the canonical itself, so co-locating with public env keeps it grep-able).
-- Normalize the trailing slash to the project's convention (no trailing slash, matching SvelteKit defaults).
-- Drop the query string and fragment by default.
-- Per-route opt-in for preserved query params: a small `CANONICAL_QUERY_PARAMS` map keyed by route ID listing the params that contribute to canonical identity (e.g. paginated listings might keep `?page=`). Empty by default; populated only when a route needs it.
+### The public origin
 
-`escapeHtmlAttribute(s)` is a small utility (likely co-located with `canonicalUrl`) that escapes `&`, `<`, `>`, `"`, `'` for safe insertion into an HTML attribute value. The canonical URL is built from `event.url.pathname`, which can contain user-controlled dynamic-segment values (`[slug]`, `[...path]`); even though SvelteKit's routing constrains what can match, escaping at the insertion site is the right defensive layer — same reason we URL-encode at every boundary even when we "know" the input.
+`publicUrl(url)` (`frontend/src/lib/public-url.ts`) rebases a URL onto `PUBLIC_SITE_ORIGIN` and is the single mechanism keeping SEO URLs off the request host. Two independent reasons the request host is the wrong source:
 
-Notes:
+- **On the server,** Bunny fronts the site with Forward Host Header off (see [`../../Hosting.md`](../../Hosting.md) § Client IP trust), so the `Host` header reaching Node is the Railway origin hostname.
+- **In the browser,** `page.url` follows the address bar, so a page served from any non-public host would declare that host as its identity after hydration.
 
-- **Separate hook, not folded into `noindexHandle`.** Noindex fires on non-indexable; canonical fires on indexable; they never both fire for the same route. Keeping them as independent hooks in the `sequence()` keeps each one's responsibility scannable and lets the tests be split cleanly. The extra `transformPageChunk` pass is negligible.
-- **`transformPageChunk` string-replaces `</head>`.** Same pattern noindex uses; the head reliably appears in the first chunk so the replace is single-pass and unambiguous.
-- **`ssr=false` routes get the canonical on the initial response.** The hook fires for every request including the static-shell response, so the canonical tag lands on the first response (not deferred to a later `__data.json` fetch the way a layout-load implementation would be). Mirror of the same property `noindexHandle` provides.
+It builds the result by concatenating onto the configured origin rather than passing it as a `URL` base, so a pathname beginning with `//` — a network-path reference — cannot resolve onto a foreign host. The origin holds by construction.
+
+It returns the URL unchanged in two cases: when `PUBLIC_SITE_ORIGIN` is unset, so `make dev` works against `localhost:5173`; and during prerender, so prerendered pages depend only on `prerender.origin` — the build-time `SITE_ORIGIN` already baked into `page.url` — never on the build machine's environment.
+
+### Origin configuration
+
+`SITE_ORIGIN` is the one operator-facing setting. `scripts/start-production` maps it to the name each runtime requires, so the values cannot drift:
+
+```sh
+export PUBLIC_SITE_ORIGIN="${SITE_ORIGIN:?SITE_ORIGIN must be the public origin, e.g. https://flipcommons.org}"
+ORIGIN="${SITE_ORIGIN}" HOST=127.0.0.1 PORT="${NODE_PORT}" node build/index.js &
+```
+
+The `:?` guard catches a set-but-empty `SITE_ORIGIN`, which `set -u` alone does not — the Dockerfile declares `ENV SITE_ORIGIN=""` as its build-arg default. An empty `ORIGIN` crashes Node at boot because adapter-node rejects it, but an empty `PUBLIC_SITE_ORIGIN` would degrade silently to the request host, so the guard sits on the export.
+
+`ORIGIN` tells adapter-node its public URL, which is what `page.url.origin` resolves to for every server-side consumer. `PUBLIC_SITE_ORIGIN` carries the same value to the browser — `$env/dynamic/public` exposes only `PUBLIC_`-prefixed variables. `core.E303`/`E304` (`apps/core/checks.py`) block a deploy when `SITE_ORIGIN` is missing or malformed, and `svelte.config.js` refuses a Railway build without it.
+
+### Everything that carries page identity
+
+Canonical is one of six places the public origin has to hold. Two helpers in `public-url.ts` cover them: `publicUrl(url)` rebases a whole URL, and `pageIdentity(url)` returns the `origin + pathname` string that identity fields want — no query, no fragment.
+
+| location                                 | emits                                                        | via              |
+| ---------------------------------------- | ------------------------------------------------------------ | ---------------- |
+| `MetaTags.svelte`                        | canonical, `og:url`                                          | `publicUrl()`    |
+| `utils.ts` — `absoluteAssetUrl()`        | `og:image`, `twitter:image` when no CDN origin is configured | `publicUrl()`    |
+| `jsonld.ts` — `absolutize()`             | breadcrumb `item` for ancestor crumbs                        | `publicUrl()`    |
+| `jsonld.ts` — `breadcrumbList()`         | breadcrumb `item` for the current page                       | `pageIdentity()` |
+| `jsonld.ts` — `pageNode()`               | `@id` and `url`                                              | `pageIdentity()` |
+| `schema-org.ts` — `buildListingJsonLd()` | `ItemList` `@id`                                             | `pageIdentity()` |
+
+Callers keep passing `page.url`; normalization happens at these sinks, so no route has to remember. The invariant is greppable: SEO code never reads `.origin` off a request URL — it goes through one of these two helpers.
 
 ## What gets a canonical
 
-Every route where `isSearchEngineIndexable(routeId) === true`. Non-indexable routes get `noindex` instead and don't need a canonical. Unclassified routes (`+server.ts` endpoints like `/__health`) also get neither — they're not pages and would never be indexed regardless.
+Every route that renders `MetaTags`, which is every indexable route. `MetaTags` lives in the shared `[slug]/+layout.svelte` for each catalog entity, so detail pages and their child routes (`edit-history`, `sources`, nested listings like `/manufacturers/[slug]/systems`) all inherit it and each emits a self-referencing canonical for its own URL.
+
+Non-indexable routes carry `noindex` (per [`NoindexMeta.md`](NoindexMeta.md)) and no server-rendered canonical: they either omit `MetaTags` entirely (`/login`, `/search`, `/api-docs`) or set `ssr = false` so the served HTML has no head content (catalog edit and delete routes, `/users/[username]`, `/changesets`) — though on those routes the inherited `MetaTags` still adds a canonical after client rendering; the `noindex` remains authoritative.
 
 ## Gate on `ALLOW_SEARCH_ENGINE_INDEXING`?
 
-No. Same reasoning as [`NoindexMeta.md`](NoindexMeta.md) § "Gate on `ALLOW_SEARCH_ENGINE_INDEXING`?" — on non-prod deploys, robots.txt's `Disallow: /` already keeps crawlers out; the canonical tag is harmless redundancy. Unconditional emission keeps local testing trivial.
+No. Same reasoning as [`NoindexMeta.md`](NoindexMeta.md) § "Gate on `ALLOW_SEARCH_ENGINE_INDEXING`?" — on non-prod deploys robots.txt's `Disallow: /` keeps crawlers out, so the canonical tag is harmless redundancy. Unconditional emission keeps local testing trivial.
 
 ## Tests
 
-`frontend/src/hooks-canonical.server.test.ts` mirrors the structure of `hooks-noindex.server.test.ts`: import `canonicalHandle`, run it against a stubbed `event`/`resolve`, capture the `transformPageChunk` invocation, assert on the rendered HTML and headers.
+- `frontend/src/lib/public-url.test.ts` — `publicUrl()` and `pageIdentity()` in isolation: rebasing, the `//` network-path case, identity stripping query and fragment, the unset-env and prerender fallbacks.
+- `frontend/src/lib/public-origin-sinks.test.ts` — every sink in the table above resolves to the public origin when `page.url` is on another host.
+- `frontend/src/lib/components/layout/page/head/MetaTags.dom.test.ts` — the rendered `<head>`: canonical and `og:url` agree and sit on the public origin.
+- `backend/tests/test_public_origin_wiring.py` — pins the `scripts/start-production` contract that derives `ORIGIN` and `PUBLIC_SITE_ORIGIN` from `SITE_ORIGIN`, in the shape of `test_ssr_api_route.py`.
+- `frontend/src/lib/components/layout/page/head/meta-tags.test.ts` — `buildCanonicalUrl()` query and fragment stripping.
 
-Cases:
+## Alternatives considered
 
-- Indexable route (`/`, `/about`, `/titles/[slug]`) with no query string → response body contains `<link rel="canonical" href="${SITE_ORIGIN}${pathname}" />`.
-- Indexable route with a query string → canonical strips the query.
-- Indexable route reached via a non-prod request host (e.g. `preview.example.com`) → canonical still uses `SITE_ORIGIN`.
-- Non-indexable route (`/login`, `/admin/dashboard`, `/titles/[slug]/edit`) → no `<link rel="canonical">` in the body, `resolve` called without options.
-- `route.id === null` (404) → no canonical.
-- Unclassified route (`/__health`) → no canonical, no crash.
-- Per-route query-param allowlist: when `CANONICAL_QUERY_PARAMS` lists `page` for a route, the canonical preserves `?page=2` but still strips other params.
-
-Unit tests for `canonicalUrl()` cover trailing-slash normalization, query-param allowlist application, and the `SITE_ORIGIN` override in isolation from the hook plumbing.
-
-## Implementation order
-
-1. `frontend/src/lib/seo/canonical.ts` — pure `canonicalUrl()` + `escapeHtmlAttribute()` functions, unit-tested.
-2. Add `canonicalHandle` to `frontend/src/hooks.server.ts` and append it to the `sequence()` after `noindexHandle`.
-3. Add `frontend/src/hooks-canonical.server.test.ts` per § "Tests".
-4. Verify locally:
-   - `curl -s localhost:5173/titles/medieval-madness | grep canonical` shows `<link rel="canonical" href="${SITE_ORIGIN}/titles/medieval-madness" />`.
-   - `curl -s 'localhost:5173/titles/medieval-madness?foo=bar' | grep canonical` shows the same canonical (no query).
-   - `curl -s localhost:5173/login | grep canonical` shows nothing.
-   - `curl -s localhost:5173/__health | grep canonical` shows nothing.
-
-## Considered alternatives
-
-- **Layout-load implementation (`+layout.server.ts` returns `{ indexable, canonical }`, root `+layout.svelte` reads `data.canonical` in a `<svelte:head>` block).** Rejected for the same reason `NoindexMeta.md` rejected it: pushes `indexable`/`canonical` fields into every page's `PageData` type, forcing every test that constructs a literal `data` fixture to add them. Also fails to emit the canonical on the initial response for `ssr=false` routes (SvelteKit serves the static shell without running layout loads; the data lands only on the deferred `__data.json` fetch). The hook approach has neither problem.
-- **Fold into `noindexHandle`.** Considered — both hooks read `shouldIndex(event.route.id)` and both inject into `</head>` via `transformPageChunk`. Rejected to keep each hook single-responsibility: noindex and canonical are complementary signals (exactly one fires per route), and splitting them keeps each one's intent obvious in the `sequence()` and lets the test files name what they cover. The cost (one extra `transformPageChunk` pass on indexable routes) is invisible.
-- **Use `event.url.href` directly.** Rejected: bakes in the request host and query string, so a request to a preview origin or with a tracking param would emit a wrong canonical. The `canonicalUrl()` helper exists precisely to strip these.
-- **Per-page `<svelte:head>` blocks in each indexable route.** Rejected: would silently miss any new indexable route until a reviewer noticed. Centralizing in a hook means a new route inherits correct behavior automatically.
-- **Fold into `NoindexMeta.md` and rename it `HeadSeoTags.md`.** Considered — same mechanism, both driven by `isSearchEngineIndexable()`. Rejected to keep each plan single-purpose and matching the existing `seo/` directory pattern. The implementation files (`hooks.server.ts`, the two hook tests) share a directory and a helper; the plans don't need to.
-
-## Open questions
-
-None.
+- **Canonical derived from the request host** (`page.url.href` unpinned, or `event.url.href` in a hook). Rejected 2026-08-28: behind a CDN that does not forward the visitor's `Host`, the request host is an internal origin hostname, so pages advertise a host that is not the public one and search engines treat the public URL as an alternate of it. The failure is silent — the page renders correctly and only the crawler notices. `publicUrl()` exists precisely to make identity independent of how the request arrived.
+- **A `handle` hook that injects the tag server-side.** Rejected: a hook can inject `<link rel="canonical">` and nothing else, so the other five identity sinks — which render inside Svelte components — would still need their own mechanism. Two systems for one invariant, and both would emit a canonical unless `MetaTags` stopped. Its one structural advantage, that a server-injected string cannot be rewritten during hydration, is already provided by pinning to `PUBLIC_SITE_ORIGIN`, which does not vary with browser location.
+- **Layout-load implementation** (`+layout.server.ts` returns `{ canonical }`, root `+layout.svelte` reads `data.canonical`). Rejected for the reason [`NoindexMeta.md`](NoindexMeta.md) gives: it pushes a `canonical` field into every page's `PageData` type, forcing every test that builds a literal `data` fixture to carry it.
+- **A separate `ORIGIN` variable on the Railway service.** Rejected: `ORIGIN`, `PUBLIC_SITE_ORIGIN` and `SITE_ORIGIN` always hold the same value, so configuring them independently invites drift and needs a cross-check to police it. Deriving in the entrypoint keeps one operator-facing setting and puts the mapping where a test can see it.
+- **Forwarding the visitor's `Host` at the CDN.** Rejected: it would make the request host correct, but the apex would have to stay a validated Railway custom domain — which can de-validate once DNS points at the CDN — and it leaves correctness resting on a dashboard setting no test can reach. See [`../../Hosting.md`](../../Hosting.md) § Networking.
