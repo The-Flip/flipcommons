@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """Download Sentry issues, events and releases into production_logs/dumps/sentry/.
 
-Re-runnable in either direction, which is what a --days smaller than the last
-run's makes necessary. The two kinds of file here differ in whether the copy on
-disk is replaceable:
+Re-runnable in either direction: no --days, however narrow, discards what a
+wider run reached. The files differ in how a re-run combines with the copy on
+disk:
 
   * Event streams (events.ndjson, discover_errors.ndjson, events/*.ndjson) are
     APPEND-shaped and MERGE. Sentry drops events at 90 days, so a dump pulled
     at --days 90 months ago holds events the API can no longer return, and
     rewriting it from a narrower window would destroy the only copy. Deduped on
     the event id; a re-fetched event supersedes the stored one.
-  * Snapshots (projects, issues, releases) are window-scoped state -- an issue's
-    status, its all-time count, its lastSeen -- and are REPLACED. Merging them
-    would carry an issue with no activity in this window forward with stale
-    counts, which is precisely what sentry_issues' grain says it is not.
+  * issues.json is a windowed snapshot of MUTABLE state -- an issue's status, its
+    all-time count, its lastSeen -- so it has no timestamp axis to append along.
+    It MERGES on the issue id, and every row carries `_observed_at`, the instant
+    the pull that wrote it read Sentry. That stamp is what makes merging honest:
+    rows here describe different instants, and without it a carried-over row
+    would silently claim to be current. Read it before trusting a count.
+  * projects.json and releases.json are fetched org-wide rather than windowed, so
+    --days cannot narrow them and they are simply REPLACED.
 
-Narrowing therefore costs reach in the snapshots and nothing in the events, and
-each merged file reports how many rows it carried over so a shrinking pull says
-so out loud. Nothing here interprets the data -- shaping and grain rules belong
-to production_logs/analyze/sql/.
+Each merged file reports how many rows it carried over. Nothing here interprets
+the data -- shaping and grain rules belong to production_logs/analyze/sql/.
 
     production_logs/pull/sentry                  # last 30 days
     production_logs/pull/sentry --days 90        # Sentry's retention ceiling
@@ -144,9 +146,34 @@ def log(message: str) -> None:
 
 
 def write_json(path: Path, payload: object) -> None:
-    """Replace a snapshot file. See the module docstring for why these do not merge."""
+    """Replace a snapshot file. See the module docstring for which ones may be."""
     write_atomic(path, json.dumps(payload, indent=1, sort_keys=True))
     report(path, len(payload) if isinstance(payload, list) else 1)
+
+
+def read_json_array(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return list(json.loads(path.read_text()))
+
+
+def merge_snapshot(
+    path: Path, rows: list[dict[str, Any]], key: str, observed_at: str
+) -> None:
+    """Merge a windowed snapshot into the dump on disk, keyed on `key`.
+
+    Every row carries `_observed_at`, the instant the pull that produced it read
+    Sentry. A snapshot row is mutable state, so two rows in this file can describe
+    different instants; the stamp is what tells them apart, and without it the only
+    honest option would be to replace the file and lose whatever the window missed.
+    A re-fetched row supersedes the stored one, stamp and all.
+    """
+    prior = {str(row[key]): row for row in read_json_array(path)}
+    fresh = {str(row[key]): row | {"_observed_at": observed_at} for row in rows}
+    merged = prior | fresh
+    ordered = [merged[k] for k in sorted(merged)]
+    write_atomic(path, json.dumps(ordered, indent=1, sort_keys=True))
+    report(path, len(ordered), carried=len(prior.keys() - fresh.keys()))
 
 
 def event_key(row: dict[str, Any]) -> str:
@@ -208,6 +235,7 @@ def main() -> None:
 
     end = datetime.now(UTC)
     start = end - timedelta(days=args.days)
+    observed_at = end.isoformat()
     window = {"start": start.strftime(TIME_FMT), "end": end.strftime(TIME_FMT)}
     log(f"pulling {args.days}d for {org}: {window['start']} -> {window['end']}")
 
@@ -224,7 +252,7 @@ def main() -> None:
         if issue_events:
             write_ndjson(out / "events" / f"{issue['shortId']}.ndjson", issue_events)
 
-    write_json(out / "issues.json", issues)
+    merge_snapshot(out / "issues.json", issues, key="id", observed_at=observed_at)
     write_ndjson(out / "events.ndjson", events)
 
     # The Discover errors dataset: one flat row per error event. Cheaper to query

@@ -106,15 +106,16 @@ SELECT
   userCount::BIGINT AS lifetime_users,
   firstSeen AS first_seen,
   lastSeen AS last_seen,
-  permalink
+  permalink,
+  _observed_at AS observed_at
 FROM read_json('../../dumps/sentry/issues.json', format = 'array', columns = {
     'shortId': 'VARCHAR', '_project': 'VARCHAR', 'title': 'VARCHAR',
     'culprit': 'VARCHAR', 'level': 'VARCHAR', 'issueCategory': 'VARCHAR',
     'issueType': 'VARCHAR', 'status': 'VARCHAR', 'count': 'VARCHAR',
     'userCount': 'VARCHAR', 'firstSeen': 'TIMESTAMP', 'lastSeen': 'TIMESTAMP',
-    'permalink': 'VARCHAR'});
+    'permalink': 'VARCHAR', '_observed_at': 'TIMESTAMP'});
 
-COMMENT ON TABLE sentry_issues IS 'GRAIN: one row per issue with activity in the window. lifetime_events/lifetime_users are ALL-TIME counts and do not match the window -- join to sentry_errors to count in-window.';
+COMMENT ON TABLE sentry_issues IS 'GRAIN: one row per issue ever pulled, state as of observed_at -- NOT one row per issue active in the current window, since a narrow pull merges into the rows a wider one left. status and the lifetime counts are only as fresh as observed_at, which is NULL where the vintage is unknown. lifetime_events/lifetime_users are ALL-TIME counts and do not match any window -- join to sentry_errors to count in-window.';
 
 -- Full event payloads: stacktraces, breadcrumbs, request, contexts, tags. 23MB of
 -- deeply nested JSON, so heavy to SELECT * from -- filter first.
