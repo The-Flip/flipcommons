@@ -50,29 +50,18 @@ bunny AS (
 )
 SELECT c.*,
   -- One warning to a reader: this file is not the whole account of its window.
-  -- pull/railway reports truncation as a fact; the row_cap arm is the fallback
-  -- for files no pull run recorded, where sitting exactly on a known cap is the
-  -- only signal available. Bunny caps nothing, but the day still in progress at
-  -- pull time says the same thing, so it lands in the same column. A Bunny file
-  -- the manifest does not cover is flagged rather than cleared, because
+  -- `complete` is the puller's own record -- a day over at pull time, or for
+  -- Sentry a count()-verified haul -- so a file still accumulating is flagged,
+  -- and so is a file the manifest does not cover (a hand-dropped dump), because
   -- completeness is what cannot be read back off the file.
-  coalesce(
-    man.truncated,
-    NOT bman.complete,
-    c.rows >= cap.row_cap,
-    c.source = 'bunny',
-    false
-  ) AS likely_truncated,
+  NOT coalesce(man.complete, false) AS likely_truncated,
   date_diff('minute', c.window_start, c.window_end) AS window_minutes
 FROM (SELECT * FROM railway UNION ALL SELECT * FROM http UNION ALL SELECT * FROM sentry
       UNION ALL SELECT * FROM bunny) c
-LEFT JOIN railway_manifest man ON man.file = c.source_file
-LEFT JOIN bunny_manifest bman ON bman.file = c.source_file
-LEFT JOIN railway_export_caps cap
-       ON c.source = 'railway' AND cap.kind = railway_export_kind(c.source_file)
+LEFT JOIN manifests man ON man.file = c.source_file
 ORDER BY c.source, c.stream, c.window_start;
 
-COMMENT ON VIEW coverage IS 'GRAIN: one row per source file / stream. THE view to read before any cross-source claim: it states each export''s real window, flags files that are not the whole account of it (a Railway export on its row cap, a Bunny day still in progress), and shows how much of Railway postdates structured logging.';
+COMMENT ON VIEW coverage IS 'GRAIN: one row per source file / stream. THE view to read before any cross-source claim: it states each export''s real window and flags files that are not the whole account of it -- a day still accumulating at pull time, or a file the manifest never recorded.';
 
 -- `count(*)` over these rows is meaningless whatever the filter: a row is a log
 -- line on one branch, a failed request on another and a grouped Sentry event on a

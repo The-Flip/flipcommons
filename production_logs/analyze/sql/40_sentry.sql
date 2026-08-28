@@ -30,13 +30,9 @@
 -- Sentry adds is then ignored until it is declared here, which is the direction of
 -- failure to prefer.
 --
--- NO CHECK FIRES ON AN EMPTY EXPORT, deliberately. Railway and Bunny each write a
--- manifest recording what the puller believed it fetched, which is what makes
--- "this file should have had rows" answerable for them. pull/sentry writes none,
--- so a quiet window and a failed pull are identical on disk and any check would
--- fire on the healthy one. Giving pull/sentry a manifest -- it already verifies
--- its haul against Sentry's own count(), then discards the number -- is what would
--- make this checkable.
+-- An empty export is therefore readable, and sentry_manifest (10_manifests.sql)
+-- records whether the pull's count() verification passed, which is what
+-- separates a quiet window from a failed pull.
 
 CREATE OR REPLACE TABLE sentry_errors AS
 SELECT
@@ -106,15 +102,16 @@ SELECT
   userCount::BIGINT AS lifetime_users,
   firstSeen AS first_seen,
   lastSeen AS last_seen,
-  permalink
+  permalink,
+  _observed_at AS observed_at
 FROM read_json('../../dumps/sentry/issues.json', format = 'array', columns = {
     'shortId': 'VARCHAR', '_project': 'VARCHAR', 'title': 'VARCHAR',
     'culprit': 'VARCHAR', 'level': 'VARCHAR', 'issueCategory': 'VARCHAR',
     'issueType': 'VARCHAR', 'status': 'VARCHAR', 'count': 'VARCHAR',
     'userCount': 'VARCHAR', 'firstSeen': 'TIMESTAMP', 'lastSeen': 'TIMESTAMP',
-    'permalink': 'VARCHAR'});
+    'permalink': 'VARCHAR', '_observed_at': 'TIMESTAMP'});
 
-COMMENT ON TABLE sentry_issues IS 'GRAIN: one row per issue with activity in the window. lifetime_events/lifetime_users are ALL-TIME counts and do not match the window -- join to sentry_errors to count in-window.';
+COMMENT ON TABLE sentry_issues IS 'GRAIN: one row per issue ever pulled, state as of observed_at -- NOT one row per issue active in a window, since a narrow pull merges into the rows a wider one left. status and the lifetime counts are only as fresh as observed_at. lifetime_events/lifetime_users are ALL-TIME counts and do not match any window -- join to sentry_errors to count in-window.';
 
 -- Full event payloads: stacktraces, breadcrumbs, request, contexts, tags. 23MB of
 -- deeply nested JSON, so heavy to SELECT * from -- filter first.

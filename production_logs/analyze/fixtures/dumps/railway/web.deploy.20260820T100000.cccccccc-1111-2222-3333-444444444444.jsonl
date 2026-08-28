@@ -1,2 +1,0 @@
-{"timestamp": "2026-08-20T10:00:02.000000000Z", "level": "info", "message": "Using worker: sync", "logger": "gunicorn.error", "pid": 7}
-{"timestamp": "2026-08-20T10:00:03.000000000Z", "level": "error", "message": "boom", "logger": "django.request", "pid": 7}

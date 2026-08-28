@@ -1,0 +1,40 @@
+{
+ "files": [
+  {
+   "complete": true,
+   "file": "discover_errors.ndjson",
+   "first_ts": "2026-08-20T10:00:05",
+   "kind": "discover",
+   "last_ts": "2026-08-20T10:00:05",
+   "pulled_at": "2026-08-21T00:00:00.000000Z",
+   "rows": 1
+  },
+  {
+   "complete": true,
+   "file": "events.ndjson",
+   "first_ts": "2026-08-20T10:00:06",
+   "kind": "events",
+   "last_ts": "2026-08-20T10:00:06",
+   "pulled_at": "2026-08-21T00:00:00.000000Z",
+   "rows": 1
+  },
+  {
+   "complete": true,
+   "file": "issues.json",
+   "first_ts": null,
+   "kind": "issues",
+   "last_ts": null,
+   "pulled_at": "2026-08-21T00:00:00.000000Z",
+   "rows": 1
+  },
+  {
+   "complete": true,
+   "file": "releases.json",
+   "first_ts": null,
+   "kind": "releases",
+   "last_ts": null,
+   "pulled_at": "2026-08-21T00:00:00.000000Z",
+   "rows": 1
+  }
+ ]
+}
