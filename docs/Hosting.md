@@ -335,7 +335,7 @@ Set these in the Railway web service dashboard. `DATABASE_URL`, `PORT`, and the 
 - `DEBUG` — `false`
 - `ALLOWED_HOSTS` — comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`. Also include the Railway origin host Bunny forwards (`<service>.up.railway.app`).
 - `CSRF_TRUSTED_ORIGINS` — full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`.
-- `SITE_ORIGIN` — public origin, no trailing slash, e.g. `https://flipcommons.org`. Baked into prerendered canonical URLs and OG tags; consumed by `/sitemap.xml` and `robots.txt`.
+- `SITE_ORIGIN` — public origin, no trailing slash, e.g. `https://flipcommons.org`. Baked into prerendered canonical URLs and OG tags; consumed by `/sitemap.xml` and `robots.txt`. [`scripts/start-production`](../scripts/start-production) also passes it to the Node SSR process as `ORIGIN` (without which adapter-node resolves `page.url` from the `Host` header — behind Bunny that is the Railway origin hostname, since Forward Host Header is off) and mirrors it as `PUBLIC_SITE_ORIGIN` so client-side code can keep SEO URLs on the public origin after hydration. Do not set `ORIGIN` or `PUBLIC_SITE_ORIGIN` in the dashboard — they are derived, and a separately-set value could drift.
 - `INTERNAL_API_BASE_URL` — base URL SvelteKit SSR uses to reach Django. Do **not** set this in the dashboard: [`scripts/start-production`](../scripts/start-production) derives it from the runtime-injected `PORT` so SSR goes through Caddy rather than Gunicorn (see [Process model](#process-model)). The entrypoint exports it unconditionally, so a dashboard value is silently ignored rather than honoured — set one and the dashboard and the running process disagree.
 
 #### Auth

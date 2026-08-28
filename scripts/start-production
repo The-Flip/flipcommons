@@ -50,8 +50,21 @@ trap cleanup EXIT INT TERM
 .venv/bin/gunicorn config.wsgi:application --config gunicorn.conf.py --bind 127.0.0.1:"${DJANGO_PORT}" --workers 2 --timeout 60 --graceful-timeout 30 &
 DJANGO_PID=$!
 
+# SITE_ORIGIN is the one operator-facing setting for the public origin;
+# derive the per-runtime names from it here so the values cannot drift.
+# ORIGIN tells adapter-node its public URL — without it, Node trusts the
+# Host header, which behind Bunny (Forward Host Header off) is the Railway
+# origin hostname. PUBLIC_SITE_ORIGIN carries the same value to the
+# browser, where $env/dynamic/public exposes only PUBLIC_-prefixed vars.
+#
+# The :? guard catches set-but-empty — the Dockerfile bakes
+# ENV SITE_ORIGIN="", so `set -u` never fires. It sits on the export
+# because an empty PUBLIC_SITE_ORIGIN would degrade silently, while an
+# empty ORIGIN crashes Node at boot anyway.
+export PUBLIC_SITE_ORIGIN="${SITE_ORIGIN:?SITE_ORIGIN must be the public origin, e.g. https://flipcommons.org}"
+
 cd frontend_runtime
-HOST=127.0.0.1 PORT="${NODE_PORT}" node build/index.js &
+ORIGIN="${SITE_ORIGIN}" HOST=127.0.0.1 PORT="${NODE_PORT}" node build/index.js &
 NODE_PID=$!
 cd ..
 
