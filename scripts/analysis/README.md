@@ -147,6 +147,8 @@ An **analysis file** is a SQL program built on the foundation. The Flippatch pro
 
 The runner loads an analysis file into an in-memory catalog on top of the foundation: the file's own `CREATE`s land in memory, unqualified reads (`FROM models`) fall through to the foundation, and nothing is `.read` from the analysis file itself — a `.read scripts/analysis/sql/catalog.sql` line is at best a slow no-op. Raw Django tables, which an analysis should rarely reach for, are spelled `fc.raw.catalog_person` from an analysis file.
 
+A `.read` of a registered **layer** (a sister repo's heavy analysis program — Flippatch's `external_data_sources.sql` is the one that exists) costs milliseconds, not the analysis: the runner bakes such layers into read-only artifacts and rebakes automatically when an input changes, so the freshness guarantee holds for them exactly as it does for the foundation — as long as you come in through the runner. See `EDITING.md → Sister-repo layers are baked` for the mechanism.
+
 An analysis file has the following sections; only the second is shaped by the question:
 
 1. **Reference** — analysis-local hand-maintained lookups: adjective maps, exception lists, constant vocab. Not derived from the DB. Often empty; that's fine.

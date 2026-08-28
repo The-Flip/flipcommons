@@ -68,21 +68,23 @@ entry="scripts/analysis/sql/analytics.sql"
 # lives), so an existing snapshot from the older recipe rebuilds instead of half-working.
 build_format=2
 
-# mtime+size, BSD and GNU stat. Size is in there because mtime alone has one-second
-# granularity, and an ingest that rewrites the file inside the same second as the last
-# import would otherwise read as unchanged.
-source_stamp() {
-  stat -f '%m %z' "$source_db" 2>/dev/null || stat -c '%Y %s' "$source_db"
+# mtime+size of one file, BSD and GNU stat. Size is in there because mtime alone has
+# one-second granularity, and an ingest that rewrites the file inside the same second
+# as the last import would otherwise read as unchanged.
+file_stamp() {
+  stat -f '%m %z' "$1" 2>/dev/null || stat -c '%Y %s' "$1"
 }
+source_stamp() { file_stamp "$source_db"; }
 
-# One value over every file under sql/ — name, mtime, size — so an edit, an addition
-# or a deletion all change it. cksum because it is POSIX; this is a change detector,
-# not a content hash.
-sql_stamp() {
-  { find "$sqldir" -type f -exec stat -f '%N %m %z' {} + 2>/dev/null ||
-    find "$sqldir" -type f -exec stat -c '%n %Y %s' {} +; } |
+# One value over every file under the given paths — name, mtime, size — so an edit,
+# an addition or a deletion all change it. cksum because it is POSIX; this is a
+# change detector, not a content hash.
+tree_stamp() {
+  { find "$@" -type f -exec stat -f '%N %m %z' {} + 2>/dev/null ||
+    find "$@" -type f -exec stat -c '%n %Y %s' {} +; } |
     LC_ALL=C sort | cksum | tr ' ' '-'
 }
+sql_stamp() { tree_stamp "$sqldir"; }
 
 # The snapshot is the WHOLE analytics system: the raw Django tables (imported into
 # schema `raw`), every view and macro from scripts/analysis/sql/, the materialized
@@ -175,6 +177,132 @@ ensure_snapshot() {
   echo "done" >&2
 }
 
+# ── layers ─────────────────────────────────────────────────────────────────────
+# An analysis LAYER is a sister repo's analysis program baked the way the foundation
+# is: run once when an input changes, opened read-only ever after. A layer registers
+# by DIRECTIVE — a `-- layer: <manifest>` line in any file the analysis .reads — so
+# this repo carries the mechanism without a registry of other repos' layers; the
+# registration travels with the layer it registers. The manifest is KEY=VALUE
+# (name, alias, build_entry, artifact, shim, stamp_paths), every path relative to
+# this repo's root, the frame all runner paths already resolve in.
+#
+# The bake runs the layer's build entry with the foundation attached, materializes
+# every public relation into the artifact — tables, because views don't travel
+# across ATTACH (the `snapshot` command's reasoning) — carries each COMMENT over,
+# and generates a SHIM of pass-through views (`CREATE VIEW x AS FROM <alias>.x`).
+# A query session .reads the shim, so the layer's relations land in `memory` under
+# their own names exactly as if the source had been read live: gate, describe,
+# summary and *_context discovery all work unchanged, and a *_checks view counts
+# bake-time verdict rows the way `raw._check_results` stores build-time ones.
+# Freshness is guaranteed only through the runner; raw `duckdb` reads whatever the
+# last bake produced.
+layer_build_format=1
+
+# Collect layer manifests from the analysis file and everything it transitively
+# .reads. Relative .read targets resolve from this repo's root, the same frame
+# DuckDB resolves them in — call only after cd "$root". Word-splits on the
+# assumption paths carry no spaces, like the rest of this script.
+layer_scan() {
+  pending=$1; seen=" "; found=
+  while [ -n "$pending" ]; do
+    next=
+    for f in $pending; do
+      case "$seen" in *" $f "*) continue ;; esac
+      seen="$seen$f "
+      # A target that does not exist yet (a layer's generated shim on first run)
+      # carries no directives; skip rather than fail.
+      [ -f "$f" ] || continue
+      found="$found $(sed -n 's/^-- layer:[[:space:]]*//p' "$f")"
+      next="$next $(sed -n 's/^\.read[[:space:]]*//p' "$f" | tr -d '"')"
+    done
+    pending=$next
+  done
+  # shellcheck disable=SC2086
+  printf '%s\n' $found | awk '!seen[$0]++'
+}
+
+# Bake one layer if any input changed. $1 = manifest path, root-relative.
+ensure_layer() {
+  mf=$1
+  [ -f "$mf" ] || { echo "layer manifest not found: $mf" >&2; exit 2; }
+  l_name=$(sed -n 's/^name=//p' "$mf")
+  l_alias=$(sed -n 's/^alias=//p' "$mf")
+  l_entry=$(sed -n 's/^build_entry=//p' "$mf")
+  l_artifact=$(sed -n 's/^artifact=//p' "$mf")
+  l_shim=$(sed -n 's/^shim=//p' "$mf")
+  l_paths=$(sed -n 's/^stamp_paths=//p' "$mf")
+  [ -n "$l_name" ] && [ -n "$l_alias" ] && [ -n "$l_entry" ] &&
+    [ -n "$l_artifact" ] && [ -n "$l_shim" ] && [ -n "$l_paths" ] || {
+    echo "layer manifest incomplete: $mf (needs name, alias, build_entry, artifact, shim, stamp_paths)" >&2
+    exit 2; }
+  [ -f "$l_entry" ] || { echo "layer build entry not found: $l_entry (from $mf)" >&2; exit 2; }
+
+  # The foundation is a layer input, and the snapshot file's own stat IS its stamp:
+  # every rebuild renames a fresh file into place. The manifest stamps itself, so
+  # editing the registration also rebakes.
+  # shellcheck disable=SC2086
+  want="$(file_stamp "$snapshot") $(tree_stamp $l_paths "$mf") $layer_build_format"
+  if [ -f "$l_artifact" ] && [ -f "$l_shim" ]; then
+    have=$(duckdb -readonly "$l_artifact" -noheader -list \
+             "SELECT stamp FROM _layer_stamp" 2>/dev/null) || have=
+    [ "$have" = "$want" ] && return 0
+  fi
+  printf 'baking %s (an input changed)… ' "$l_name" >&2
+
+  tmp="$l_artifact.tmp.$$"
+  shim_tmp="$l_shim.tmp.$$"
+  cleanup_layer() { rm -f "$tmp" "$tmp.wal" "$shim_tmp"; }
+  trap cleanup_layer EXIT
+  trap 'exit 1' HUP INT TERM
+  rm -f "$tmp" "$tmp.wal"
+
+  # Load 1: run the layer's source once to learn its public relations, and let SQL
+  # emit the materialization script — CREATE TABLE + COMMENT per relation, names and
+  # comment text escaped by SQL itself, creation order preserved so the shim and
+  # describe keep the source's ordering.
+  stmts=$(duckdb :memory: -noheader -list \
+    -c "ATTACH '$snapshot' AS fc (READ_ONLY); SET search_path = 'memory,fc';" \
+    -c ".read \"$l_entry\"" \
+    -c "SELECT 'CREATE TABLE lyr.\"' || replace(relation_name, '\"', '\"\"') || '\" AS FROM \"'
+               || replace(relation_name, '\"', '\"\"') || '\";'
+               || coalesce(' COMMENT ON TABLE lyr.\"' || replace(relation_name, '\"', '\"\"')
+                           || '\" IS ''' || replace(comment, '''', '''''') || ''';', '')
+        FROM $(pub_relations "'memory'") ORDER BY relation_oid;")
+  [ -n "$stmts" ] || { echo "layer defines no public relations: $l_entry" >&2; exit 2; }
+
+  # Load 2: run it again and copy the rows out. Two loads is the cost of SQL not
+  # iterating relations (the limit `browse` works around the same way); the bake is
+  # the one place that still pays the source's runtime.
+  sql_want=$(printf '%s' "$want" | sed "s/'/''/g")
+  duckdb :memory: \
+    -c "ATTACH '$snapshot' AS fc (READ_ONLY); SET search_path = 'memory,fc';" \
+    -c ".read \"$l_entry\"" \
+    -c "ATTACH '$tmp' AS lyr; $stmts
+        CREATE TABLE lyr._layer_stamp AS SELECT '$sql_want' AS stamp, now() AS baked_at;" >/dev/null
+
+  # The shim, generated FROM the artifact so the two cannot disagree. Renamed into
+  # place BEFORE the artifact: a crash between the two leaves a stale-stamped
+  # artifact (rebaked on the next run) rather than a fresh-stamped one behind a
+  # stale shim, which nothing would ever repair.
+  {
+    printf -- '-- GENERATED by the analysis runner (ensure_layer) — do not edit.\n'
+    printf -- '-- Pass-through views over %s; stale only if the runner was bypassed.\n' "$l_artifact"
+    printf "ATTACH IF NOT EXISTS '%s' AS %s (READ_ONLY);\n" "$l_artifact" "$l_alias"
+    duckdb -readonly "$tmp" -noheader -list \
+      "SELECT 'CREATE OR REPLACE VIEW \"' || replace(table_name, '\"', '\"\"') || '\" AS FROM $l_alias.\"'
+              || replace(table_name, '\"', '\"\"') || '\";'
+              || coalesce(chr(10) || 'COMMENT ON VIEW \"' || replace(table_name, '\"', '\"\"')
+                          || '\" IS ''' || replace(comment, '''', '''''') || ''';', '')
+       FROM duckdb_tables() WHERE schema_name = 'main' AND NOT starts_with(table_name, '_')
+       ORDER BY table_oid;"
+  } > "$shim_tmp"
+  mv "$shim_tmp" "$l_shim"
+  mv "$tmp" "$l_artifact"
+  rm -f "$tmp.wal"
+  trap - EXIT HUP INT TERM
+  echo "done" >&2
+}
+
 usage() {
   # The whole header comment, less the shebang: everything down to `set -eu`.
   sed -n "2,$(($(grep -n '^set -eu' "$0" | cut -d: -f1) - 1))p" "$0" |
@@ -232,6 +360,14 @@ resolve_and_cd() {
   fi
   cd "$root"
   ensure_snapshot
+  # Layers the analysis reaches through its .read closure are baked here, after the
+  # snapshot they stamp against — so opening a session guarantees fresh inputs for
+  # every entry point, layered or not.
+  if [ -n "$analysis_file" ]; then
+    for _mf in $(layer_scan "$analysis_file"); do
+      ensure_layer "$_mf"
+    done
+  fi
 }
 
 # ── public-object predicates ───────────────────────────────────────────────────
@@ -260,33 +396,51 @@ pub_relations() {
 # The two are one gate: `run` renders it, `query --check` enforces it before the data
 # a generator is about to trust.
 
+# ONE discovery session for everything run/query must know before rendering — the
+# *_context views, the analysis's live *_checks, the stored verdicts. In analysis
+# mode every session re-executes the analysis file, so the process count IS the
+# count of times the file runs; discovery rides in one process, tagged rows split
+# into three globals here. (In foundation mode there is no `memory` catalog, so the
+# own_db probes match nothing — live_checks empty is the correct answer there.)
+gate_discover() {
+  disc=$(session '-noheader -list' \
+    -c "SELECT 'CTX ' || v FROM (
+          SELECT view_name AS v, 0 AS grp, view_oid AS oid $(pub_views "$own_db") AND ends_with(view_name, '_context')
+          UNION ALL
+          SELECT view_name, 1, view_oid $(pub_views "$fnd_db") AND ends_with(view_name, '_context')
+        ) WHERE v <> 'analysis_context' ORDER BY grp, oid;" \
+    -c "SELECT 'CHK ' || view_name $(pub_views "$own_db") AND ends_with(view_name, '_checks') ORDER BY view_name;" \
+    -c "SELECT 'STO ' || checks_view || ' ' || n FROM $check_results ORDER BY checks_view;")
+  ctx_views=$(printf '%s\n' "$disc" | sed -n 's/^CTX //p')
+  live_checks=$(printf '%s\n' "$disc" | sed -n 's/^CHK //p')
+  stored_counts=$(printf '%s\n' "$disc" | sed -n 's/^STO //p')
+}
+
 # Require the analysis's own <prefix>_checks among stored + live checks. Without this
 # the failure mode is an analysis that defines <prefix>_summary and drops
 # <prefix>_checks — the exact omission README warns is easiest to make when copying —
 # passing green because discovery finds only the module checks and reports them clean.
+# A membership test over what gate_discover already fetched; costs no session.
 gate_require() {
-  found=$(session '-noheader -list' -c \
-    "SELECT count(*) FROM (
-       SELECT checks_view AS v FROM $check_results
-       UNION ALL SELECT view_name $(pub_views "$own_db") AND ends_with(view_name, '_checks')
-     ) WHERE v = '$1_checks';")
-  [ "$found" -ge 1 ] || {
+  printf '%s\n%s\n' "$live_checks" "$stored_counts" |
+    awk -v want="$1_checks" '$1 == want { f = 1 } END { exit !f }' || {
     printf '✗ analysis defines no %s_checks view\n' "$1" >&2; exit 2; }
 }
 
-# One row per checks view with its count — stored verdicts plus, in analysis mode, a
-# live count per analysis-file checks view, computed in one query.
+# One row per checks view with its count — stored verdicts straight from discovery,
+# plus one session counting the live views, spent only when there are any.
 gate_counts() {
-  live=$(session '-noheader -list' -c \
-    "SELECT view_name $(pub_views "$own_db") AND ends_with(view_name, '_checks') ORDER BY view_name;")
-  live_sql=
-  for v in $live; do
-    live_sql="$live_sql UNION ALL SELECT '$v', count(*) FROM $v"
-  done
-  session '-noheader -list' -c \
-    "SELECT checks_view || ' ' || n FROM (
-       SELECT checks_view, n FROM $check_results $live_sql
-     ) ORDER BY 1;"
+  live=
+  if [ -n "$live_checks" ]; then
+    live_sql=
+    for v in $live_checks; do
+      live_sql=${live_sql:+"$live_sql UNION ALL "}"SELECT '$v' AS checks_view, count(*) AS n FROM $v"
+    done
+    live=$(session '-noheader -list' -c \
+      "SELECT checks_view || ' ' || n FROM ($live_sql) ORDER BY 1;")
+  fi
+  # sed, not grep -v: an all-blank input exits grep 1, which set -e would fatal.
+  printf '%s\n%s\n' "$stored_counts" "$live" | sed '/^$/d' | LC_ALL=C sort
 }
 
 # The readout: one ✓ or ✗ per checks view, and the rows behind every ✗. Every view is
@@ -340,24 +494,18 @@ case "$cmd" in
     fmt=box
     [ "${1:-}" = "--markdown" ] && fmt=markdown
     resolve_and_cd "$sql"
+    gate_discover
 
     # The catalog watermark first, then any companion layer's — a run should
     # certify ALL of its inputs, and a source corpus can be staler than the DB.
-    printf '\n— context —\n'
-    session "-$fmt" -c "FROM analysis_context;"
-    contexts=$(session '-noheader -list' -c \
-      "SELECT v FROM (
-         SELECT view_name AS v, 0 AS grp, view_oid AS oid $(pub_views "$own_db") AND ends_with(view_name, '_context')
-         UNION ALL
-         SELECT view_name, 1, view_oid $(pub_views "$fnd_db") AND ends_with(view_name, '_context')
-       ) WHERE v <> 'analysis_context' ORDER BY grp, oid;")
-    for v in $contexts; do
-      printf '\n— %s —\n' "$v"
-      session "-$fmt" -c "FROM $v;"
+    # One session renders everything: headers ride as .print commands so the whole
+    # readout costs one execution of the analysis file, not one per section.
+    set -- -c ".print" -c ".print — context —" -c "FROM analysis_context;"
+    for v in $ctx_views; do
+      set -- "$@" -c ".print" -c ".print — $v —" -c "FROM $v;"
     done
-
-    printf '\n— %s_summary —\n' "$prefix"
-    session "-$fmt" -c "FROM ${prefix}_summary;"
+    set -- "$@" -c ".print" -c ".print — ${prefix}_summary —" -c "FROM ${prefix}_summary;"
+    session "-$fmt" "$@"
 
     # Gate: a stored failing check or a row in any live *_checks view fails the run.
     gate_require "$prefix"
@@ -389,6 +537,7 @@ case "$cmd" in
       # The gate ahead of the data, so a generator never reads a view out of an
       # analysis whose invariants are failing. Stored verdicts are a table read; only
       # the analysis file's own checks are evaluated live.
+      gate_discover
       gate_require "$check"
       gate_report silent || exit 1
     else
