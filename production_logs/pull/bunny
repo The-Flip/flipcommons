@@ -187,18 +187,17 @@ def main() -> None:
                 continue
             dest = args.out / f"{slug(zone.name)}.{zone.id}.{day}.ndjson"
             merged = merge_ndjson(
-                dest, rows, key=lambda r: r["requestId"], sort_key=lambda r: r["timestamp"]
+                dest, rows, key=lambda r: r["requestId"], ts_of=lambda r: str(r["timestamp"])
             )
             marker = "" if day < today else " (today: still accumulating)"
             log(f"   {day}  {merged.rows:>7} rows ({merged.carried} carried over){marker}")
-            stamps = sorted(str(r["timestamp"]) for r in rows)
             records.append(
                 manifest_record(
                     dest,
                     kind="edge",
                     rows=merged.rows,
-                    first_ts=stamps[0],
-                    last_ts=stamps[-1],
+                    first_ts=merged.first_ts,
+                    last_ts=merged.last_ts,
                     complete=day < today,
                     zone_id=zone.id,
                     zone_name=zone.name,

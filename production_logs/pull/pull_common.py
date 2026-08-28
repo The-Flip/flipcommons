@@ -130,7 +130,11 @@ def http_request(
     """
     for attempt in range(5):
         request = urllib.request.Request(
-            url, data=body, headers={"Accept-Encoding": "gzip", **headers}
+            url,
+            data=body,
+            # urllib's default agent is blocked outright by some vendor WAFs
+            # (Railway's answers it with a bare 403), so always send our own.
+            headers={"Accept-Encoding": "gzip", "User-Agent": "flipcommons-pull", **headers},
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -161,13 +165,15 @@ class MergeResult(NamedTuple):
 
     rows: int  # rows now in the file
     carried: int  # rows kept from the prior file that this fetch did not return
+    first_ts: str  # oldest timestamp in the merged file
+    last_ts: str  # newest timestamp in the merged file
 
 
 def merge_ndjson(
     path: Path,
     fresh: Iterable[Row],
     key: Callable[[Row], object],
-    sort_key: Callable[[Row], object],
+    ts_of: Callable[[Row], str],
 ) -> MergeResult:
     """Merge fresh rows into the ndjson dump on disk, atomically.
 
@@ -185,11 +191,16 @@ def merge_ndjson(
                 prior[key(row)] = row
     fresh_by_key = {key(row): row for row in fresh}
     merged = prior | fresh_by_key
-    ordered = sorted(merged.values(), key=sort_key)
+    ordered = sorted(merged.values(), key=ts_of)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in ordered))
     tmp.replace(path)
-    return MergeResult(rows=len(ordered), carried=len(prior.keys() - fresh_by_key.keys()))
+    return MergeResult(
+        rows=len(ordered),
+        carried=len(prior.keys() - fresh_by_key.keys()),
+        first_ts=ts_of(ordered[0]),
+        last_ts=ts_of(ordered[-1]),
+    )
 
 
 def bucket_by_day(rows: Iterable[Row], ts_of: Callable[[Row], str]) -> dict[date, list[Row]]:
