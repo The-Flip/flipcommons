@@ -123,6 +123,24 @@ The apex resolves to this pull zone through a Bunny [`PZ` record](#dns) rather t
 
 `static.flipcommons.org` fronts Railway's hashed `/_app/immutable/*` assets, fonts and `version.json`; `media.flipcommons.org` fronts the iDrive e2 media bucket. Both respect origin cache headers.
 
+#### Rate limiting
+
+Rate limiting is configured in the Bunny dashboard (not in code). The goal is to blunt badly behaved bots; `robots.txt` covers the polite ones.
+
+| Zone                            | Limit                          | Block |
+| ------------------------------- | ------------------------------ | ----- |
+| Apex (`flipcommons.org`)        | 100 requests / 10 seconds / IP | 30 s  |
+| Media (`media.flipcommons.org`) | 300 requests / 10 seconds / IP | 30 s  |
+
+Rule shape on both: condition `Request URI` contains `/` (match-all), Counter Key = IP address, Response Action = `RateLimit`. Media's ceiling is higher because one gallery page legitimately fires dozens of image requests in a burst.
+
+This is edge abuse control, separate from the application rate limits under [Client IP trust](#client-ip-trust): Shield counts on Bunny's own view of the connecting IP, so it neither depends on nor affects the `X-Client-IP`/`X-Origin-Auth` chain.
+
+Operational caveats:
+
+- Enforcement propagates across PoPs, so a burst can leak a few requests past a freshly tripped block
+- Per-IP counters mean a shared NAT (the museum's network, kiosks) could trip a limit as one "client"
+
 ### DNS
 
 Registration and nameserving are split. **[Joker](https://joker.com) is the registrar**; **Bunny hosts the zone** on `kiki.bunny.net` and `coco.bunny.net`. Two nameservers rather than Joker's three is not a downgrade — both are anycast, and `.org` requires two.
