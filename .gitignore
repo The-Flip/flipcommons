@@ -78,3 +78,9 @@ data/ingest_sources/
 
 # Production logs
 production_logs/dumps/
+
+# Scratch dumps handed to AI sessions (GSC exports, one-off data pulls).
+# Anchored to the repo root on purpose: a bare `dumps/` would also match
+# production_logs/analyze/fixtures/dumps/, whose test fixtures are tracked,
+# and new fixtures added there would be silently ignored.
+/dumps/
