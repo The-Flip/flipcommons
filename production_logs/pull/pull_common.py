@@ -218,7 +218,7 @@ def iso_z(instant: datetime) -> str:
 
 
 def manifest_record(
-    file: Path,
+    file: str,
     kind: str,
     rows: int,
     first_ts: str | None,
@@ -226,9 +226,10 @@ def manifest_record(
     complete: bool,
     **extras: Any,
 ) -> Row:
-    """One uniform per-file manifest entry. Extras are source-specific fields."""
+    """One uniform per-file manifest entry, keyed by the file's path relative
+    to the dump directory. Extras are source-specific fields."""
     return {
-        "file": file.name,
+        "file": file,
         "kind": kind,
         "rows": rows,
         "first_ts": first_ts,

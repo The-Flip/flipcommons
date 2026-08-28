@@ -180,7 +180,7 @@ def main() -> None:
             log(f"   {day}  {merged.rows:>7} rows ({merged.carried} carried over){marker}")
             records.append(
                 manifest_record(
-                    dest, kind=kind, rows=merged.rows, first_ts=merged.first_ts,
+                    dest.name, kind=kind, rows=merged.rows, first_ts=merged.first_ts,
                     last_ts=merged.last_ts, complete=day < today,
                 )
             )
