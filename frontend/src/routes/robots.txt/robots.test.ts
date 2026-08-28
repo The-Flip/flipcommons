@@ -36,6 +36,8 @@ describe('GET /robots.txt', () => {
     await expect(response.text()).resolves.toMatchInlineSnapshot(`
       "User-agent: *
       Disallow: /api/
+      Crawl-delay: 5
+
       Sitemap: https://flipcommons.org/sitemap.xml
       "
     `);
