@@ -252,6 +252,7 @@ Whether or not a Model reached commercial production. Values:
 
 Classification labels that don't fit elsewhere. As related clusters of tags emerge, we may shift the cluster to more structured data, such as creating an entity for an exclusive set of tags:
 
+- `flipperless`: has no player-controlled flippers; the ball is put into play with a plunger and scored by where it settles.
 - `home-use`: designed or marketed for home use rather than commercial coin-op routes.
 - `limited-edition`: produced in a deliberately limited, usually numbered run — a manufacturer's LE or collector's trim of a title.
 - `prototype`: an engineering sample, design proof or pre-production test unit.
