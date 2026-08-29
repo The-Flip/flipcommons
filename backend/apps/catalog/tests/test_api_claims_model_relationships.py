@@ -525,6 +525,74 @@ class TestHierarchyFKValidation:
         assert resp.status_code == 422
 
 
+@pytest.mark.django_db
+class TestVariantChainPrevention:
+    """``variant_of`` must point at a base model, never at another variant.
+
+    A variant is the same gameplay in different dress, so a chain asserts a
+    dress of a dress — and the Title collapse rule reads the shape directly.
+    """
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            pytest.param(lambda mm: mm.slug, id="slug"),
+            # The FK resolver trims before looking the target up, and accepts a
+            # bare PK from internal callers, so the same variant target has more
+            # than one accepted spelling — all of them must reach the same error.
+            pytest.param(lambda mm: f"  {mm.slug}  ", id="padded-slug"),
+            pytest.param(lambda mm: mm.pk, id="pk"),
+        ],
+    )
+    def test_variant_target_is_a_field_level_422(self, client, user, pm, spelling):
+        base = make_machine_model(name="Star Trek", slug="star-trek")
+        mid = make_machine_model(
+            name="Star Trek LE", slug="star-trek-le", variant_of=base
+        )
+        client.force_login(user)
+        resp = _patch(client, pm.slug, {"fields": {"variant_of": spelling(mid)}})
+        assert resp.status_code == 422
+        field_errors = resp.json()["detail"]["field_errors"]
+        assert "variant_of" in field_errors
+        # The error names the base model so the editor knows where to point.
+        assert "Star Trek" in field_errors["variant_of"]
+
+    def test_model_with_variants_cannot_become_a_variant(self, client, user, pm):
+        make_machine_model(name="MM LE", slug="mm-le", variant_of=pm)
+        base = make_machine_model(name="Star Trek", slug="star-trek")
+        client.force_login(user)
+        resp = _patch(client, pm.slug, {"fields": {"variant_of": base.slug}})
+        assert resp.status_code == 422
+        assert "variant_of" in resp.json()["detail"]["field_errors"]
+
+    def test_soft_deleted_variant_does_not_block(self, client, user, pm):
+        # Active-only semantics, matching the audit rule: a soft-deleted
+        # variant's edge is invisible, so the subject may still become a variant.
+        make_machine_model(name="MM LE", slug="mm-le", variant_of=pm, status="deleted")
+        base = make_machine_model(name="Star Trek", slug="star-trek")
+        client.force_login(user)
+        resp = _patch(client, pm.slug, {"fields": {"variant_of": base.slug}})
+        assert resp.status_code == 200
+
+    def test_no_claim_is_written_on_rejection(self, client, user, pm):
+        base = make_machine_model(name="Star Trek", slug="star-trek")
+        mid = make_machine_model(
+            name="Star Trek LE", slug="star-trek-le", variant_of=base
+        )
+        client.force_login(user)
+        _patch(client, pm.slug, {"fields": {"variant_of": mid.slug}})
+        assert not pm.claims.filter(field_name="variant_of").exists()
+
+    def test_remake_of_chain_is_allowed(self, client, user, pm):
+        # Scope pin: remake_of legitimately chains across eras — only
+        # variant_of is flat.
+        original = make_machine_model(name="Original", slug="original")
+        remake = make_machine_model(name="Remake", slug="remake", remake_of=original)
+        client.force_login(user)
+        resp = _patch(client, pm.slug, {"fields": {"remake_of": remake.slug}})
+        assert resp.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # Relationship edges (model_relationship — the target-XOR namespace)
 # ---------------------------------------------------------------------------

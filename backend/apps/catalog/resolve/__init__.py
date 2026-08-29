@@ -24,9 +24,11 @@ from __future__ import annotations
 
 from ._dispatch import register_catalog_resolve_handlers, resolve_relationship
 from ._entities import resolve_all_entities, resolve_entity
+from ._helpers import find_flat_self_fk_chains
 from ._media import resolve_media_attachments
 
 __all__ = [
+    "find_flat_self_fk_chains",
     "register_catalog_resolve_handlers",
     "resolve_all_entities",
     "resolve_entity",

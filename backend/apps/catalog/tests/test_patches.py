@@ -6,6 +6,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
@@ -29,6 +30,7 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.resolve import resolve_relationship
+from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import (
     CitationInstance,
     CitationSource,
@@ -781,6 +783,86 @@ claims:
     assert report.rejected == 0
     child = GameplayFeature.objects.get(slug="center-ramp")
     assert list(child.parents.values_list("slug", flat=True)) == ["ramps"]
+
+
+# ── variant_of chains (flat self-FK guard in the bulk resolver) ────
+
+
+def test_variant_of_chain_aborts_the_run():
+    # The target is untouched by the patch, so its edge is read from the DB.
+    base = make_machine_model(name="Base", slug="base")
+    make_machine_model(name="Mid", slug="mid", variant_of=base)
+    make_machine_model(name="Child", slug="child")
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.child:
+      variant_of: mid
+"""
+    with pytest.raises(ValidationError, match="variant"):
+        _apply(text, patch_id="0001-variant-chain")
+    # The run's transaction rolled back: no claim, no edge.
+    child = MachineModel.objects.get(slug="child")
+    assert child.variant_of_id is None
+    assert not child.claims.filter(field_name="variant_of").exists()
+
+
+def test_variant_of_chain_via_same_run_edits_aborts():
+    # Both ends move in one run: B→A and A→D are each written by this patch,
+    # so A's edge exists only in memory when B's is checked — the DB alone
+    # cannot see the chain.
+    make_machine_model(name="A", slug="a")
+    make_machine_model(name="B", slug="b")
+    make_machine_model(name="D", slug="d")
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.b:
+      variant_of: a
+  - model.a:
+      variant_of: d
+"""
+    with pytest.raises(ValidationError, match="variant"):
+        _apply(text, patch_id="0001-variant-chain-flip")
+
+
+def test_model_with_variants_cannot_become_a_variant_by_patch():
+    # The chain's other end: an untouched model already points at the subject,
+    # so giving the subject a parent makes the subject a middle link.
+    base = make_machine_model(name="Base", slug="base")
+    mid = make_machine_model(name="Mid", slug="mid")
+    make_machine_model(name="Leaf", slug="leaf", variant_of=mid)
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{mid.slug}:
+      variant_of: {base.slug}
+"""
+    with pytest.raises(ValidationError, match="variant"):
+        _apply(text, patch_id="0001-variant-occupied")
+
+
+def test_variant_parent_cleared_in_same_run_is_allowed():
+    # The mirror image: B's stale DB edge (no claim backs it) disappears in
+    # this same run's resolution, so C may point at B — rejecting on B's DB
+    # column would refuse a write whose persisted end-state is chain-free.
+    base = make_machine_model(name="Base", slug="base")
+    make_machine_model(name="B", slug="b", variant_of=base)
+    make_machine_model(name="C", slug="c")
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.b:
+      production_year: 1993
+  - model.c:
+      variant_of: b
+"""
+    report = _apply(text, patch_id="0001-variant-repoint")
+    assert report.rejected == 0
+    b = MachineModel.objects.get(slug="b")
+    c = MachineModel.objects.get(slug="c")
+    assert b.variant_of_id is None
+    assert c.variant_of_id == b.pk
 
 
 def _feature_counts(machine_model: MachineModel) -> dict[str, int | None]:

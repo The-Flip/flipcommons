@@ -73,6 +73,14 @@ class ClaimControlledModel(models.Model):
     # one batched query per target model, so an override remains N+1-safe.
     claim_display_select_related: ClassVar[tuple[str, ...]] = ()
 
+    # Self-FK columns whose graph must stay flat: one hop only, so a row with
+    # the FK set may not itself be pointed at, and its target may not have the
+    # FK set. The rule is cross-row (no CHECK constraint can express it), so
+    # the claim resolvers enforce it over active rows at write time. Default
+    # empty so most models pay nothing; requires a lifecycle status column,
+    # because "flat" is judged among live rows only.
+    flat_self_fks: ClassVar[frozenset[str]] = frozenset()
+
     claims = GenericRelation("provenance.Claim")
 
     class Meta:

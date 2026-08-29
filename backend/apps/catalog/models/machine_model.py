@@ -180,6 +180,13 @@ class MachineModel(
         "remake_of": SelfFkRole.LINEAGE,
         "export_edition_of": SelfFkRole.LINEAGE,
     }
+    # variant_of only: a variant is the same gameplay in different dress, so a
+    # variant-of-a-variant asserts a dress of a dress — and the Title collapse
+    # rule reads the shape directly (``first_model_candidates`` filters
+    # ``variant_of__isnull=True``), so a chain moves a Title's representative
+    # model and its page. ``remake_of`` legitimately chains across eras, and
+    # ``export_edition_of`` is 1:1 with a domestic original.
+    flat_self_fks: ClassVar[frozenset[str]] = frozenset({"variant_of"})
     variant_of = models.ForeignKey(
         "self",
         on_delete=models.PROTECT,
