@@ -27,6 +27,7 @@ Mirrors PeopleEditor's inline-list pattern.
   } from '$lib/entities/relationship-type-meta';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import { saveErrorBanner } from '$lib/components/pages/record/edit/editors/save-claims-shared';
   import type { FieldErrors } from '$lib/api/parse-api-error';
   import {
     EMPTY_EDIT_OPTIONS,
@@ -58,6 +59,16 @@ Mirrors PeopleEditor's inline-list pattern.
   const EDGE_KINDS = Object.keys(RELATIONSHIP_TYPE_META_BY_EDGE) as readonly EdgeKind[];
   const SINGLE_KINDS = ['variant', 'remake', 'export_edition'] as const;
   type SingleKind = (typeof SINGLE_KINDS)[number];
+
+  // Lineage rows save as scalar `fields`, so their backend errors come keyed
+  // by the wire field name, not a `relationships.*` key. `satisfies` ties the
+  // record to the actual save-payload keys — renaming either side breaks the
+  // build instead of silently orphaning the error.
+  const LINEAGE_FIELD_BY_KIND = {
+    variant: 'variant_of',
+    remake: 'remake_of',
+    export_edition: 'export_edition_of',
+  } as const satisfies Record<SingleKind, keyof ReturnType<typeof currentFields>>;
 
   // Phrase-style labels so a row reads like its reader phrasing: "Copy of
   // [Galaxie] Unlicensed". Declaration order is display order: lineage FKs
@@ -157,6 +168,10 @@ Mirrors PeopleEditor's inline-list pattern.
     return (EDGE_KINDS as readonly string[]).includes(kind);
   }
 
+  function isSingle(kind: RowKind): kind is SingleKind {
+    return (SINGLE_KINDS as readonly string[]).includes(kind);
+  }
+
   /** Whether an edge of this kind may describe its target as free text (the
    * "Describe it" label rung) rather than pick a seeded machine. False for
    * types the backend marks `requiresMachineTarget` (e.g. re-themes, whose
@@ -177,10 +192,7 @@ Mirrors PeopleEditor's inline-list pattern.
 
   /** Variant/remake are single-valued: block the kind if another row already holds it. */
   function kindTaken(kind: RowKind, exceptKey: number): boolean {
-    return (
-      (SINGLE_KINDS as readonly string[]).includes(kind) &&
-      rows.some((r) => r.key !== exceptKey && r.kind === kind)
-    );
+    return isSingle(kind) && rows.some((r) => r.key !== exceptKey && r.kind === kind);
   }
 
   /** A model holds one describe-it (label) edge — its claim identity is the
@@ -209,8 +221,19 @@ Mirrors PeopleEditor's inline-list pattern.
     rows = rows.filter((_, i) => i !== index);
   }
 
+  /** The fieldErrors key this row's save-time error arrives under, or null
+   * before a kind is chosen. Lineage rows save as scalar fields, so their
+   * key is the wire field name; edge rows use the relationships namespace.
+   * Also feeds the banner's claimed-key set, so template and banner agree. */
+  function rowErrorKey(row: Row): string | null {
+    if (row.kind === '') return null;
+    if (isSingle(row.kind)) return LINEAGE_FIELD_BY_KIND[row.kind];
+    return `relationships.${rowTarget(row)}`;
+  }
+
   function rowError(row: Row): string {
-    return fieldErrors[`relationships.${rowTarget(row)}`] ?? '';
+    const key = rowErrorKey(row);
+    return key === null ? '' : (fieldErrors[key] ?? '');
   }
 
   // --- export markets ----------------------------------------------------------
@@ -282,8 +305,12 @@ Mirrors PeopleEditor's inline-list pattern.
     return '(unknown)';
   }
 
+  function marketRowErrorKey(row: MarketRow): string {
+    return `export_markets.${marketTarget(row) || '(unknown)'}`;
+  }
+
   function marketRowError(row: MarketRow): string {
-    return fieldErrors[`export_markets.${marketTarget(row) || '(unknown)'}`] ?? '';
+    return fieldErrors[marketRowErrorKey(row)] ?? '';
   }
 
   function addMarketRow() {
@@ -413,9 +440,11 @@ Mirrors PeopleEditor's inline-list pattern.
       onsaved();
     } else {
       fieldErrors = result.fieldErrors;
-      onerror(
-        Object.keys(result.fieldErrors).length > 0 ? 'Please fix the errors below.' : result.error,
-      );
+      const claimedKeys = [
+        ...rows.map(rowErrorKey).filter((key) => key !== null),
+        ...marketRows.map(marketRowErrorKey),
+      ];
+      onerror(saveErrorBanner(result, claimedKeys));
     }
   }
 </script>

@@ -277,6 +277,63 @@ describe('RelatedModelsEditor', () => {
     expect(body.relationships).toBeUndefined();
   });
 
+  it('shows a backend variant_of field error on the variant row', async () => {
+    // The chain guard rejects with field_errors keyed by the scalar field
+    // name (variant_of), not a relationships.* key — the row must still
+    // surface it instead of leaving only the generic banner.
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects()[0], 'variant');
+    await pickTarget(user, /Attack from Mars/);
+
+    const message =
+      'Attack from Mars is itself a variant of Monster Bash — point at the base model.';
+    PATCH.mockResolvedValue({
+      data: undefined,
+      error: {
+        detail: {
+          kind: 'validation_error',
+          message,
+          field_errors: { variant_of: message },
+          form_errors: [],
+        },
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+  });
+
+  it('surfaces a field error no row can claim in the banner verbatim', async () => {
+    // A key the editor cannot attach to an input must not be swallowed by
+    // the generic "fix the errors below" banner — its message is the only
+    // place the user can learn what went wrong.
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects()[0], 'variant');
+    await pickTarget(user, /Attack from Mars/);
+
+    const message = 'Something about a field this editor has no input for.';
+    PATCH.mockResolvedValue({
+      data: undefined,
+      error: {
+        detail: {
+          kind: 'validation_error',
+          message,
+          field_errors: { some_other_field: message },
+          form_errors: [],
+        },
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByTestId('last-error')).toHaveTextContent(message));
+  });
+
   it('disables the variant option once a variant row exists', async () => {
     const user = userEvent.setup();
     render(RelatedModelsEditorFixture, {
