@@ -20,7 +20,7 @@ production_logs/analyze/test             # build against fixtures and assert
 # Acquire
 production_logs/pull/all --start 2026-08-26      # every source, that day through today
 production_logs/pull/bunny --start 2026-08-26 --end 2026-08-26
-production_logs/pull/railway --start 2026-08-26  # deploy + http logs, all services
+production_logs/pull/railway --start 2026-08-26  # deploy + http + build logs, all services
 production_logs/pull/sentry --start 2026-08-01   # issues, events, releases
 ```
 
@@ -50,7 +50,7 @@ UNION ALL SELECT view_name, comment FROM duckdb_views() WHERE internal = false;
 Every puller takes the same window: `--start <YYYY-MM-DD>` (required) through `--end <YYYY-MM-DD>` (default today), inclusive UTC days. Rows are written verbatim as the vendor hands them down, merged on row identity into one file per UTC day — so a re-pull only ever adds rows, and re-pulling mid-incident is always safe. Each dump directory carries a `manifest.json` recording per-file coverage and whether the file's day was over at pull time; a missing credential aborts before anything is fetched. `pull/all` preflights all three keys and runs the pullers in order of perishability.
 
 - `pull/bunny` needs `BUNNY_API_KEY` — the account API key from [the Bunny dashboard](https://dash.bunny.net/account/settings), not a storage-zone password. It reads the Logging API v2, which answers a day outside retention with a clean error: reported, skipped, exit 0.
-- `pull/railway` needs `RAILWAY_TOKEN` — a project token (project Settings > Tokens). It talks to Railway's GraphQL API directly: deploy logs environment-wide, HTTP logs per deployment (enumerated for the window, removed deployments included), both paged until the window is exhausted.
+- `pull/railway` needs `RAILWAY_TOKEN` — a project token (project Settings > Tokens). It talks to Railway's GraphQL API directly: deploy logs environment-wide, and HTTP and image-build logs per deployment (enumerated for the window, removed and failed deployments included), all paged until the window is exhausted. A build that dies before the builder starts emits zero build lines — an absence the dump can faithfully hold but never explain; the deployment's `deploymentEvents` in the dashboard or API are the only record of such a failure.
 - `pull/sentry` needs `SENTRY_API_TOKEN`, and fails if its haul disagrees with Sentry's own `count()` — a silently short pull looks exactly like a quiet week. Events merge on their id, so the dump can hold events past Sentry's retention that no later pull could recover; `issues.json` — mutable state, so nothing to append along — merges on the issue id with each row stamped `_observed_at`. Surfaced as `sentry_issues.observed_at`, and worth checking before quoting a status or a lifetime count, because a row can be older than the window you asked for.
 
 **Bunny logs expire after a rolling three days.** Sentry keeps 90 and Railway keeps what the plan allows (7 days on Hobby, 30 on Pro), so those tolerate being pulled after the fact; Bunny does not, and the edge is the only source that sees a request the origin never received. Pull it within two days of anything worth keeping.
