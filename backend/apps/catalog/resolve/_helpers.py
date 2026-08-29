@@ -82,6 +82,7 @@ def find_flat_self_fk_chains(
     *,
     proposed: Mapping[ClaimSubjectId, ClaimSubjectId | None],
     superseded: AbstractSet[ClaimSubjectId],
+    moved: AbstractSet[ClaimSubjectId],
 ) -> FlatSelfFkChains:
     """Chains that writing *proposed* to a flat self-FK column would create.
 
@@ -92,6 +93,13 @@ def find_flat_self_fk_chains(
     everything else falls back to one batched query per direction, restricted
     to active rows (a soft-deleted row's edge is invisible, so prevention and
     the after-the-fact audit agree on what a chain is).
+
+    *moved* holds the pks whose edge this write actually changes, and a pair
+    is flagged only when one of its edges moved. This guard judges the write,
+    not standing state: a chain both of whose edges predate the run (possible
+    through the accepted gaps — restore, revert, races) is the audit's
+    business, and aborting an unrelated write over it would wedge the operator
+    behind an error naming a field the write never mentioned.
     """
     # Flat semantics are judged among live rows only, which needs the
     # lifecycle status column — enforced here so a non-lifecycle model
@@ -116,11 +124,16 @@ def find_flat_self_fk_chains(
             .filter(pk__in=db_parents, **{f"{field_name}__isnull": False})
             .values_list("pk", flat=True)
         )
-    parent_has_parent = {s: p for s, p in edges.items() if p in chained_parents}
+    parent_has_parent = {
+        s: p
+        for s, p in edges.items()
+        if p in chained_parents and (s in moved or p in moved)
+    }
 
     # Subject already has children: an in-batch child's edge is caught by the
     # parent-side check above (its parent sits in *proposed* with an edge), so
-    # only rows outside the batch are consulted here.
+    # only rows outside the batch are consulted here — and those children never
+    # move in this write, so the subject's own edge must be the moving one.
     attname = _flat_self_fk_attname(model_class, field_name)
     occupied = set(
         model_class.objects.active()
@@ -129,7 +142,7 @@ def find_flat_self_fk_chains(
         .values_list(attname, flat=True)
     )
     return FlatSelfFkChains(
-        parent_has_parent, frozenset(s for s in edges if s in occupied)
+        parent_has_parent, frozenset(s for s in edges if s in occupied and s in moved)
     )
 
 
@@ -137,12 +150,16 @@ def find_flat_self_fk_chains_in_batch(
     model_class: type[ClaimControlledModel],
     field_name: str,
     batch: Sequence[ClaimControlledModel],
+    *,
+    pre_values: Mapping[ClaimSubjectId, ClaimSubjectId | None],
 ) -> FlatSelfFkChains:
     """:func:`find_flat_self_fk_chains` over resolved-in-memory batch objects.
 
     Reads each member's post-resolution FK value and lifecycle status off the
     instance, so a batch that repoints a parent and child in one run is judged
-    on what will actually be persisted, not on stale DB rows.
+    on what will actually be persisted, not on stale DB rows. *pre_values* is
+    the column's pre-resolution snapshot per batch member; comparing it to the
+    resolved value yields the moved-edge set the core predicate scopes to.
     """
     attname = _flat_self_fk_attname(model_class, field_name)
     proposed = {
@@ -150,11 +167,13 @@ def find_flat_self_fk_chains_in_batch(
         for obj in batch
         if isinstance(obj, LifecycleStatusModel) and is_live(obj.status)
     }
+    moved = {obj.pk for obj in batch if getattr(obj, attname) != pre_values.get(obj.pk)}
     return find_flat_self_fk_chains(
         model_class,
         field_name,
         proposed=proposed,
         superseded={obj.pk for obj in batch},
+        moved=moved,
     )
 
 

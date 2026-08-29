@@ -842,6 +842,31 @@ claims:
         _apply(text, patch_id="0001-variant-occupied")
 
 
+def test_pre_existing_chain_does_not_block_unrelated_edits():
+    # A chain that predates the guards (restore, revert and races are accepted
+    # gaps) must not wedge a patch that never touches lineage: the guard judges
+    # the edges this run moves, not standing state — the audit owns detection.
+    base = make_machine_model(name="Base", slug="base")
+    mid = make_machine_model(name="Mid", slug="mid", variant_of=base)
+    leaf = make_machine_model(name="Leaf", slug="leaf", variant_of=mid)
+    # Claim-backed so re-resolution reproduces the standing edge rather than
+    # clearing it — the edge must come out of this run unmoved.
+    make_claim(
+        leaf, "variant_of", mid.pk, ingest_source=Source.objects.get(slug="bootstrap")
+    )
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.leaf:
+      production_year: 1993
+"""
+    report = _apply(text, patch_id="0001-unrelated-edit")
+    assert report.rejected == 0
+    leaf.refresh_from_db()
+    assert leaf.year == 1993
+    assert leaf.variant_of_id == mid.pk
+
+
 def test_variant_parent_cleared_in_same_run_is_allowed():
     # The mirror image: B's stale DB edge (no claim backs it) disappears in
     # this same run's resolution, so C may point at B — rejecting on B's DB

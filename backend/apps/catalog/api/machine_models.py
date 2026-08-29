@@ -822,6 +822,8 @@ def patch_model_claims(
             spec.field_name,
             proposed={pm.pk: spec.value},
             superseded=frozenset({pm.pk}),
+            # A planned spec is by definition a write of this edge.
+            moved=frozenset({pm.pk}),
         )
         if not chains:
             continue

@@ -33,6 +33,7 @@ from apps.provenance.validation import get_relationship_namespaces
 from ._engine import pick_winners
 from ._helpers import (
     _coerce,
+    _flat_self_fk_attname,
     _resolve_fk_generic,
     build_fk_info,
     find_flat_self_fk_chains_in_batch,
@@ -276,6 +277,16 @@ def _resolve_bulk(
     )
     pre_slugs = {obj.pk: obj.slug for obj in all_objs} if has_unique_slug else {}
 
+    # Snapshot flat self-FK columns before resolution: the chain guard in 4c
+    # flags only edges this run moves, so it needs the pre-values to compare.
+    pre_flat_fks: dict[str, dict[ClaimSubjectId, ClaimSubjectId | None]] = {
+        flat_fk: {
+            obj.pk: getattr(obj, _flat_self_fk_attname(model_class, flat_fk))
+            for obj in all_objs
+        }
+        for flat_fk in model_class.flat_self_fks
+    }
+
     # 4. Resolve each object in memory.  The pre-built FK lookups resolve every
     # batch member from memory, with no per-object FK query.
     now = timezone.now()
@@ -303,11 +314,14 @@ def _resolve_bulk(
 
     # 4c. Flat self-FK columns must not chain. Batch members are judged on
     # their resolved in-memory values (a run that repoints parent and child
-    # together is invisible to the DB alone); a violation aborts the whole
-    # batch, matching the CheckConstraint contract below — the source data
-    # is broken, stop.
+    # together is invisible to the DB alone), and only edges this run moves
+    # are judged at all — standing state is the audit's business. A violation
+    # aborts the whole batch, matching the CheckConstraint contract below —
+    # the source data is broken, stop.
     for flat_fk in sorted(model_class.flat_self_fks):
-        chains = find_flat_self_fk_chains_in_batch(model_class, flat_fk, all_objs)
+        chains = find_flat_self_fk_chains_in_batch(
+            model_class, flat_fk, all_objs, pre_values=pre_flat_fks[flat_fk]
+        )
         if chains:
             by_pk = {obj.pk: obj for obj in all_objs}
             problems = [
