@@ -2,6 +2,15 @@
  "files": [
   {
    "complete": true,
+   "file": "build.2026-08-20.ndjson",
+   "first_ts": "2026-08-20T09:58:00.000000000Z",
+   "kind": "build",
+   "last_ts": "2026-08-20T09:58:02.000000000Z",
+   "pulled_at": "2026-08-21T00:00:00.000000Z",
+   "rows": 3
+  },
+  {
+   "complete": true,
    "file": "deploy.2026-08-20.ndjson",
    "first_ts": "2026-08-20T10:00:00.000001000Z",
    "kind": "deploy",

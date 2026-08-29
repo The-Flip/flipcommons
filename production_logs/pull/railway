@@ -18,6 +18,11 @@ day, so a re-pull only ever adds rows:
     the window, plus each service's one already serving when the window opened
     (walking back past deployments that never served). Merged on requestId.
     Pages the same way; a page shorter than asked means the window is exhausted.
+  * build.<day>.ndjson -- buildLogs: the builder's output, addressed per
+    deployment like httpLogs but fetched for EVERY status -- a FAILED build's
+    logs are the ones worth having. Rows carry the build in tags.snapshotId;
+    tags.deploymentId is null, since the build precedes the deployment
+    instance. Merged on (timestamp, message), like the deploy stream.
 
 Needs RAILWAY_TOKEN -- a *project* token (Settings > Tokens on the project).
 Retention is plan-based (7 days on Hobby, 30 on Pro), so a day past the plan's
@@ -29,7 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -41,6 +46,7 @@ from pull_common import (  # noqa: E402
     bucket_by_day,
     die,
     http_request,
+    iso_z,
     log,
     manifest_record,
     merge_ndjson,
@@ -53,6 +59,7 @@ DEFAULT_OUT = Path(__file__).resolve().parent.parent / "dumps" / "railway"
 GRAPHQL = "https://backboard.railway.com/graphql/v2"
 DEPLOY_PAGE = 1000  # the API answers ~100 regardless; asking high costs nothing
 HTTP_PAGE = 5000  # honoured; a shorter answer means the window is exhausted
+BUILD_PAGE = 5000  # honoured; a whole build is typically ~1-2k lines
 ENUM_LIMIT = 100  # deployments enumerated; warned about if it can't span the window
 
 ENV_LOGS_QUERY = """query($eid: String!, $anchor: String!, $floor: String!, $limit: Int!) {
@@ -68,6 +75,14 @@ HTTP_LOGS_QUERY = """query($dep: String!, $anchor: String!, $floor: String!, $li
     timestamp method path httpStatus totalDuration requestId host clientUa srcIp
     edgeRegion txBytes rxBytes upstreamRqDuration upstreamAddress upstreamProto
     downstreamProto upstreamErrors responseDetails deploymentId deploymentInstanceId
+  }
+}"""
+
+BUILD_LOGS_QUERY = """query($dep: String!, $start: DateTime!, $end: DateTime!, $limit: Int!) {
+  buildLogs(deploymentId: $dep, startDate: $start, endDate: $end, limit: $limit) {
+    timestamp message severity
+    tags { projectId environmentId serviceId deploymentId deploymentInstanceId snapshotId }
+    attributes { key value }
   }
 }"""
 
@@ -132,6 +147,30 @@ def page_backwards(
         if oldest <= floor:
             return rows
         anchor = oldest
+
+
+def build_logs_for(token: str, deployment_id: str, start: str, end: str) -> list[Row]:
+    """Drain one deployment's build logs by paging backwards from the window's end.
+
+    buildLogs takes a date range and a limit rather than the anchor/floor shape
+    the other streams use, but behaves the same way: a limit smaller than the
+    range answers the NEWEST rows (oldest-first within the page). So a full page
+    may have older siblings, and the next page ends at the oldest timestamp
+    seen, which refetches that instant; duplicates drop on the merge key here.
+    """
+    rows: list[Row] = []
+    seen: set[object] = set()
+    while True:
+        page = gql(
+            token, BUILD_LOGS_QUERY,
+            {"dep": deployment_id, "start": start, "end": end, "limit": BUILD_PAGE},
+        )["buildLogs"]
+        fresh = [r for r in page if (r["timestamp"], r["message"]) not in seen]
+        rows.extend(fresh)
+        seen.update((r["timestamp"], r["message"]) for r in fresh)
+        if len(page) < BUILD_PAGE or not fresh:
+            return rows
+        end = min(str(r["timestamp"]) for r in page)
 
 
 def pick_deployments(deployments: list[Deployment], win: Window) -> list[Deployment]:
@@ -229,6 +268,22 @@ def main() -> None:
         log(f"   {dep.service} {dep.id[:8]} {dep.status:<8} {len(rows)} rows")
         http_rows.extend(rows)
     write_days(http_rows, "http", lambda r: r["requestId"])
+
+    log("== build logs (per deployment)")
+    # Every status, unlike the http pick: SKIPPED and FAILED deployments never
+    # served a request but did (try to) build, and a FAILED build's logs are the
+    # ones worth having. The two-hour lookback catches a build that started just
+    # before the window opened and ran into it.
+    lookback = iso_z(win.start - timedelta(hours=2))
+    ceiling = win.end.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    build_rows: list[Row] = []
+    for dep in deployments:
+        if not lookback <= dep.created_at < ceiling:
+            continue
+        rows = build_logs_for(token, dep.id, dep.created_at, ceiling)
+        log(f"   {dep.service} {dep.id[:8]} {dep.status:<8} {len(rows)} rows")
+        build_rows.extend(rows)
+    write_days(build_rows, "build", lambda r: (r["timestamp"], r["message"]))
 
     update_manifest(args.out, records)
 

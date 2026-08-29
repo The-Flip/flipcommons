@@ -57,9 +57,15 @@ case_baseline() {
   expect "app lines"      "3" "$(q "$w" "SELECT count(*) FROM railway_lines WHERE service='app';")"
   expect "postgres lines" "1" "$(q "$w" "SELECT count(*) FROM railway_lines WHERE service='postgres';")"
   expect "cdn requests"   "3" "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
-  # one structured app error, one CDN 502 and one Sentry event, each counted at
-  # its own tier; the Postgres line is stream_noise and excluded
-  expect "problem tiers"  "cdn|container|sentry" \
+  # builder output stays out of the container stream: it is its own relation,
+  # keyed by the snapshot id, and never inflates the app service's line counts
+  expect "build lines"    "3" "$(q "$w" 'SELECT count(*) FROM railway_build_lines;')"
+  expect "build keyed by snapshot" "1" \
+    "$(q "$w" 'SELECT count(DISTINCT build_id) FROM railway_build_lines;')"
+  # one structured app error, one failed build step, one CDN 502 and one Sentry
+  # event, each counted at its own tier; the Postgres line is stream_noise and
+  # excluded
+  expect "problem tiers"  "build|cdn|container|sentry" \
     "$(q "$w" "SELECT string_agg(DISTINCT tier,'|' ORDER BY tier) FROM problems;")"
 }
 

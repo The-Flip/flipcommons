@@ -13,6 +13,12 @@ FROM railway_lines WHERE ts IS NULL
 HAVING count(*) > 0
 
 UNION ALL
+SELECT 'railway_build_null_ts',
+       count(*) || ' Railway build lines have an unparseable timestamp'
+FROM railway_build_lines WHERE ts IS NULL
+HAVING count(*) > 0
+
+UNION ALL
 SELECT 'unknown_railway_service',
        'Unmapped service ' || service || ' (' || count(*) || ' lines); add it to railway_services'
 FROM railway_lines WHERE service LIKE 'unknown:%' GROUP BY service
@@ -82,7 +88,9 @@ SELECT 'unknown_level_confidence',
          || 'self-declared nor a railway_services.unstructured_confidence; '
          || 'problems is counting it -- confirm that is right'
 FROM timeline
-WHERE level_confidence NOT IN ('json', 'sentry')
+-- 'builder' sits with the self-declared values: the image builder is the only
+-- process writing its stream, so its severities are its own, not stream-guessed.
+WHERE level_confidence NOT IN ('json', 'sentry', 'builder')
   AND level_confidence NOT IN (
     SELECT unstructured_confidence FROM railway_services
     WHERE unstructured_confidence IS NOT NULL
@@ -106,6 +114,7 @@ SELECT 'manifest_file_not_read',
 FROM railway_manifest m
 WHERE NOT EXISTS (SELECT 1 FROM railway_requests h WHERE h.source_file = m.file)
   AND NOT EXISTS (SELECT 1 FROM railway_lines l WHERE l.source_file = m.file)
+  AND NOT EXISTS (SELECT 1 FROM railway_build_lines b WHERE b.source_file = m.file)
 
 UNION ALL
 SELECT 'http_missing_status', count(*) || ' HTTP rows have no status'

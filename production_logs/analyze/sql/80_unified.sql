@@ -29,6 +29,11 @@ http AS (
   SELECT 'railway', 'http', 'origin', source_file, count(*), count(*), min(ts), max(ts)
   FROM railway_requests GROUP BY 4
 ),
+-- Builder severities are all self-declared, so the trusted count is the count.
+build AS (
+  SELECT 'railway', 'build', 'build', source_file, count(*), count(*), min(ts), max(ts)
+  FROM railway_build_lines GROUP BY 4
+),
 -- Grouped by source_file like every other branch rather than naming the file as
 -- a literal. sentry_uptime selects its rows on the issue CATEGORY, so a second
 -- monitor joins it without an edit; a filename spelled out here would still
@@ -56,8 +61,8 @@ SELECT c.*,
   -- completeness is what cannot be read back off the file.
   NOT coalesce(man.complete, false) AS likely_truncated,
   date_diff('minute', c.window_start, c.window_end) AS window_minutes
-FROM (SELECT * FROM railway UNION ALL SELECT * FROM http UNION ALL SELECT * FROM sentry
-      UNION ALL SELECT * FROM bunny) c
+FROM (SELECT * FROM railway UNION ALL SELECT * FROM http UNION ALL SELECT * FROM build
+      UNION ALL SELECT * FROM sentry UNION ALL SELECT * FROM bunny) c
 LEFT JOIN manifests man ON man.file = c.source_file
 ORDER BY c.source, c.stream, c.window_start;
 
@@ -78,6 +83,13 @@ CREATE OR REPLACE VIEW timeline AS
 SELECT 'railway' AS source, service AS stream, 'container' AS tier, ts, level, message,
        NULL AS ref, level_confidence, is_continuation
 FROM railway_lines
+UNION ALL
+-- Builder output, its own tier: these lines are neither container runtime nor
+-- request traffic, and a failed build is an incident that logs NOWHERE else.
+-- 'builder' as level_confidence marks the severity self-declared (the builder
+-- is the only writer), so build errors count in `problems`.
+SELECT 'railway', 'build', 'build', ts, level, message, build_id, 'builder', false
+FROM railway_build_lines
 UNION ALL
 -- Only failed requests join the timeline; a 200 is not an event worth reading
 -- beside a log line. Query railway_requests directly for the full picture.
