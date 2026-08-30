@@ -86,6 +86,28 @@ def test_not_self_constraint_rejects_a_self_reference(
     constraint.validate(model, unset)
 
 
+def test_flat_self_fks_is_a_subset_of_the_self_fk_inventory() -> None:
+    """A ``flat_self_fks`` entry must name a real self-FK on its model, so a
+    field rename can't leave a dead declaration that silently guards nothing."""
+    from apps.provenance.models import ClaimControlledModel
+
+    for model in apps.get_models():
+        if not issubclass(model, ClaimControlledModel):
+            continue
+        assert model.flat_self_fks <= set(self_fk_field_names(model)), (
+            f"{model._meta.label}.flat_self_fks names fields that are not "
+            f"self-FKs on the model: "
+            f"{model.flat_self_fks - set(self_fk_field_names(model))}"
+        )
+
+
+def test_variant_of_is_declared_flat() -> None:
+    """Guards the guard: the declaration the whole feature hangs on."""
+    from apps.catalog.models import MachineModel
+
+    assert "variant_of" in MachineModel.flat_self_fks
+
+
 @pytest.mark.parametrize("pair", SELF_FK_PAIRS, ids=_pair_id)
 def test_not_self_constraint_is_validated_before_the_db(
     pair: tuple[type[models.Model], str],

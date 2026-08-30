@@ -74,6 +74,7 @@ from ..models import (
     Theme,
 )
 from ..models.export_market import COUNTRY_TARGET_FILTER
+from ..resolve import find_flat_self_fk_chains
 from .edit_claims import (
     plan_abbreviation_claims,
     plan_credit_claims,
@@ -805,6 +806,46 @@ def patch_model_claims(
                 message="A model cannot reference itself.",
                 field_errors={spec.field_name: "A model cannot reference itself."},
             )
+
+    # Same planned-spec vantage as above. Flat self-FKs must not chain — a
+    # cross-row rule no CHECK constraint can express, so it lives here where
+    # it yields a field-scoped 422 instead of an IntegrityError. FK spec
+    # values are the resolved target PK; ``None`` clears the edge and can
+    # never create a chain.
+    for spec in specs:
+        if spec.field_name not in MachineModel.flat_self_fks or not isinstance(
+            spec.value, int
+        ):
+            continue
+        chains = find_flat_self_fk_chains(
+            MachineModel,
+            spec.field_name,
+            proposed={pm.pk: spec.value},
+            superseded=frozenset({pm.pk}),
+            # A planned spec is by definition a write of this edge.
+            moved=frozenset({pm.pk}),
+        )
+        if not chains:
+            continue
+        noun = spec.field_name.removesuffix("_of")
+        if chains.parent_has_parent:
+            parent = MachineModel.objects.select_related(spec.field_name).get(
+                pk=spec.value
+            )
+            base = getattr(parent, spec.field_name)
+            assert base is not None  # implied by parent_has_parent
+            message = (
+                f"{parent.name} is itself a {noun} of {base.name} — "
+                f"point at the base model."
+            )
+        else:
+            message = (
+                f"Other models are {noun}s of this one, so it cannot "
+                f"itself become a {noun}."
+            )
+        raise StructuredValidationError(
+            message=message, field_errors={spec.field_name: message}
+        )
 
     if data.themes is not None:
         specs.extend(

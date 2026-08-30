@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -32,8 +33,10 @@ from apps.provenance.validation import get_relationship_namespaces
 from ._engine import pick_winners
 from ._helpers import (
     _coerce,
+    _flat_self_fk_attname,
     _resolve_fk_generic,
     build_fk_info,
+    find_flat_self_fk_chains_in_batch,
     get_field_defaults,
     get_nullable_unique_fields,
     get_preserve_fields,
@@ -274,6 +277,16 @@ def _resolve_bulk(
     )
     pre_slugs = {obj.pk: obj.slug for obj in all_objs} if has_unique_slug else {}
 
+    # Snapshot flat self-FK columns before resolution: the chain guard in 4c
+    # flags only edges this run moves, so it needs the pre-values to compare.
+    pre_flat_fks: dict[str, dict[ClaimSubjectId, ClaimSubjectId | None]] = {
+        flat_fk: {
+            obj.pk: getattr(obj, _flat_self_fk_attname(model_class, flat_fk))
+            for obj in all_objs
+        }
+        for flat_fk in model_class.flat_self_fks
+    }
+
     # 4. Resolve each object in memory.  The pre-built FK lookups resolve every
     # batch member from memory, with no per-object FK query.
     now = timezone.now()
@@ -298,6 +311,31 @@ def _resolve_bulk(
     # so every such field is covered.
     for unique_field in get_nullable_unique_fields(model_class, direct_fields):
         resolve_unique_conflicts(all_objs, unique_field, model_class)
+
+    # 4c. Flat self-FK columns must not chain. Batch members are judged on
+    # their resolved in-memory values (a run that repoints parent and child
+    # together is invisible to the DB alone), and only edges this run moves
+    # are judged at all — standing state is the audit's business. A violation
+    # aborts the whole batch, matching the CheckConstraint contract below —
+    # the source data is broken, stop.
+    for flat_fk in sorted(model_class.flat_self_fks):
+        chains = find_flat_self_fk_chains_in_batch(
+            model_class, flat_fk, all_objs, pre_values=pre_flat_fks[flat_fk]
+        )
+        if chains:
+            by_pk = {obj.pk: obj for obj in all_objs}
+            problems = [
+                f"'{by_pk[s].slug}' points at a row that itself has {flat_fk} set"
+                for s in sorted(chains.parent_has_parent)
+            ] + [
+                f"'{by_pk[s].slug}' is pointed at by other rows, so it "
+                f"cannot have {flat_fk} set"
+                for s in sorted(chains.subject_has_children)
+            ]
+            raise ValidationError(
+                f"{flat_fk} must stay flat on {model_class.__name__}: "
+                + "; ".join(problems)
+            )
 
     # 5. Bulk write.  Cross-field CheckConstraints are enforced by the DB
     # on bulk_update — a violation aborts the whole batch with IntegrityError,

@@ -21,6 +21,27 @@ export type SaveMeta = {
 export type SaveResult =
   { ok: true; updatedSlug?: string } | { ok: false; error: string; fieldErrors: FieldErrors };
 
+/**
+ * Banner text for a failed save. Field errors the editor renders inline get
+ * the generic "fix the errors below" pointer; any key the editor cannot
+ * attach to an input surfaces its message verbatim instead — the banner must
+ * never swallow a backend message that would otherwise appear nowhere.
+ * *claimedKeys* are the fieldErrors keys the editor's inputs look up, built
+ * from the same key functions the template renders with so the two can't
+ * drift.
+ */
+export function saveErrorBanner(
+  result: Extract<SaveResult, { ok: false }>,
+  claimedKeys: Iterable<string>,
+): string {
+  const claimed = new Set(claimedKeys);
+  const orphaned = Object.entries(result.fieldErrors)
+    .filter(([key]) => !claimed.has(key))
+    .map(([, message]) => message);
+  if (orphaned.length > 0) return orphaned.join(' ');
+  return Object.keys(result.fieldErrors).length > 0 ? 'Please fix the errors below.' : result.error;
+}
+
 type ClaimsBody = ClaimPatchSchema;
 type HierarchyClaimsBody = HierarchyClaimPatchSchema;
 
