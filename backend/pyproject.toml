@@ -719,7 +719,7 @@ layers = [
     "wikilinks | middleware",
     "admin | api_helpers | authz | autocomplete | checks | entity_types | licensing | rate_limits | sitemap | soft_delete",
     "exceptions | models",
-    "admin_apps | admin_site | pagination | schemas | search | types | validators",
+    "admin_apps | admin_site | pagination | response_cache | schemas | search | types | validators",
 ]
 
 # ----- media -----
