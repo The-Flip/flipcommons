@@ -257,6 +257,7 @@ Classification labels that don't fit elsewhere. As related clusters of tags emer
 - `limited-edition`: produced in a deliberately limited, usually numbered run — a manufacturer's LE or collector's trim of a title.
 - `prototype`: an engineering sample, design proof or pre-production test unit.
 - `widebody`: a wider-than-standard cabinet and playfield.
+- `wwii-contract`: built by an amusement-machine manufacturer under a World War II government contract, rather than for the coin-op trade.
 
 Remakes are not a tag: the `remake_of` [model relationship](#remakes) records that lineage structurally.
 
