@@ -83,6 +83,14 @@ class ChangeSet(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [
+            # The key ``cursor_paginate`` walks the changes feed on. Without
+            # it the feed sorts every changeset per request, and the
+            # entity-type filter has no ordered stream to stop early against,
+            # so it materializes changeset x claim and sorts that to disk.
+            models.Index(
+                fields=["-created_at", "-id"],
+                name="provenance_cs_created_id",
+            ),
             models.Index(
                 fields=["actor", "-created_at"],
                 name="provenance_cs_actor_created",
