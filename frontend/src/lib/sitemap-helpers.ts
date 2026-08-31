@@ -5,16 +5,15 @@
  */
 
 /**
+ * Max `<url>` entries per sitemap page (the sitemaps.org limit). Above it,
+ * `/sitemap.xml` becomes a `<sitemapindex>` over `/sitemap1.xml`,
+ * `/sitemap2.xml`, … subpages of at most this many entries each.
+ */
+export const MAX_URLS_PER_PAGE = 50_000;
+
+/**
  * Strip `(group)` segments from a SvelteKit route ID to produce the URL
- * SvelteKit actually serves. `/(legal)/privacy` → `/privacy`. Used to key
- * `STATIC_LASTMOD` (which uses route-ID form, with groups) by URL form
- * (which is what super-sitemap's `processPaths` callback receives).
- *
- * Mirrors super-sitemap's own group-stripping pattern
- * (`removeSvelteKitRouteGroups` in
- * `super-sitemap/dist/adapters/sveltekit/internal/routes.js`) so the two stay
- * in lockstep — a divergence would mean a static route's lookup misses and
- * its `<lastmod>` silently disappears from the sitemap.
+ * SvelteKit actually serves. `/(legal)/privacy` → `/privacy`.
  */
 export function stripRouteGroups(routeId: string): string {
   const stripped = routeId.replaceAll(/\/\([^)]+\)/g, '');
@@ -22,30 +21,62 @@ export function stripRouteGroups(routeId: string): string {
 }
 
 /**
- * Convert a SvelteKit route ID into a `RegExp` for super-sitemap's
- * `excludeRoutePatterns`.
- *
- * Key invariant: super-sitemap@2 matches `excludeRoutePatterns` against the
- * route key AFTER `(group)` segments are stripped, but BEFORE dynamic params
- * are interpolated — see `createSvelteKitNormalizedRoutes` in
- * `super-sitemap/dist/adapters/sveltekit/internal/routes.js`, where the
- * exclusion `.filter()` runs after `removeSvelteKitRouteGroups()`. (This
- * changed from v1, which matched the raw route ID with groups still present.)
- * So we strip groups first, then escape regex metacharacters and anchor both
- * ends — `[slug]` / `[...path]` stay literal, matching super-sitemap's own
- * un-interpolated route key.
- *
- * v2 also requires `excludeRoutePatterns` entries to be actual `RegExp`
- * objects — passing regex strings now throws (`route-exclusion.js`).
- *
- * Limitation: optional params (`[[x]]`) are not expanded here. super-sitemap
- * expands a route's optional-segment variants BEFORE filtering, so a pattern
- * built from the un-expanded route ID would only match one variant. This is
- * fine today because the only `[[…]]` route is the sitemap `+server` endpoint,
- * which super-sitemap never discovers (it walks `+page*` files only). Revisit
- * if a non-indexable optional-param page route is ever added.
+ * A dynamic route split at its public-id param segment, ready to emit one
+ * URL per slug as `prefix + slug + suffix` — e.g.
+ * `/titles/[slug]/edit-history` → `{ prefix: '/titles/', suffix: '/edit-history' }`.
  */
-export function routeIdToRegex(routeId: string): RegExp {
-  const stripped = stripRouteGroups(routeId);
-  return new RegExp('^' + stripped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$');
+export interface RouteSlugSlot {
+  prefix: string;
+  suffix: string;
+}
+
+/**
+ * Split a (group-stripped) route ID at its `[slug]` / `[...path]` segment.
+ *
+ * Returns `null` when the route has no such segment, or has more than one
+ * dynamic segment — either way the caller can't fill it from a single slug.
+ * `[...path]` values ("a/b/c") substitute with literal slashes, which is
+ * exactly what the Location rest route needs.
+ */
+export function splitRouteAtParam(routeId: string): RouteSlugSlot | null {
+  const match = /\[(?:slug|\.\.\.path)\]/.exec(routeId);
+  if (!match) return null;
+  const prefix = routeId.slice(0, match.index);
+  const suffix = routeId.slice(match.index + match[0].length);
+  if (prefix.includes('[') || suffix.includes('[')) return null;
+  return { prefix, suffix };
+}
+
+/**
+ * Escape a value for an XML text node. Only `&`, `<` and `>` need escaping
+ * in text content; sitemap `<loc>`/`<lastmod>` values never carry quotes
+ * into attribute position.
+ */
+export function escapeXmlText(value: string): string {
+  return value.replaceAll(/[&<>]/g, (character) =>
+    character === '&' ? '&amp;' : character === '<' ? '&lt;' : '&gt;',
+  );
+}
+
+/** Render one `<url>` element. `lastmod` is omitted when undefined. */
+export function urlElement(loc: string, lastmod: string | undefined): string {
+  let element = `\n  <url>\n    <loc>${escapeXmlText(loc)}</loc>\n`;
+  if (lastmod) element += `    <lastmod>${escapeXmlText(lastmod)}</lastmod>\n`;
+  return element + '  </url>';
+}
+
+/** Wrap pre-rendered `<url>` elements (from {@link urlElement}) in a `<urlset>` document. */
+export function renderUrlset(urlElements: readonly string[]): string {
+  return `<?xml version="1.0" encoding="UTF-8" ?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urlElements.join(
+    '',
+  )}\n</urlset>`;
+}
+
+/** Render the `<sitemapindex>` document pointing at `/sitemap1.xml` … `/sitemap{pageCount}.xml`. */
+export function renderSitemapIndex(origin: string, pageCount: number): string {
+  let body = `<?xml version="1.0" encoding="UTF-8" ?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`;
+  for (let page = 1; page <= pageCount; page++) {
+    body += `\n  <sitemap>\n    <loc>${escapeXmlText(`${origin}/sitemap${page}.xml`)}</loc>\n  </sitemap>`;
+  }
+  return body + '\n</sitemapindex>';
 }

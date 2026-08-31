@@ -58,8 +58,7 @@
     "open-props": "^1.7.23",
     "openapi-fetch": "^0.17.0",
     "postcss-jit-props": "^1.0.16",
-    "posthog-js": "^1.418.10",
-    "super-sitemap": "~2.0.6"
+    "posthog-js": "^1.418.10"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

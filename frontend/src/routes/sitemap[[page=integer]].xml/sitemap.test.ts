@@ -3,6 +3,16 @@ import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { validateXML } from 'xmllint-wasm';
 import type { SitemapResponseSchema } from '$lib/api/schema';
+import type { RouteId } from '$app/types';
+import {
+  allRoutes,
+  classifyRoute,
+  isCatalogRoute,
+  isSearchEngineIndexable,
+  LISTED_INDEXABLE_ENTITY_SLUG_SOURCE,
+} from '$lib/route-metadata.server';
+import { MAX_URLS_PER_PAGE, splitRouteAtParam, stripRouteGroups } from '$lib/sitemap-helpers';
+import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 const SITEMAP_XSD = readFileSync(
   fileURLToPath(new URL('../../tests/fixtures/sitemap-0.9.xsd', import.meta.url)),
@@ -67,7 +77,7 @@ describe('GET /sitemap.xml', () => {
     expect(response.status).toBe(502);
   });
 
-  it('overrides super-sitemap default Cache-Control', async () => {
+  it('serves a public, cacheable Cache-Control', async () => {
     const response = await callGet();
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('public, max-age=3600');
@@ -165,8 +175,8 @@ describe('GET /sitemap.xml', () => {
   });
 
   // Pins the rest-param ([...path]) substitution: a multi-segment slug
-  // must render with literal slashes, not %2F. If super-sitemap ever
-  // starts URL-encoding param values, this test catches it.
+  // must render with literal slashes, not %2F. If the emitter ever
+  // starts URL-encoding slug values, this test catches it.
   it('substitutes a path-shaped Location slug into the rest route literally', async () => {
     setApiResponse({
       feeds: [
@@ -218,7 +228,7 @@ describe('GET /sitemap.xml', () => {
 
   // page=undefined is the canonical `/sitemap.xml`; page="1" is the first
   // sitemap-index subpage. Below 50k urls there's only one page so a
-  // request for page="2" should 404 from super-sitemap.
+  // request for a later page should 404.
   it('renders a urlset for page=undefined', async () => {
     const response = await callGet();
     const xml = await response.text();
@@ -230,12 +240,11 @@ describe('GET /sitemap.xml', () => {
     expect(response.status).toBe(404);
   });
 
-  // Production sits just under super-sitemap's 50,000-URL page limit, so the
+  // Production sits just under the sitemaps.org 50,000-URL page limit, so the
   // `<sitemapindex>` branch has never rendered for real. Each Title slug
   // expands to 3 URLs (detail + edit-history + sources), so this many slugs
   // clears the limit and exercises the split the way catalog growth will.
-  describe('above super-sitemap 50,000-url page limit', () => {
-    const MAX_PER_PAGE = 50_000;
+  describe('above the 50,000-url page limit', () => {
     const SLUGS = 17_000;
     const urlCount = (xml: string) => xml.match(/<url>/g)?.length ?? 0;
 
@@ -269,9 +278,9 @@ describe('GET /sitemap.xml', () => {
       const second = await (await callGet({ page: '2' })).text();
       expect(first).toContain('<urlset');
       expect(second).toContain('<urlset');
-      expect(urlCount(first)).toBe(MAX_PER_PAGE);
+      expect(urlCount(first)).toBe(MAX_URLS_PER_PAGE);
       expect(urlCount(second)).toBeGreaterThan(0);
-      expect(urlCount(second)).toBeLessThan(MAX_PER_PAGE);
+      expect(urlCount(second)).toBeLessThan(MAX_URLS_PER_PAGE);
 
       // Re-render with no feed to count the static routes the tree currently
       // discovers, so this stays correct as static routes are added.
@@ -286,13 +295,6 @@ describe('GET /sitemap.xml', () => {
   // with the Location rest-param regression (multi-segment slug must NOT
   // be percent-encoded), this catches encoding/structure regressions that
   // hand-written assertions miss.
-  //
-  // Slug constraint reminder: super-sitemap does NOT XML-escape <loc>
-  // contents (sitemap.js builds the string with template literals). That
-  // works only because catalog slugs are URL-safe alphanumerics/hyphens
-  // — a future slug containing `&`/`<`/`>` would produce invalid XML.
-  // Slug validation is the contract that makes the no-escaping behavior
-  // safe, not anything in this endpoint.
   it('renders XML that validates against sitemap-0.9.xsd', async () => {
     setApiResponse({
       feeds: [
@@ -348,5 +350,57 @@ describe('GET /sitemap.xml', () => {
     expect(response.status).toBe(200);
     const xml = await response.text();
     expect(xml).not.toContain('/whatever');
+  });
+
+  // The additive emitter's failure mode is silence: a dynamic route nobody
+  // wires to a feed just emits nothing. These tests turn that silence into
+  // a CI failure — with every catalog entity's feed present, every
+  // indexable dynamic route in the tree must produce at least one URL.
+  describe('with one feed per catalog entity', () => {
+    const slugFor = (kind: string) => `slug-for-${kind}`;
+
+    beforeEach(() => {
+      setApiResponse({
+        feeds: CATALOG_ENTITY_KEYS.map((kind) => ({
+          kind,
+          entries: [{ slug: slugFor(kind), lastmod: '2026-01-01T00:00:00Z' }],
+          detail_excluded_slugs: [],
+          max_lastmod: '2026-01-01T00:00:00Z',
+        })),
+      });
+    });
+
+    it('emits at least one URL for every indexable dynamic route', async () => {
+      const xml = await (await callGet()).text();
+
+      const dynamicIndexable = allRoutes().filter((id) => {
+        if (!id.includes('[')) return false;
+        try {
+          return isSearchEngineIndexable(id);
+        } catch {
+          return false;
+        }
+      });
+      expect(dynamicIndexable.length).toBeGreaterThan(0);
+
+      const listed: Partial<Record<RouteId, CatalogEntityKey>> =
+        LISTED_INDEXABLE_ENTITY_SLUG_SOURCE;
+      for (const id of dynamicIndexable) {
+        const cls = classifyRoute(id);
+        const entity = isCatalogRoute(cls) ? cls.entity : listed[id];
+        expect(entity, `route ${id} has no slug-source entity`).toBeDefined();
+        const slot = splitRouteAtParam(stripRouteGroups(id));
+        expect(slot, `route ${id} has no fillable [slug]/[...path] segment`).not.toBeNull();
+        const loc = `https://flipcommons.org${slot!.prefix}${slugFor(entity!)}${slot!.suffix}`;
+        expect(xml, `route ${id} emitted no URL`).toContain(`<loc>${loc}</loc>`);
+      }
+    });
+
+    it('emits every path at most once', async () => {
+      const xml = await (await callGet()).text();
+      const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+      expect(locs.length).toBeGreaterThan(0);
+      expect(new Set(locs).size).toBe(locs.length);
+    });
   });
 });

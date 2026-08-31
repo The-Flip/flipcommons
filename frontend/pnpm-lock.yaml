@@ -38,9 +38,6 @@ importers:
       posthog-js:
         specifier: ^1.418.10
         version: 1.418.10
-      super-sitemap:
-        specifier: ~2.0.6
-        version: 2.0.6
     devDependencies:
       '@sveltejs/adapter-node':
         specifier: ^5.5.7
@@ -2971,9 +2968,6 @@ packages:
     resolution: {integrity: sha512-xVQwyiuxALUBNB2fBe0tmNemg9KqLtdj3T64mioFDar79B2cU8LIyz+3KL6LdiHs9NkeNfwxpKSaIVOY8f112g==}
     engines: {node: '>=20.19.0'}
     hasBin: true
-
-  super-sitemap@2.0.6:
-    resolution: {integrity: sha512-SnwRkm5X9+Jq2HDPbFemZwxGya1+r4nJQw30UTu/2jdW1J6HfEz5hrXhy2ktbW/esmv+wOr5xN7s/kojYtAXkg==}
 
   supports-color@10.2.2:
     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
@@ -6128,8 +6122,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
       - typescript
-
-  super-sitemap@2.0.6: {}
 
   supports-color@10.2.2: {}
 
