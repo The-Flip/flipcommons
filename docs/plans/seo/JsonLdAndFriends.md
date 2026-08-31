@@ -70,7 +70,7 @@ What currently emits JSON-LD:
 
 This project already has a standard sitemap (URLs + `<lastmod>`), but it does not have the **image extension**. This is an `<image:image>` per URL, declaring associated images with title and caption. The sitemap image extension is new and the highest-leverage Google Image Search hook for a visual encyclopedia.
 
-This project currently uses `super-sitemap` to generate the sitemap, which doesn't support the image extension. TBD how we'll support the image extension.
+The sitemap endpoint emits its XML directly, so nothing structural blocks the image extension; it's deferred as a follow-up (see [Sitemap image extension](#sitemap-image-extension)).
 
 ## Schema.org types
 
@@ -743,9 +743,9 @@ Not for v1.
 
 ### Sitemap image extension
 
-The standard sitemap (URLs + `<lastmod>`, model-driven via `LinkableModel` walk, emitted through [super-sitemap](https://github.com/jasongitmail/super-sitemap)) is in v1. The image extension (`<image:image>` per URL, declaring associated images with title and caption) is deferred.
+The standard sitemap (URLs + `<lastmod>`, model-driven via `LinkableModel` walk, XML emitted directly by the SvelteKit endpoint) is in v1. The image extension (`<image:image>` per URL, declaring associated images with title and caption) is deferred.
 
-Why deferred: super-sitemap doesn't support sitemap extensions and exposes no plugin/hook for them. Adding image extension means either patching super-sitemap, replacing it, or rolling a separate `/sitemap-images.xml` endpoint and referencing it from the sitemap index. The separate-endpoint approach is the cleanest — keeps the existing super-sitemap pipeline untouched, uses the same per-entity facts (`primary_image` via the `display` rendition URL, entity name as image title, entity description as image caption), and slots into the sitemap index as a sibling.
+Why deferred: incremental value (see below), real lift. The endpoint emits its XML directly, so `<image:image>` elements can be added inline to the existing urlset — or via a separate `/sitemap-images.xml` slotted into the sitemap index as a sibling, if inline bloats page size. Either way the work is plumbing the per-entity image facts (`primary_image` via the `display` rendition URL, entity name as image title, entity description as image caption) into the sitemap feed.
 
 Why valuable: highest-leverage hook for Google Image Search on a visual encyclopedia. Visual catalog content (backglass art, playfield photos, cabinet shots) is exactly the use case `<image:image>` was designed for, and pinball search has real image-driven discovery (someone searching "medieval madness playfield" lands via Google Images more often than via web search).
 

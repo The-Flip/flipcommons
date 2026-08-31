@@ -11,6 +11,8 @@ See [`SearchEngines.md`](SearchEngines.md) for how this fits with `robots.txt` a
 
 ## Overview
 
+> **Update (2026-08):** the shipped endpoint no longer uses super-sitemap — it emits the XML directly (see §3 note). The rest of this plan (the Django feed, `SitemappedModel`, `STATIC_LASTMOD`, `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE`) still describes the shipped design.
+
 The sitemap is a SvelteKit `+server.ts` endpoint that renders `/sitemap.xml` via [`super-sitemap`](https://github.com/jasongitmail/super-sitemap). Per-URL `<lastmod>` comes from two sources:
 
 - **Dynamic catalog pages**: a single Django endpoint derives feeds from `SitemappedModel` subclasses, returning per-instance `(slug, lastmod)` plus an optional per-kind set of slugs whose `catalog-detail` URL is non-canonical. The default `lastmod` is the record's own `updated_at` filtered to `.active()`; one override (`Title`) widens lastmod to include its Models' `updated_at`. One canonical-URL override (`MachineModel`) marks single-Model-Title members as non-canonical at the detail route — their `/edit-history` and `/sources` URLs still emit.
@@ -308,6 +310,8 @@ The sitemap endpoint reads `STATIC_LASTMOD` directly (see §3) and emits one `<u
 - **Scales fine.** Six pages today. If the static-page count ever grows past ~30 and editors start forgetting bumps, revisit — but the trigger for revisiting is "we observed the failure mode," not "we imagined it."
 
 ## 3. Frontend — super-sitemap
+
+> **Update (2026-08):** super-sitemap was removed. Profiling against production-shaped data showed the library dominated cold-serve compute (~50ms of a ~70ms render on a dev laptop, 5–10× that on Railway): its subtractive model materializes every path object several times over (generate → strip → `processPaths` → dedupe) before rendering, and fighting its auto-discovery accounted for most of the handler's complexity (`routeIdToRegex`, `excludeRoutePatterns`, `emptyRouteExclusions`, `processPaths` lastmod re-attachment). The shipped `+server.ts` instead emits URLs additively — static indexable routes plus one URL per (route, slug) pair from the feed — and renders the XML directly via `$lib/sitemap-helpers` (~4ms), preserving the 50k `<sitemapindex>` split, the `[[page=integer]]` route shape, XSD validity and the `Cache-Control` policy, with a wiring-completeness test replacing the library's fail-loud-on-unwired-route behavior. The sections below record the original library-based design.
 
 The frontend uses [`super-sitemap`](https://github.com/jasongitmail/super-sitemap) for XML rendering. It handles escaping, `lastmod` formatting, and sitemap-index splitting (when total URLs cross 50k, an index document points at `/sitemap1.xml`, `/sitemap2.xml`, etc. — which only works if the route file is named `sitemap[[page=integer]].xml` and passes `page: params.page`, per the super-sitemap README). Pin to `super-sitemap@^2.0.4`, imported through its SvelteKit adapter subpath (`super-sitemap/sveltekit`) — v2 dropped the bare package entry point in favor of per-framework adapters. Still zero runtime dependencies, healthy maintenance (~40k downloads/month, single-maintainer with consistent cadence over 18+ months).
 

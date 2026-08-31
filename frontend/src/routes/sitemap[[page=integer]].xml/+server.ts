@@ -1,22 +1,27 @@
 /**
  * `/sitemap.xml` (and `/sitemap1.xml`, `/sitemap2.xml`, … when the urlset
- * crosses super-sitemap's 50,000-entry page limit and it emits a
- * `<sitemapindex>` instead).
+ * crosses the sitemaps.org 50,000-entry page limit and the base URL becomes
+ * a `<sitemapindex>`).
  *
  * The handler:
  *   1. Refuses on non-indexable deploys (`ALLOW_SEARCH_ENGINE_INDEXING != "true"`).
  *   2. Fetches the consolidated `/api/sitemap/` feed from Django.
- *   3. Wires each feed's slugs into every indexable SvelteKit route ID that
- *      shares the entity (`catalogRoutesByEntity` + `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE`).
+ *   3. Emits URLs additively: one per static indexable route, plus one per
+ *      (route, slug) pair for every indexable dynamic route wired to the
+ *      feed's entity (`catalogRoutesByEntity` + `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE`).
  *   4. Excludes detail-URL slugs flagged non-canonical (single-Model Title members
  *      collapse to the Title page) — but keeps `/edit-history` and `/sources`.
- *   5. Attaches hand-maintained `<lastmod>` to auto-discovered static URLs.
- *   6. Lets super-sitemap render XML, split into a `<sitemapindex>` if needed.
+ *   5. Attaches `<lastmod>`: per-entry for dynamic URLs, the feed's
+ *      `max_lastmod` for listing pages, hand-maintained `STATIC_LASTMOD` for
+ *      the rest.
+ *
+ * Additive means a dynamic route nobody wired to a feed silently emits
+ * nothing; the wiring-completeness test in `sitemap.test.ts` turns that
+ * silence into a CI failure.
  */
 
 import { env } from '$env/dynamic/private';
 import { getLogger } from '$lib/log';
-import * as sitemap from 'super-sitemap/sveltekit';
 import type { RequestHandler } from './$types';
 import type { RouteId } from '$app/types';
 import {
@@ -29,7 +34,14 @@ import {
 import { listingPath } from '$lib/entities/listing-path';
 import { isDeploymentSearchEngineIndexable } from '$lib/is-deployment-search-engine-indexable.server';
 import { STATIC_LASTMOD } from '$lib/static-lastmod';
-import { stripRouteGroups, routeIdToRegex } from '$lib/sitemap-helpers';
+import {
+  MAX_URLS_PER_PAGE,
+  renderSitemapIndex,
+  renderUrlset,
+  splitRouteAtParam,
+  stripRouteGroups,
+  urlElement,
+} from '$lib/sitemap-helpers';
 import { createServerClient } from '$lib/api/server';
 import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
@@ -64,61 +76,67 @@ function safeIsIndexable(id: RouteId): boolean {
   }
 }
 
+/**
+ * One indexable dynamic route, ready to emit `prefix + slug + suffix` per
+ * feed entry. `isDetail` marks the `catalog-detail` route, the only shape
+ * that honors the feed's `detail_excluded_slugs` (non-canonical detail URLs
+ * are dropped; their `/edit-history` and `/sources` URLs are kept).
+ */
+interface SlugRouteEmitter {
+  prefix: string;
+  suffix: string;
+  isDetail: boolean;
+}
+
 // --- Module-level memoization ------------------------------------------------
 // `allRoutes()`, the listed map, and STATIC_LASTMOD are stable across
 // requests. Compute the derived structures once at module load rather than
 // rebuilding inside every GET.
 
-// Route IDs that super-sitemap auto-discovers but must NOT emit. In v2 these
-// are matched against the route key with `(group)` segments stripped but
-// dynamic params (`[slug]` / `[...path]`) still present — `routeIdToRegex`
-// builds a `RegExp` in exactly that shape. NOT URL form.
-const EXCLUDE_ROUTE_PATTERNS: readonly RegExp[] = allRoutes()
-  .filter((id) => !safeIsIndexable(id))
-  .map(routeIdToRegex);
-
-// catalog-* detail/edit-history/sources route IDs, grouped by entity.
-// `safeIsIndexable` filters to the indexable catalog kinds; the `catalog-listing`
-// exclusion drops the param-less listing routes (`/cabinets`, `/games`, …) —
-// they carry no `[slug]`, so they belong in super-sitemap's static-route
-// auto-discovery, not `paramValues`. (super-sitemap@2 throws on a `paramValues`
-// key for a route that expects no params; v1 silently ignored it.) Listing
-// `<lastmod>` is still attached separately via `listingLastmodByUrl` below.
-const DIRECT_ROUTES_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly RouteId[]> =
-  catalogRoutesByEntity((cls, id) => cls.kind !== 'catalog-listing' && safeIsIndexable(id));
-
-// LISTED_INDEXABLE_ENTITY_SLUG_SOURCE inverted: kind → route IDs.
-const LISTED_ROUTES_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly RouteId[]> = (() => {
-  const out = new Map<CatalogEntityKey, RouteId[]>();
-  for (const [routeId, kind] of Object.entries(LISTED_INDEXABLE_ENTITY_SLUG_SOURCE) as [
-    RouteId,
-    CatalogEntityKey,
-  ][]) {
-    const arr = out.get(kind) ?? [];
-    arr.push(routeId);
-    out.set(kind, arr);
-  }
-  return out;
-})();
-
-// STATIC_LASTMOD keys are route IDs (may contain `(group)` segments).
-// super-sitemap's `processPaths` callback receives already-resolved URLs
-// with groups stripped, so look up by URL form.
+// STATIC_LASTMOD keys are route IDs (may contain `(group)` segments); the
+// emission loop works in URL form, so key by URL form.
 const STATIC_LASTMOD_BY_URL: ReadonlyMap<string, string> = new Map(
   Object.entries(STATIC_LASTMOD).map(([routeId, lastmod]) => [stripRouteGroups(routeId), lastmod]),
 );
 
-// Every indexable dynamic catalog route (detail/edit-history/sources plus the
-// listed-slug-source routes), flattened. super-sitemap@2 requires each
-// discovered dynamic route to carry ≥1 `paramValue` — so any route in this set
-// that a given request produces no entries for must be excluded from discovery
-// instead (see GET). This is the complete set of indexable dynamic routes: the
-// static `EXCLUDE_ROUTE_PATTERNS` removes every non-indexable route, so any
-// dynamic route super-sitemap still discovers is one of these.
-const ALL_INDEXABLE_DYNAMIC_ROUTES: readonly RouteId[] = [
-  ...DIRECT_ROUTES_BY_ENTITY.values(),
-  ...LISTED_ROUTES_BY_ENTITY.values(),
-].flat();
+// Every static (param-less) indexable route, in URL form — the home page,
+// the about/legal pages, and the catalog listing pages.
+const STATIC_INDEXABLE_URLS: readonly string[] = allRoutes()
+  .filter((id) => !id.includes('[') && safeIsIndexable(id))
+  .map(stripRouteGroups);
+
+// Every indexable dynamic route, grouped by the entity whose feed supplies
+// its slugs: the catalog detail/edit-history/sources routes (by route
+// convention) plus the LISTED_INDEXABLE_ENTITY_SLUG_SOURCE routes (declared).
+const EMITTERS_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly SlugRouteEmitter[]> = (() => {
+  const out = new Map<CatalogEntityKey, SlugRouteEmitter[]>();
+  const add = (entity: CatalogEntityKey, id: RouteId, isDetail: boolean) => {
+    const slot = splitRouteAtParam(stripRouteGroups(id));
+    if (!slot) {
+      // A wired route this helper can't fill from one slug (no [slug] /
+      // [...path] segment, or a second dynamic segment). Skipping keeps the
+      // sitemap serving; the wiring-completeness test fails in CI.
+      log.warn(`route ${id} has no single [slug]/[...path] segment; omitted from sitemap`);
+      return;
+    }
+    const arr = out.get(entity) ?? [];
+    arr.push({ ...slot, isDetail });
+    out.set(entity, arr);
+  };
+  const catalogRoutes = catalogRoutesByEntity(
+    (cls, id) => cls.kind !== 'catalog-listing' && safeIsIndexable(id),
+  );
+  for (const [entity, ids] of catalogRoutes) {
+    for (const id of ids) add(entity, id, classifyRoute(id).kind === 'catalog-detail');
+  }
+  for (const [id, entity] of Object.entries(LISTED_INDEXABLE_ENTITY_SLUG_SOURCE) as [
+    RouteId,
+    CatalogEntityKey,
+  ][]) {
+    add(entity, id, false);
+  }
+  return out;
+})();
 
 // ----------------------------------------------------------------------------
 
@@ -133,79 +151,71 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
     return new Response('Sitemap unavailable', { status: 502 });
   }
 
-  // Populate `paramValues` from the feed, one entry per slug. super-sitemap@2
-  // rejects both a missing key AND an empty array for any dynamic route it
-  // discovers — so a route with zero entries this request (entity absent from
-  // the feed, or every slug excluded) is left OUT of `paramValues` here and
-  // excluded from discovery below, rather than seeded with an empty array.
-  const paramValues: sitemap.ParamValues = {};
-
-  // Catalog listing pages (`/games`, `/manufacturers`, …) are static routes,
-  // so super-sitemap auto-discovers them but can't know their freshness. Key
-  // each listing URL to its entity feed's `max_lastmod` (the newest member's
-  // lastmod) and attach it in `processPaths` below, alongside STATIC_LASTMOD.
-  const listingLastmodByUrl = new Map<string, string>();
-
-  for (const feed of data.feeds) {
-    if (!isCatalogEntityKey(feed.kind)) continue;
-
-    if (feed.max_lastmod) {
-      listingLastmodByUrl.set(listingPath(feed.kind), feed.max_lastmod);
-    }
-
-    const direct = DIRECT_ROUTES_BY_ENTITY.get(feed.kind) ?? [];
-    const listed = LISTED_ROUTES_BY_ENTITY.get(feed.kind) ?? [];
-    if (direct.length === 0 && listed.length === 0) continue;
-
-    const excluded = new Set(feed.detail_excluded_slugs);
-    for (const id of [...direct, ...listed]) {
-      const cls = classifyRoute(id);
-      const isDetail = cls.kind === 'catalog-detail';
-      const entries =
-        isDetail && excluded.size
-          ? feed.entries.filter((e) => !excluded.has(e.slug))
-          : feed.entries;
-      // Leave zero-entry routes unset; they're excluded from discovery below.
-      if (entries.length === 0) continue;
-      paramValues[id] = entries.map((e) => ({
-        values: [e.slug],
-        lastmod: e.lastmod,
-      }));
-    }
-  }
-
-  // super-sitemap@2 throws on any discovered dynamic route without a
-  // (non-empty) `paramValue`. Every indexable dynamic route we didn't populate
-  // has zero URLs this request, so exclude it from discovery — matched, like
-  // EXCLUDE_ROUTE_PATTERNS, against the group-stripped route key.
-  const emptyRouteExclusions: RegExp[] = ALL_INDEXABLE_DYNAMIC_ROUTES.filter(
-    (id) => !(id in paramValues),
-  ).map(routeIdToRegex);
-
   // Same fallback pattern as `frontend/src/lib/api/server.ts`. Railway
   // builds enforce SITE_ORIGIN at build time via svelte.config.js; the
   // fallback only matters in `make dev` where the env var may be unset.
   const origin = env.SITE_ORIGIN?.trim() || url.origin;
 
-  return sitemap.response({
-    origin,
-    page: params.page,
-    excludeRoutePatterns: [...EXCLUDE_ROUTE_PATTERNS, ...emptyRouteExclusions],
-    paramValues,
-    // Static routes are auto-discovered by super-sitemap walking the routes
-    // tree; `processPaths` attaches `<lastmod>` to each one from
-    // STATIC_LASTMOD_BY_URL. Dynamic-route paths already carry their own
-    // `lastmod` from `paramValues`, so they pass through unchanged.
-    processPaths: (paths) =>
-      paths.map((p) => {
-        const lastmod = listingLastmodByUrl.get(p.path) ?? STATIC_LASTMOD_BY_URL.get(p.path);
-        return lastmod ? { ...p, lastmod } : p;
-      }),
-    // super-sitemap defaults to `max-age=0, s-maxage=3600` — a shared cache
-    // may hold the response, but every client must revalidate. Bunny fronts
-    // the apex and respects the origin `Cache-Control` (docs/Hosting.md
-    // § Bunny CDN), so `public, max-age=3600` keeps the same edge caching
-    // and additionally lets crawlers reuse their own copy for the TTL.
-    headers: { 'Cache-Control': 'public, max-age=3600' },
-  });
+  // Catalog listing pages (`/games`, `/manufacturers`, …) are static routes,
+  // so their freshness isn't in any per-entry lastmod. Key each listing URL
+  // to its entity feed's `max_lastmod` (the newest member's lastmod).
+  const listingLastmodByUrl = new Map<string, string>();
+  for (const feed of data.feeds) {
+    if (isCatalogEntityKey(feed.kind) && feed.max_lastmod) {
+      listingLastmodByUrl.set(listingPath(feed.kind), feed.max_lastmod);
+    }
+  }
+
+  // Pre-rendered `<url>` elements, deduplicated by path (first wins). Kept
+  // as one flat array so pagination is a slice.
+  const seen = new Set<string>();
+  const urlElements: string[] = [];
+  const push = (path: string, lastmod: string | undefined) => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    urlElements.push(urlElement(origin + path, lastmod));
+  };
+
+  for (const path of STATIC_INDEXABLE_URLS) {
+    push(path, listingLastmodByUrl.get(path) ?? STATIC_LASTMOD_BY_URL.get(path));
+  }
+
+  for (const feed of data.feeds) {
+    if (!isCatalogEntityKey(feed.kind)) continue;
+    const emitters = EMITTERS_BY_ENTITY.get(feed.kind);
+    if (!emitters) continue;
+    const excluded = new Set(feed.detail_excluded_slugs);
+    for (const { prefix, suffix, isDetail } of emitters) {
+      for (const entry of feed.entries) {
+        if (isDetail && excluded.has(entry.slug)) continue;
+        push(prefix + entry.slug + suffix, entry.lastmod);
+      }
+    }
+  }
+
+  const headers = {
+    'Content-Type': 'application/xml',
+    // A shared cache (Bunny fronts the apex and respects the origin
+    // `Cache-Control` — docs/Hosting.md § Bunny CDN) may hold the response
+    // for the TTL, and crawlers may reuse their own copy for the same
+    // window.
+    'Cache-Control': 'public, max-age=3600',
+  };
+
+  if (!params.page) {
+    const body =
+      urlElements.length <= MAX_URLS_PER_PAGE
+        ? renderUrlset(urlElements)
+        : renderSitemapIndex(origin, Math.ceil(urlElements.length / MAX_URLS_PER_PAGE));
+    return new Response(body, { headers });
+  }
+
+  // The `integer` param matcher guarantees a positive integer (no leading
+  // zeros), so the only failure mode left is a page past the end.
+  const page = Number(params.page);
+  const pageElements = urlElements.slice((page - 1) * MAX_URLS_PER_PAGE, page * MAX_URLS_PER_PAGE);
+  if (pageElements.length === 0) {
+    return new Response('Page does not exist', { status: 404 });
+  }
+  return new Response(renderUrlset(pageElements), { headers });
 };

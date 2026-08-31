@@ -24,8 +24,8 @@ from ninja import Schema
 class SitemapEntrySchema(Schema):
     """One URL's identifying slug + ``lastmod`` for a sitemap feed.
 
-    ``lastmod`` is serialized as ISO 8601 — the SvelteKit consumer passes
-    the string straight through to super-sitemap.
+    ``lastmod`` is serialized as ISO 8601 — the SvelteKit consumer emits
+    the string into ``<lastmod>`` verbatim.
     """
 
     slug: str
