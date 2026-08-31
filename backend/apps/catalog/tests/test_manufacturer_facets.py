@@ -797,6 +797,9 @@ class TestCardsEndpoint:
                 production_year=2000,
                 extra_data={"opdb.images": SAMPLE_IMAGES},
             )
+        # Discarded: the first request of the process pays one-off warm-up queries
+        # (ContentType cache population) that would otherwise inflate ``a``.
+        client.get("/api/manufacturers/")
         with CaptureQueriesContext(connection) as a:
             client.get("/api/manufacturers/")
         for i in range(3, 9):
@@ -908,6 +911,7 @@ class TestPageEndpoint:
         for i in range(3):
             _model(_ce(_mfr(f"a{i}", name=f"A{i}"), f"a{i}-ce"))
         url = "/api/pages/manufacturers?location=usa&q=A"
+        client.get(url)  # discarded: absorbs one-off process warm-up queries
         with CaptureQueriesContext(connection) as a:
             client.get(url)
         for i in range(3, 9):

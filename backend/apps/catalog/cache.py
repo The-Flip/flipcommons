@@ -1,10 +1,10 @@
 """Server-side response cache for the catalog's few whole-catalog read endpoints.
 
-This is a *response* cache, not a page cache: it stores pre-serialized JSON
-(bytes + ETag, indefinite timeout) for a handful of endpoints whose payload is
-expensive to build and identical for every visitor in an audience. It exists
-only to spare those endpoints a full-catalog rebuild on every request, and is
-deliberately small.
+This is a *response* cache, not a page cache: it exists only to spare a handful
+of endpoints a full-catalog rebuild on every request, and is deliberately
+small. Storage is ``apps.core.response_cache`` (pre-serialized JSON bytes +
+ETag); what this module owns is the catalog-specific part — audience-scoped
+keys, an indefinite timeout and invalidation on catalog writes.
 
 What is cached, who reads it, and the cost it avoids:
 
@@ -42,16 +42,14 @@ per request by ``apps.core.licensing.current_audience()``, which the
 
 from __future__ import annotations
 
-import json
 from functools import cache as _lru
-from hashlib import md5
 from typing import Any
 
-from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpResponse
 from pydantic import TypeAdapter
 
+from apps.core import response_cache
 from apps.core.licensing import current_audience
 
 # Bump when a code change alters a cached payload — its JSON shape *or* the
@@ -120,22 +118,14 @@ def export_key(entity_type: str) -> str:
     return f"{_EXPORT_BASE}:{entity_type}:{current_audience()}"
 
 
-def get_cached_response(cache_key: str) -> HttpResponse | None:
-    """Return a pre-built HttpResponse from cache, or None on miss.
+# Slots are audience-scoped (see the module docstring), so no downstream cache
+# may share one response across the kiosk/public boundary.
+_VARY = "Cookie"
 
-    Cached values are ``(json_bytes, etag)`` tuples written by
-    :func:`set_cached_response`.  The ETag is set on the response so
-    ``ConditionalGetMiddleware`` can compare it with ``If-None-Match``
-    and return 304 without any serialization or hashing.
-    """
-    cached = cache.get(cache_key)
-    if not isinstance(cached, tuple):
-        return None
-    json_bytes, etag = cached
-    response = HttpResponse(json_bytes, content_type="application/json")
-    response["ETag"] = etag
-    response["Vary"] = "Cookie"
-    return response
+
+def get_cached_response(cache_key: str) -> HttpResponse | None:
+    """Return a pre-built HttpResponse from cache, or None on miss."""
+    return response_cache.get_cached_response(cache_key, vary=_VARY)
 
 
 def set_cached_response(
@@ -143,23 +133,14 @@ def set_cached_response(
     adapter: TypeAdapter[Any],
     data: object,
 ) -> HttpResponse:
-    """Serialize *data* to JSON, cache, and return an ``HttpResponse``.
+    """Serialize *data* to JSON, cache it indefinitely, and return an ``HttpResponse``.
 
-    In ``DEBUG`` mode (dev + CI), *data* is first validated against *adapter*
-    so that shape drift fails loudly at the cache boundary. In production the
-    validation step is skipped — *data* must already be JSON-serializable
-    (plain dicts/lists/scalars). Callers must therefore emit dicts, not
-    Pydantic Schema instances, to keep both paths byte-equivalent.
+    Indefinite because :func:`invalidate_response_cache` owns eviction here —
+    these payloads go stale on a catalog write, not on a clock.
     """
-    if settings.DEBUG:
-        adapter.validate_python(data)
-    json_bytes = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
-    etag = f'"{md5(json_bytes, usedforsecurity=False).hexdigest()}"'
-    cache.set(cache_key, (json_bytes, etag), timeout=None)
-    response = HttpResponse(json_bytes, content_type="application/json")
-    response["ETag"] = etag
-    response["Vary"] = "Cookie"
-    return response
+    return response_cache.set_cached_response(
+        cache_key, adapter, data, timeout=None, vary=_VARY
+    )
 
 
 def invalidate_response_cache() -> None:
