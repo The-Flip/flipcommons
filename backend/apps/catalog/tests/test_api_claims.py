@@ -286,13 +286,13 @@ class TestUserClaimResolution:
 
     def test_source_wins_over_lower_priority_user(self, user, pm):
         high_source = make_ingest_source(
-            name="HighPri", source_type="editorial", priority=50000
+            name="HighPri", source_type="editorial", priority=20000
         )
         make_claim(pm, "name", "Medieval Madness", ingest_source=high_source)
         make_claim(pm, "production_year", 1990, ingest_source=high_source)
         make_claim(
             pm, "production_year", 2000, user=user, changeset=user_changeset(user)
-        )  # priority 10000 < 50000
+        )  # priority 10000 < 20000
 
         resolve_after_mutation(pm)
         assert pm.year == 1990

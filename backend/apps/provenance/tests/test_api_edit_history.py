@@ -3,6 +3,8 @@
 from typing import Any
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.tests.conftest import make_machine_model
@@ -460,3 +462,42 @@ class TestEditHistoryParkedFields:
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
         assert cs.pk not in [e["id"] for e in resp.json()]
+
+
+@pytest.mark.django_db
+class TestEditHistoryQueryCount:
+    def test_query_count_does_not_grow_with_changesets(self, client, user, pm):
+        """The page costs the same number of queries at 1 changeset as at 13.
+
+        The build reads every claim for the entity once and buckets it in
+        Python, so nothing here is per-changeset. A regression that reaches
+        back to the claim table per card — a prefetch, a chain lookup, an
+        author read — shows up as a count that tracks the loop.
+        """
+        client.force_login(user)
+        url = f"/api/pages/edit-history/model/{pm.slug}/"
+
+        def edit(year: int) -> None:
+            client.patch(
+                f"/api/models/{pm.slug}/claims/",
+                data=f'{{"fields": {{"production_year": {year}}}}}',
+                content_type="application/json",
+            )
+
+        edit(1998)
+        client.get(url)  # warm the ContentType cache
+
+        with CaptureQueriesContext(connection) as one_changeset:
+            client.get(url)
+
+        for year in range(1999, 2011):
+            edit(year)
+        assert len(_user_changesets(client.get(url))) == 13
+
+        with CaptureQueriesContext(connection) as many_changesets:
+            client.get(url)
+
+        assert len(many_changesets) == len(one_changeset), (
+            "Query count grew with changeset count:\n"
+            + "\n".join(q["sql"] for q in many_changesets)
+        )

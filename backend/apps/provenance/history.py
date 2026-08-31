@@ -7,7 +7,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from itertools import chain
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Prefetch, Q
 
 from apps.core.authz import PolicyUser, compute_row_capabilities
 from apps.core.types import ClaimKey
@@ -196,85 +195,68 @@ def build_edit_history(
     """Build changeset-grouped edit history with old→new diffs for an entity.
 
     Returns ChangeSetSchema rows newest first. Query count is bounded
-    independent of changeset count: changesets+prefetches, all claims for
-    the entity (for old-value lookup), winning-claim computation, one query
-    per distinct FK target model display needs to resolve, one per
-    public-id link type for markdown wikilink rendering, and one (plus a
-    links prefetch) for inline citation instances.
+    independent of changeset count: every claim the page renders is read
+    once up front and grouped in memory.
 
     ``user`` is the caller (boundary-cast via ``policy_user``) and is
     used to populate the per-row ``capabilities`` map.
     """
     ct = ContentType.objects.get_for_model(entity)
 
-    # 1. Fetch changesets that have claims OR retracted_claims for this entity.
+    # Active and inactive, every author: an edit's "old value" is the field's
+    # most recent prior claim whatever wrote it — an earlier user edit, an
+    # ingest or a source — so narrowing this read would lose diffs.
+    all_claims = list(
+        Claim.objects.filter(content_type=ct, object_id=entity.pk)
+        .select_related("actor__user")
+        .prefetch_related(citation_instances_prefetch())
+        .order_by("claim_key", "-created_at", "-pk")
+    )
+
+    # A chain is newest-first, which the query order already gives. A card
+    # lists its claims by field, then pk: one changeset's claims share
+    # ``created_at`` (db_default ``Now()``), so pk is all that separates them.
+    history: ClaimsByKey = defaultdict(list)
+    for c in all_claims:
+        history[c.claim_key].append(c)
+
+    asserted: dict[int, list[Claim]] = defaultdict(list)
+    retracted: dict[int, list[Claim]] = defaultdict(list)
+    for c in sorted(all_claims, key=lambda c: (c.field_name, c.pk)):
+        asserted[c.changeset_id].append(c)
+        if c.retracted_by_changeset_id is not None:
+            retracted[c.retracted_by_changeset_id].append(c)
+
+    # A changeset touched this entity iff it wrote or retracted one of these
+    # claims, so the ids are already in hand. Filtering ChangeSet on the claim
+    # join instead reads as the obvious spelling but ORs across two joins, and
+    # no index covers that.
     changesets = (
-        ChangeSet.objects.filter(
-            Q(claims__content_type=ct, claims__object_id=entity.pk)
-            | Q(
-                retracted_claims__content_type=ct,
-                retracted_claims__object_id=entity.pk,
-            )
-        )
-        .distinct()
+        ChangeSet.objects.filter(pk__in=asserted.keys() | retracted.keys())
         .select_related("actor__user", "actor__source")
-        .prefetch_related(
-            Prefetch(
-                "claims",
-                queryset=Claim.objects.filter(content_type=ct, object_id=entity.pk)
-                .select_related("actor__user")
-                .order_by("field_name")
-                .prefetch_related(citation_instances_prefetch()),
-            ),
-            Prefetch(
-                "retracted_claims",
-                queryset=Claim.objects.filter(
-                    content_type=ct, object_id=entity.pk
-                ).order_by("field_name"),
-            ),
-        )
         # All ChangeSets minted in one ingest ``bulk_create`` share ``created_at``
         # (db_default ``Now()``), so for a per-entry patch run file order lives only
         # in pk — tiebreak on it to keep the timeline deterministic and ordered.
         .order_by("-created_at", "-pk")
     )
 
-    # 2. Fetch ALL claims for this entity (active + inactive, any author) to
-    #    build a per-field history chain for old-value lookups. The "old
-    #    value" for a user edit is whatever the field's most recent prior
-    #    claim was — be it a previous user edit, ingest, or source.
-    all_claims = list(
-        Claim.objects.filter(
-            content_type=ct,
-            object_id=entity.pk,
-        ).order_by("claim_key", "-created_at", "-pk")
-    )
-
-    # Build lookup: claim_key → list of claims ordered newest-first.
-    history: ClaimsByKey = defaultdict(list)
-    for c in all_claims:
-        history[c.claim_key].append(c)
-
-    # 3. Compute winning claims for is_winning.
     winning_ids = _compute_winning_claim_ids(ct, entity.pk)
 
-    # 4. Resolve FK labels and wikilink authoring keys once across every value
-    #    any changeset will render. ``all_claims`` is the superset (current
-    #    claims, retracted claims, and history chains all draw from it), so one
-    #    pass suffices.
+    # Resolve FK labels and wikilink authoring keys once across every value any
+    # changeset will render: cards, retractions and chains all draw from
+    # ``all_claims``, so one pass over it covers them.
     model = type(entity)
     ctx = resolve_display_context(
         FieldValue(c.field_name, c.value, model) for c in all_claims
     )
     inline_citations = resolve_inline_citations(c.value for c in all_claims)
 
-    # 5. Build response.
     result: list[ChangeSetSchema] = []
     for cs in changesets:
         changes, retractions = build_changes(
             model,
-            cs.claims.all(),
-            cs.retracted_claims.all(),
+            asserted.get(cs.pk, []),
+            retracted.get(cs.pk, []),
             history,
             winning_ids=winning_ids,
             ctx=ctx,
