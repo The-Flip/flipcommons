@@ -146,13 +146,16 @@ const EMITTERS_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly SlugRouteEmitte
 
 export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
   if (!isDeploymentSearchEngineIndexable()) {
-    return new Response('Not Found', { status: 404 });
+    return new Response('Not Found', { status: 404, headers: { 'Cache-Control': NO_STORE } });
   }
 
   const client = createServerClient(fetch, url, request);
   const { data, error } = await client.GET('/api/sitemap/');
   if (error || !data) {
-    return new Response('Sitemap unavailable', { status: 502 });
+    return new Response('Sitemap unavailable', {
+      status: 502,
+      headers: { 'Cache-Control': NO_STORE },
+    });
   }
 
   // Same fallback pattern as `frontend/src/lib/api/server.ts`. Railway
@@ -210,7 +213,12 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
   const page = Number(params.page);
   const pageElements = urlElements.slice((page - 1) * MAX_URLS_PER_PAGE, page * MAX_URLS_PER_PAGE);
   if (pageElements.length === 0) {
-    return new Response('Page does not exist', { status: 404 });
+    // As cacheable as the document that defines the page set: which page
+    // numbers exist is a function of that same urlset, on the same TTL.
+    return new Response('Page does not exist', {
+      status: 404,
+      headers: { 'Cache-Control': CACHE_CONTROL },
+    });
   }
   return respond(renderUrlset(pageElements), request);
 };
@@ -225,6 +233,16 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
  * latency and only multiply origin renders.
  */
 const CACHE_CONTROL = 'public, max-age=3600';
+
+/**
+ * For the replies that must outlive nothing. A response reaching Bunny with no
+ * `Cache-Control` inherits the pull zone's 30-day default — the hazard the
+ * Caddyfile already guards `/__health` against — and both replies stamped with
+ * this would be badly wrong to hold that long: a 502 raised by a Django feed
+ * outage, and the 404 a deploy serves while search-engine indexing is switched
+ * off. `cacheControlHandle` cannot cover them; it stamps 2xx only.
+ */
+const NO_STORE = 'no-store';
 
 /**
  * Send the rendered document — or a bodyless `304` when the requester already

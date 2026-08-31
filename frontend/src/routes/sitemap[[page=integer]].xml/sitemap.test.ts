@@ -76,12 +76,17 @@ describe('GET /sitemap.xml', () => {
     delete mockEnv.ALLOW_SEARCH_ENGINE_INDEXING;
     const response = await callGet();
     expect(response.status).toBe(404);
+    // Never edge-cached: flipping the deploy to indexable must take effect at
+    // once, and a bare response would inherit Bunny's 30-day default.
+    expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
   it('returns 502 when the Django client returns an error', async () => {
     setApiError();
     const response = await callGet();
     expect(response.status).toBe(502);
+    // A cached 502 would outlive the Django outage that caused it.
+    expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
   it('serves a public, cacheable Cache-Control', async () => {
@@ -304,6 +309,11 @@ describe('GET /sitemap.xml', () => {
     const response = await callGet();
     const xml = await response.text();
     expect(xml).toContain('<urlset');
+  });
+
+  it('caches an out-of-range page 404 like the document that defines the page set', async () => {
+    const response = await callGet({ page: '99' });
+    expect(response.headers.get('cache-control')).toBe('public, max-age=3600');
   });
 
   it('404s for an out-of-range page index', async () => {
