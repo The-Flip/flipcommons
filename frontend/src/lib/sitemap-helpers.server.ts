@@ -1,8 +1,12 @@
 /**
  * Helpers for the `/sitemap.xml` endpoint, split out for unit-testability.
- * No SvelteKit-runtime imports here so vitest can import without spinning
+ *
+ * Server-only: {@link sitemapEtag} hashes through `node:crypto`. Still no
+ * SvelteKit-runtime imports, so vitest can import the module without spinning
  * up `$env/dynamic/private` or `import.meta.glob`.
  */
+
+import { createHash } from 'node:crypto';
 
 /**
  * Max `<url>` entries per sitemap page (the sitemaps.org limit). Above it,
@@ -79,4 +83,49 @@ export function renderSitemapIndex(origin: string, pageCount: number): string {
     body += `\n  <sitemap>\n    <loc>${escapeXmlText(`${origin}/sitemap${page}.xml`)}</loc>\n  </sitemap>`;
   }
   return body + '\n</sitemapindex>';
+}
+
+/**
+ * A weak `ETag` over a rendered sitemap document, for conditional requests.
+ *
+ * Weak (`W/`) rather than strong because the bytes a client receives are not
+ * necessarily the bytes hashed here — Caddy and Bunny may compress the body,
+ * and a strong tag is a promise about an exact octet sequence. `If-None-Match`
+ * only ever uses weak comparison, so the distinction costs nothing.
+ *
+ * Hashing the body, rather than deriving a timestamp from the feed, is what
+ * makes the validator sound: every change to the document changes the tag,
+ * including the changes no `lastmod` moves — a record soft-deleted out of a
+ * feed, a detail URL newly excluded as non-canonical, a static route added by
+ * a deploy, a page boundary shifting under pagination.
+ */
+export function sitemapEtag(body: string): string {
+  return `W/"${createHash('sha256').update(body).digest('base64url')}"`;
+}
+
+/** Strip a weak-validator prefix, so `W/"abc"` and `"abc"` compare equal. */
+function opaqueTag(etag: string): string {
+  return etag.startsWith('W/') ? etag.slice(2) : etag;
+}
+
+/**
+ * Does an `If-None-Match` request header already match `etag`?
+ *
+ * Weak comparison per RFC 9110 §8.8.3.2 — the `W/` prefix is ignored on both
+ * sides, so the tag still matches if an intermediary weakened it. The field is
+ * a comma-separated list and any member matching is a match; `*` matches any
+ * existing representation.
+ *
+ * Splitting on `,` is a simplification — RFC 9110's `etagc` allows a comma
+ * inside a quoted tag. It cannot bite here, since {@link sitemapEtag} emits
+ * base64url, and it fails safe regardless: an unparsed tag simply misses and
+ * the body is served.
+ */
+export function ifNoneMatchSatisfied(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  const wanted = opaqueTag(etag);
+  return header
+    .split(',')
+    .map((candidate) => candidate.trim())
+    .some((candidate) => candidate === '*' || opaqueTag(candidate) === wanted);
 }
