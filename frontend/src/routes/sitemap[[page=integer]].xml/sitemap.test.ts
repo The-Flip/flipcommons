@@ -11,7 +11,11 @@ import {
   isSearchEngineIndexable,
   LISTED_INDEXABLE_ENTITY_SLUG_SOURCE,
 } from '$lib/route-metadata.server';
-import { MAX_URLS_PER_PAGE, splitRouteAtParam, stripRouteGroups } from '$lib/sitemap-helpers';
+import {
+  MAX_URLS_PER_PAGE,
+  splitRouteAtParam,
+  stripRouteGroups,
+} from '$lib/sitemap-helpers.server';
 import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 const SITEMAP_XSD = readFileSync(
@@ -35,12 +39,15 @@ vi.mock('$lib/api/server', () => ({
 
 import { GET } from './+server';
 
-function callGet(opts: { page?: string; origin?: string } = {}): Promise<Response> {
+function callGet(
+  opts: { page?: string; origin?: string; ifNoneMatch?: string } = {},
+): Promise<Response> {
   const origin = opts.origin ?? 'http://localhost:5173';
+  const headers = opts.ifNoneMatch ? { 'If-None-Match': opts.ifNoneMatch } : undefined;
   return GET({
     fetch,
     url: new URL(`${origin}/sitemap${opts.page ? opts.page : ''}.xml`),
-    request: new Request(origin),
+    request: new Request(origin, { headers }),
     params: { page: opts.page },
   } as unknown as Parameters<typeof GET>[0]) as Promise<Response>;
 }
@@ -81,6 +88,70 @@ describe('GET /sitemap.xml', () => {
     const response = await callGet();
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('public, max-age=3600');
+  });
+
+  describe('conditional requests', () => {
+    const feedWith = (slug: string): SitemapResponseSchema => ({
+      feeds: [
+        {
+          kind: 'title',
+          entries: [{ slug, lastmod: '2026-01-01' }],
+          detail_excluded_slugs: [],
+          max_lastmod: '2026-01-01',
+        },
+      ],
+    });
+
+    it('serves a weak ETag alongside the body', async () => {
+      const response = await callGet();
+      expect(response.status).toBe(200);
+      expect(response.headers.get('etag')).toMatch(/^W\/"[\w-]+"$/);
+    });
+
+    it('304s a request whose If-None-Match already holds the document', async () => {
+      const etag = (await callGet()).headers.get('etag');
+      const response = await callGet({ ifNoneMatch: etag! });
+      expect(response.status).toBe(304);
+      expect(await response.text()).toBe('');
+    });
+
+    it('repeats Cache-Control and ETag on the 304, and omits Content-Type', async () => {
+      const etag = (await callGet()).headers.get('etag');
+      const response = await callGet({ ifNoneMatch: etag! });
+      expect(response.headers.get('cache-control')).toBe('public, max-age=3600');
+      expect(response.headers.get('etag')).toBe(etag);
+      expect(response.headers.get('content-type')).toBeNull();
+    });
+
+    it('serves the body when the held tag is stale', async () => {
+      setApiResponse(feedWith('old-title'));
+      const stale = (await callGet()).headers.get('etag');
+      setApiResponse(feedWith('new-title'));
+      const response = await callGet({ ifNoneMatch: stale! });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('new-title');
+    });
+
+    it('tags each page of a sitemapindex separately', async () => {
+      setApiResponse({
+        feeds: [
+          {
+            kind: 'title',
+            entries: Array.from({ length: MAX_URLS_PER_PAGE + 10 }, (_, i) => ({
+              slug: `t${i}`,
+              lastmod: '2026-01-01',
+            })),
+            detail_excluded_slugs: [],
+            max_lastmod: '2026-01-01',
+          },
+        ],
+      });
+      const first = (await callGet({ page: '1' })).headers.get('etag');
+      const second = (await callGet({ page: '2' })).headers.get('etag');
+      expect(first).not.toBe(second);
+      // A page-1 tag must not silently 304 a request for page 2.
+      expect((await callGet({ page: '2', ifNoneMatch: first! })).status).toBe(200);
+    });
   });
 
   it('renders Title detail/edit-history/sources URLs from a title feed', async () => {

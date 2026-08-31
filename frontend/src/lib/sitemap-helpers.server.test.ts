@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   escapeXmlText,
+  ifNoneMatchSatisfied,
   renderSitemapIndex,
   renderUrlset,
+  sitemapEtag,
   splitRouteAtParam,
   stripRouteGroups,
   urlElement,
-} from './sitemap-helpers';
+} from './sitemap-helpers.server';
 
 describe('stripRouteGroups', () => {
   it.each([
@@ -84,5 +86,47 @@ describe('renderSitemapIndex', () => {
     expect(xml).toContain('<loc>https://flipcommons.org/sitemap1.xml</loc>');
     expect(xml).toContain('<loc>https://flipcommons.org/sitemap2.xml</loc>');
     expect(xml).not.toContain('sitemap3.xml');
+  });
+});
+
+describe('sitemapEtag', () => {
+  it('is a quoted weak validator', () => {
+    expect(sitemapEtag('<urlset/>')).toMatch(/^W\/"[\w-]+"$/);
+  });
+
+  it('is stable for identical bodies', () => {
+    expect(sitemapEtag('<urlset/>')).toBe(sitemapEtag('<urlset/>'));
+  });
+
+  it('changes when a url is REMOVED, not just added', () => {
+    const before = renderUrlset([
+      urlElement('https://x.test/a', undefined),
+      urlElement('https://x.test/b', undefined),
+    ]);
+    const after = renderUrlset([urlElement('https://x.test/a', undefined)]);
+    expect(sitemapEtag(after)).not.toBe(sitemapEtag(before));
+  });
+
+  it('changes when only a lastmod moves', () => {
+    const before = renderUrlset([urlElement('https://x.test/a', '2026-01-01')]);
+    const after = renderUrlset([urlElement('https://x.test/a', '2026-01-02')]);
+    expect(sitemapEtag(after)).not.toBe(sitemapEtag(before));
+  });
+});
+
+describe('ifNoneMatchSatisfied', () => {
+  const etag = 'W/"abc"';
+
+  it.each([
+    ['a missing header', null, false],
+    ['an empty header', '', false],
+    ['the identical tag', 'W/"abc"', true],
+    ['the same tag sent strong (weak comparison)', '"abc"', true],
+    ['a different tag', 'W/"xyz"', false],
+    ['a list containing the tag', 'W/"xyz", W/"abc"', true],
+    ['a list without the tag', 'W/"xyz", W/"def"', false],
+    ['the wildcard', '*', true],
+  ])('%s', (_label, header, expected) => {
+    expect(ifNoneMatchSatisfied(header as string | null, etag)).toBe(expected);
   });
 });

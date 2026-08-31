@@ -14,6 +14,8 @@
  *   5. Attaches `<lastmod>`: per-entry for dynamic URLs, the feed's
  *      `max_lastmod` for listing pages, hand-maintained `STATIC_LASTMOD` for
  *      the rest.
+ *   6. Answers `304` to a conditional request whose `If-None-Match` already
+ *      holds the rendered document (see `respond`).
  *
  * Additive means a dynamic route nobody wired to a feed silently emits
  * nothing; the wiring-completeness test in `sitemap.test.ts` turns that
@@ -35,13 +37,15 @@ import { listingPath } from '$lib/entities/listing-path';
 import { isDeploymentSearchEngineIndexable } from '$lib/is-deployment-search-engine-indexable.server';
 import { STATIC_LASTMOD } from '$lib/static-lastmod';
 import {
+  ifNoneMatchSatisfied,
   MAX_URLS_PER_PAGE,
   renderSitemapIndex,
   renderUrlset,
+  sitemapEtag,
   splitRouteAtParam,
   stripRouteGroups,
   urlElement,
-} from '$lib/sitemap-helpers';
+} from '$lib/sitemap-helpers.server';
 import { createServerClient } from '$lib/api/server';
 import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
@@ -193,21 +197,12 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
     }
   }
 
-  const headers = {
-    'Content-Type': 'application/xml',
-    // A shared cache (Bunny fronts the apex and respects the origin
-    // `Cache-Control` — docs/Hosting.md § Bunny CDN) may hold the response
-    // for the TTL, and crawlers may reuse their own copy for the same
-    // window.
-    'Cache-Control': 'public, max-age=3600',
-  };
-
   if (!params.page) {
     const body =
       urlElements.length <= MAX_URLS_PER_PAGE
         ? renderUrlset(urlElements)
         : renderSitemapIndex(origin, Math.ceil(urlElements.length / MAX_URLS_PER_PAGE));
-    return new Response(body, { headers });
+    return respond(body, request);
   }
 
   // The `integer` param matcher guarantees a positive integer (no leading
@@ -217,5 +212,50 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
   if (pageElements.length === 0) {
     return new Response('Page does not exist', { status: 404 });
   }
-  return new Response(renderUrlset(pageElements), { headers });
+  return respond(renderUrlset(pageElements), request);
 };
+
+/**
+ * A shared cache (Bunny fronts the apex and respects the origin
+ * `Cache-Control` — docs/Hosting.md § Bunny CDN) may hold the response for the
+ * TTL, and crawlers may reuse their own copy for the same window.
+ *
+ * An hour is not a freshness lever: a crawler re-reads a sitemap on its own
+ * schedule, hours to a day apart, so a shorter TTL would buy no discovery
+ * latency and only multiply origin renders.
+ */
+const CACHE_CONTROL = 'public, max-age=3600';
+
+/**
+ * Send the rendered document — or a bodyless `304` when the requester already
+ * holds this exact one.
+ *
+ * A `304` saves the TRANSFER, not the render. The tag is a hash of the body, so
+ * the document gets built either way; what is avoided is shipping ~6 MB (~310 KB
+ * compressed) to a requester that already has it.
+ *
+ * Most of that saving comes from the `ETag` on the 200 rather than from the 304
+ * branch below: crawlers reach Bunny, not the origin, and Bunny answers their
+ * conditional re-fetches from its own cached copy. The branch below covers the
+ * narrower case of a conditional request that reaches us — Bunny revalidating
+ * on TTL expiry, if it forwards the validator upstream.
+ *
+ * No `Last-Modified` to go with it. Every timestamp cheaply available here —
+ * the feeds' `max_lastmod`, the newest entry's `lastmod` — can sit EARLIER
+ * than a real change to this document, because removals and exclusions alter
+ * the URL set without moving any `lastmod` forward. A validator that
+ * understates is worse than none: it answers `304` to an
+ * `If-Modified-Since` that deserved the new body, and the crawler keeps the
+ * stale sitemap. The body hash cannot understate.
+ */
+function respond(body: string, request: Request): Response {
+  const etag = sitemapEtag(body);
+  // RFC 9110 §15.4.5: a 304 carries the header fields the 200 would have
+  // carried, minus the representation ones (`Content-Type` describes a body
+  // that isn't being sent).
+  const headers = { 'Cache-Control': CACHE_CONTROL, ETag: etag };
+  if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
+    return new Response(null, { status: 304, headers });
+  }
+  return new Response(body, { headers: { ...headers, 'Content-Type': 'application/xml' } });
+}
