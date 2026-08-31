@@ -512,10 +512,6 @@ class SitemappedModel(LinkableModel, LastUpdatedModel):
             "models.QuerySet[Self]",
             objects.active()
             .annotate(_last_modified=cls.lastmod_expression())
-            # ``updated_at`` comes from ``TimeStampedModel``; django-stubs
-            # can't see fields from a sibling mixin on the abstract base.
-            # Parity test pins the contract.
-            .only(cls.public_id_field, "updated_at")  # type: ignore[misc]
             .order_by(cls.public_id_field),
         )
 

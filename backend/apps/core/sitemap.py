@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import NamedTuple
 
 from django.apps import apps
+from django.db.models.query import EmptyQuerySet
 
 from apps.core.models import SitemappedModel
 
@@ -62,23 +63,31 @@ def all_sitemap_feeds() -> list[SitemapFeed]:
     datetime when a feed is returned). Entries whose ``_last_modified``
     annotation evaluates to ``None`` are dropped — that's the legitimate
     aggregation case (a future ``Max("…__updated_at")`` over an empty
-    relation, etc.). A row missing the annotation entirely is a programmer
-    bug (override forgot to ``.annotate(_last_modified=…)``) and raises
-    ``AttributeError`` so it surfaces in CI rather than silently producing
-    an empty feed.
+    relation, etc.). A model whose override forgot to
+    ``.annotate(_last_modified=…)`` raises ``FieldError`` when the query is
+    built, so the contract is enforced by failure rather than by silently
+    producing an empty feed.
+
+    Reads two columns per row rather than model instances: a feed needs only
+    the public id and the freshness value, and building an instance per row
+    costs more than the query that fetched it.
     """
     feeds: list[SitemapFeed] = []
     for model in apps.get_models():
         if not issubclass(model, SitemappedModel) or model._meta.abstract:
             continue
-        slug_field = model.public_id_field
+        queryset = model.sitemap_queryset()
+        # ``cls.objects.none()`` is the documented way to opt out, and it
+        # carries no ``_last_modified`` annotation — naming the column below
+        # would raise ``FieldError`` while resolving the query rather than
+        # yielding the zero rows the override asked for.
+        if isinstance(queryset, EmptyQuerySet):
+            continue
+        rows = queryset.values_list(model.public_id_field, "_last_modified")
         entries = [
-            SitemapEntry(getattr(o, slug_field), lastmod)
-            for o in model.sitemap_queryset().iterator()
-            # ``_last_modified`` is a queryset annotation, not a declared
-            # field — read directly so a missing annotation raises (the
-            # override contract is enforced by failure, not silent skip).
-            if (lastmod := o._last_modified) is not None  # type: ignore[attr-defined]
+            SitemapEntry(public_id, lastmod)
+            for public_id, lastmod in rows.iterator()
+            if lastmod is not None
         ]
         if not entries:
             continue

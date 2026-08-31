@@ -12,6 +12,7 @@ from datetime import datetime
 
 import pytest
 from django.apps import apps
+from django.core.exceptions import FieldError
 
 from apps.catalog.models import Title
 from apps.core.models import SitemappedModel
@@ -162,3 +163,22 @@ class TestSitemapOptOut:
 
         feeds = {f.kind: f for f in all_sitemap_feeds()}
         assert "title" not in feeds
+
+    def test_unannotated_queryset_raises(self, monkeypatch):
+        """An override returning rows but no ``_last_modified`` is a
+        programmer error, and must fail loudly rather than quietly drop the
+        model's URLs out of the sitemap.
+
+        The opt-out above and this case differ only by whether the queryset
+        is empty, so they are easy to conflate — pin both.
+        """
+        Title.objects.create(name="A", slug="a")
+
+        monkeypatch.setattr(
+            Title,
+            "sitemap_queryset",
+            classmethod(lambda cls: cls.objects.all()),
+        )
+
+        with pytest.raises(FieldError, match="_last_modified"):
+            all_sitemap_feeds()
