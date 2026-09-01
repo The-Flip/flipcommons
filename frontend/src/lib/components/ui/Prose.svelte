@@ -30,9 +30,14 @@
     margin-bottom: var(--size-2);
   }
 
+  /* Open Props normalize clamps `p` to a readable measure but leaves `ul`/`ol`
+     unclamped, and app.css drops normalize's `li` clamp so UI chrome lists can
+     run full width. Clamping the list here keeps prose bullets wrapping flush
+     with the paragraphs around them. */
   .prose :global(ul),
   .prose :global(ol) {
     padding-left: var(--size-5);
+    max-inline-size: var(--size-content-3);
   }
 
   .prose :global(a) {
