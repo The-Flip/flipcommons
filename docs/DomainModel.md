@@ -266,9 +266,9 @@ Remakes are not a tag: the `remake_of` [model relationship](#remakes) records th
 Form factor of the physical cabinet:
 
 - `floor`: the standard full-sized, free-standing unit with a vertical backbox — what people mean by "pinball machine" without qualification.
-- `tabletop`: a miniaturized unit with reduced backbox and no legs, designed to sit on a table or counter.
 - `countertop`: the smallest coin-op format, light enough for one person to move and designed to sit on a bar or counter.
 - `cocktail`: a horizontal, table-height unit with a flat glass top; players look down onto the playfield while seated.
+- `upright`: a floorstanding or wall-hung model where the playfield stands on end rather than sloping away from the player.
 
 ### GameFormat
 
@@ -279,24 +279,26 @@ The type of game:
 - `shuffle`: a puck or ball slid down a long polished surface toward scoring zones.
 - `rolldown`: balls rolled by hand down a long cabinet into scoring holes or pockets rather than launched by a plunger; distinct from `shuffle`, where a puck is slid toward open scoring zones instead.
 - `pitch-and-bat`: a coin-op baseball game with a mechanical pitch and a player-swung bat.
-- `slot-machine`: a coin-op gambling machine paying out by chance rather than skill.
+- `flasher-type-gambling-console`: a gambling device that lights a winning combination of symbols behind a glass instead of spinning reels.
 - `video-game`: played on a video screen rather than a physical playfield.
 - `gun-game`: a shooting game aiming a mechanical gun or rifle at targets.
 - `one-ball`: a coin-op gambling machine — one ball per coin, paying out in cash or tickets when it lands in a winning hole; often horse-race themed, and the payout format that preceded `bingo-pinball`.
 - `bingo-pinball`: a coin-op gambling machine — five balls shot into a grid of holes to line up numbers on a 5×5 card printed on the backglass; classically flipperless, though later export machines added flippers.
+- `cue-game`: a coin-op table on which the player drives the ball with a hand-held cue, pool-fashion, rather than a plunger — the early-1930s carom and golf tables and the mid-1950s electric pool wave.
 - `miscellaneous`: a catch-all for machines that fit no more specific format.
 
 ### RewardType
 
 Reward mechanisms:
 
+- `novelty`: no reward; the game is offered purely for amusement.
+- `free-play`: no coin required to start — the absence of the coin-op transaction rather than a reward.
 - `replay`: a free game awarded for a high score, objective or end-of-game match.
 - `add-a-ball`: an extra ball rather than a free game.
-- `novelty`: no reward; the game is offered purely for amusement.
-- `cash-payout`: coins dispensed directly based on scoring.
-- `ticket-payout`: redeemable paper tickets dispensed based on score.
-- `merchant-paid`: the machine displays the fact of winning, but the award is handed over at the location, in cash, trade credit or goods.
-- `free-play`: no coin required to start — the absence of the coin-op transaction rather than a reward.
+- `payout`: the machine itself dispenses an award: cash, candy, merchandise, etc.
+- `cash-payout`: the machine itself dispenses coins. This is a sub-type of `payout`.
+- `ticket-payout`: the machine itself dispenses redeemable tickets.
+- `merchant-paid`: the machine displays the fact of winning, but the award is handed over by the merchant, in cash, trade credit or goods.
 
 ### Theme
 

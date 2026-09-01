@@ -414,13 +414,13 @@ a:hover {
   color: var(--color-text);
   font-weight: var(--font-weight-6); /* 600 — normalize ships 900 */
   line-height: var(--font-lineheight-1); /* 1.25 */
+  max-inline-size: none; /* drop normalize's --size-header-* clamps */
 }
 
 :where(h1) {
   font-size: var(--font-size-6); /* 2.5rem */
   font-weight: var(--font-weight-7); /* 700 */
   line-height: var(--font-lineheight-0); /* 1.1 — tighter for the big size */
-  max-inline-size: none; /* drop normalize's --size-header-1 clamp */
 }
 
 :where(h2) {
