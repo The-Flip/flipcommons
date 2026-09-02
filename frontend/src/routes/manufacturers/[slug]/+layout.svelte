@@ -4,7 +4,7 @@
   import { resolve } from '$app/paths';
   import { formatActiveRange, websiteHostname } from '$lib/utils';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import ExpandableSidebarList from '$lib/components/layout/page/sidebar/ExpandableSidebarList.svelte';
@@ -39,6 +39,15 @@
 
   let yearsActive = $derived(
     formatActiveRange(mfr.year_of_first_model, mfr.year_of_last_model, mfr.operating_status),
+  );
+
+  let metaTitle = $derived(
+    entityPageTitle(
+      mfr.name,
+      page.url.pathname,
+      `/manufacturers/${slug}`,
+      MANUFACTURER_EDIT_SECTIONS,
+    ),
   );
   let metaDescription = $derived(metaDescriptionFor(mfr, `${mfr.name} — pinball manufacturer`));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
@@ -133,7 +142,7 @@
 </script>
 
 <MetaTags
-  title={mfr.name}
+  title={metaTitle}
   description={metaDescription}
   url={page.url.href}
   image={mfr.logo_url}

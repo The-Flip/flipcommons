@@ -10,6 +10,9 @@
       href="%sveltekit.assets%/images/favicon/favicon-32.png"
     />
     <link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+    <!-- iOS home-screen label. Safari ignores the manifest's short_name here and
+         falls back to the document <title>, which is the long site title. -->
+    <meta name="apple-mobile-web-app-title" content="Flipcommons" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!-- Only the latin-roman subset is preloaded. Italic and latin-ext

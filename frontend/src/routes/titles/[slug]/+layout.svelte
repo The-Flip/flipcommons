@@ -4,7 +4,7 @@
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
@@ -82,6 +82,11 @@
   });
   let heroImage = $derived(md ? md.hero_image_url : title.hero_image_url);
 
+  let sections = $derived(combinedSectionsFor(!!md));
+  let metaTitle = $derived(
+    entityPageTitle(title.name, page.url.pathname, `/titles/${slug}`, sections),
+  );
+
   let metaItems = $derived.by(() => {
     if (!md) return [];
     const items: Array<{ text: string; href?: string }> = [];
@@ -104,7 +109,6 @@
 
   // --- Combined-menu edit state ---
 
-  let sections = $derived(combinedSectionsFor(!!md));
   let editing = $state<CombinedSectionKey | null>(null);
   let syncEnabled = $derived(!isMobile && !isFocusMode);
   // Tracks the last URL-derived edit section so local modal state doesn't immediately write it back.
@@ -231,7 +235,7 @@
 </script>
 
 <MetaTags
-  title={title.name}
+  title={metaTitle}
   description={metaDescription}
   url={page.url.href}
   image={heroImage}

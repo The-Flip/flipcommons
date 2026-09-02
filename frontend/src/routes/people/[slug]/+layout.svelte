@@ -5,7 +5,7 @@
   import { auth } from '$lib/auth.svelte';
   import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
@@ -31,6 +31,10 @@
   let { data, children } = $props();
   let person = $derived(data.profile);
   let slug = $derived(page.params.slug);
+
+  let metaTitle = $derived(
+    entityPageTitle(person.name, page.url.pathname, `/people/${slug}`, PERSON_EDIT_SECTIONS),
+  );
 
   let metaDescription = $derived(
     metaDescriptionFor(person, `${person.name} — pinball industry professional`),
@@ -123,7 +127,7 @@
 </script>
 
 <MetaTags
-  title={person.name}
+  title={metaTitle}
   description={metaDescription}
   url={page.url.href}
   image={person.photo_url}

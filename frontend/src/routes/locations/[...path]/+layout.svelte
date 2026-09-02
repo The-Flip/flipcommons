@@ -5,7 +5,7 @@
   import { auth } from '$lib/auth.svelte';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
@@ -73,6 +73,16 @@
   let visibleSections = $derived<LocationEditSectionDef[]>(
     locationEditSectionsFor(profile.location_type),
   );
+
+  let metaTitle = $derived(
+    entityPageTitle(
+      displayName,
+      page.url.pathname,
+      isRoot ? '/locations' : `/locations/${path}`,
+      visibleSections,
+    ),
+  );
+
   let syncEnabled = $derived(!isMobile);
   let lastUrlEditing = $state<LocationEditSectionKey | null>(null);
 
@@ -157,7 +167,7 @@
 </script>
 
 <MetaTags
-  title={displayName}
+  title={metaTitle}
   description={metaDescription}
   url={page.url.href}
   ogType={isRoot ? 'website' : 'article'}

@@ -7,7 +7,7 @@
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from './RecordDetailShell.svelte';
   import type { Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
@@ -87,6 +87,10 @@
   } = $props();
 
   let slug = $derived(page.params.slug);
+
+  let metaTitle = $derived(
+    entityPageTitle(profile.name, page.url.pathname, `${basePath}/${slug}`, sections),
+  );
 
   let metaDescription = $derived(metaDescriptionFor(profile));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
@@ -197,7 +201,7 @@
   });
 </script>
 
-<MetaTags title={profile.name} description={metaDescription} url={page.url.href} />
+<MetaTags title={metaTitle} description={metaDescription} url={page.url.href} />
 
 {#if isDetail && jsonLd}
   <JsonLd data={jsonLd} />

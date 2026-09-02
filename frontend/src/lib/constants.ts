@@ -1,8 +1,15 @@
+/**
+ * The site's name: body copy, the nav wordmark, og:site_name, and the WebSite
+ * JSON-LD node. Google wants a concise, commonly-recognized name here — long
+ * ones get truncated on narrow devices — so this is the form used anywhere the
+ * site is being named rather than titled.
+ */
 export const SITE_NAME = 'Flipcommons';
 
 /**
- * Long form used in browser tab titles and the home page <title>. Body copy,
- * nav, and og:site_name use SITE_NAME instead.
+ * The descriptive long form, used for browser tab titles and the home page's
+ * <title> and <h1>. Google reads those as supporting signals for the site name
+ * but not as the name itself, which is SITE_NAME.
  */
 export const SITE_TITLE = 'Flipcommons Pinball Encyclopedia';
 

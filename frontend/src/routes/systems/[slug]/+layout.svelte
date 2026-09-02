@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
@@ -29,6 +29,10 @@
   let { data, children } = $props();
   let system = $derived(data.profile);
   let slug = $derived(page.params.slug);
+
+  let metaTitle = $derived(
+    entityPageTitle(system.name, page.url.pathname, `/systems/${slug}`, SYSTEM_EDIT_SECTIONS),
+  );
 
   let metaDescription = $derived(metaDescriptionFor(system));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
@@ -110,7 +114,7 @@
   ]);
 </script>
 
-<MetaTags title={system.name} description={metaDescription} url={page.url.href} />
+<MetaTags title={metaTitle} description={metaDescription} url={page.url.href} />
 
 {#if isDetail && data.jsonLd}
   <JsonLd data={data.jsonLd} />

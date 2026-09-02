@@ -60,7 +60,7 @@
 <div class="home">
   <header class="hero">
     <p class="hero-kicker">Welcome to the</p>
-    <h1 class="hero-title">Flipcommons Pinball Encyclopedia</h1>
+    <h1 class="hero-title">{SITE_TITLE}</h1>
   </header>
 
   <form class="hero-search" onsubmit={handleSubmit}>

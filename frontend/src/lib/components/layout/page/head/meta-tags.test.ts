@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import {
   buildFullTitle,
+  entityPageTitle,
   metaDescriptionFor,
   truncateMetaDescription,
   truncateOgDescription,
@@ -18,6 +19,82 @@ describe('buildFullTitle', () => {
 
   test('does not double site title', () => {
     expect(buildFullTitle(SITE_TITLE)).toBe(SITE_TITLE);
+  });
+});
+
+describe('entityPageTitle', () => {
+  const sections = [
+    { segment: 'name', label: 'Name' },
+    { segment: 'external-data', label: 'External Data' },
+  ];
+
+  test('leaves the detail page title bare', () => {
+    expect(entityPageTitle('Earthshaker', '/models/earthshaker', '/models/earthshaker')).toBe(
+      'Earthshaker',
+    );
+  });
+
+  test('tolerates a trailing slash on the detail page', () => {
+    expect(entityPageTitle('Earthshaker', '/models/earthshaker/', '/models/earthshaker')).toBe(
+      'Earthshaker',
+    );
+  });
+
+  test('qualifies the edit-history sub-route', () => {
+    expect(
+      entityPageTitle('Earthshaker', '/models/earthshaker/edit-history', '/models/earthshaker'),
+    ).toBe('Earthshaker • Edit History');
+  });
+
+  test('qualifies the sources sub-route', () => {
+    expect(
+      entityPageTitle('Earthshaker', '/models/earthshaker/sources', '/models/earthshaker'),
+    ).toBe('Earthshaker • Sources');
+  });
+
+  test('names the section being edited', () => {
+    expect(
+      entityPageTitle(
+        'Earthshaker',
+        '/models/earthshaker/edit/external-data',
+        '/models/earthshaker',
+        sections,
+      ),
+    ).toBe('Earthshaker • Edit External Data');
+  });
+
+  test('falls back to a bare "Edit" for an unknown section', () => {
+    expect(
+      entityPageTitle(
+        'Earthshaker',
+        '/models/earthshaker/edit/nope',
+        '/models/earthshaker',
+        sections,
+      ),
+    ).toBe('Earthshaker • Edit');
+    expect(
+      entityPageTitle('Earthshaker', '/models/earthshaker/edit', '/models/earthshaker', sections),
+    ).toBe('Earthshaker • Edit');
+  });
+
+  test('reads the sub-route relative to the record, so multi-segment paths work', () => {
+    expect(
+      entityPageTitle(
+        'Illinois',
+        '/locations/united-states/illinois/sources',
+        '/locations/united-states/illinois',
+      ),
+    ).toBe('Illinois • Sources');
+  });
+
+  test('does not mistake a record slugged like a sub-route for one', () => {
+    expect(entityPageTitle('Sources', '/titles/sources', '/titles/sources')).toBe('Sources');
+  });
+
+  test('ignores sub-routes it has no title for', () => {
+    expect(
+      entityPageTitle('Earthshaker', '/models/earthshaker/delete', '/models/earthshaker'),
+    ).toBe('Earthshaker');
   });
 });
 

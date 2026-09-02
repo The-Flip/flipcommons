@@ -4,7 +4,7 @@
   import { resolve } from '$app/paths';
   import { formatActiveRange } from '$lib/utils';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
@@ -36,6 +36,15 @@
 
   let yearsActive = $derived(
     formatActiveRange(ce.year_of_first_model, ce.year_of_last_model, ce.operating_status),
+  );
+
+  let metaTitle = $derived(
+    entityPageTitle(
+      ce.name,
+      page.url.pathname,
+      `/corporate-entities/${slug}`,
+      CORPORATE_ENTITY_EDIT_SECTIONS,
+    ),
   );
   let metaDescription = $derived(metaDescriptionFor(ce));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
@@ -132,7 +141,7 @@
   corporateEntityEditActionContext.set(editAction);
 </script>
 
-<MetaTags title={ce.name} description={metaDescription} url={page.url.href} />
+<MetaTags title={metaTitle} description={metaDescription} url={page.url.href} />
 
 {#if isDetail && data.jsonLd}
   <JsonLd data={data.jsonLd} />

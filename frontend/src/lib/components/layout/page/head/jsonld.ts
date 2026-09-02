@@ -1,4 +1,4 @@
-import { SITE_NAME } from '$lib/constants';
+import { SITE_NAME, SITE_TITLE } from '$lib/constants';
 import { pageIdentity, publicUrl } from '$lib/public-url';
 import { resolveHref } from '$lib/utils';
 
@@ -59,6 +59,14 @@ export function breadcrumbList(pageUrl: URL, crumbs: Crumb[], currentLabel: stri
  * requires SSR-rendered results at the target URL, but `/search` is CSR
  * (results render after hydration), so declaring a SearchAction would lie
  * to crawlers that don't execute JS.
+ *
+ * This node is the strongest signal Google has for the site name it shows in
+ * search results, and its guidance is to give a concise, commonly-recognized
+ * name — long ones get truncated on narrow devices. So `name` is the short
+ * form, matching `og:site_name`, the wordmark and the domain, and the long
+ * form rides along as `alternateName`. The home page's `<title>` and `<h1>`
+ * are free to carry the descriptive long form; Google reads them as
+ * supporting signals, not as the name itself.
  */
 export function webSite(pageUrl: URL): JsonLdNode {
   const home = absolutize(pageUrl, '/');
@@ -66,6 +74,7 @@ export function webSite(pageUrl: URL): JsonLdNode {
     '@type': 'WebSite',
     '@id': home,
     name: SITE_NAME,
+    alternateName: SITE_TITLE,
     url: home,
   };
 }
