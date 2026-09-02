@@ -76,7 +76,7 @@
     <a href={resolve('/games')} class="explore-card">
       <span class="explore-label">Games</span>
       <span class="explore-desc"
-        >{titleCount !== null ? fmt(titleCount) : 'Thousands of'} pinball machines from the 1930s to today</span
+        >{titleCount !== null ? fmt(titleCount) : 'Thousands of'} models from the 1870s to today</span
       >
     </a>
     <a href={resolve('/manufacturers')} class="explore-card">
