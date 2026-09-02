@@ -261,7 +261,15 @@ describe('locations layout — meta tags', () => {
   });
 });
 
-describe('locations layout — entity context for sub-routes', () => {
+describe('locations layout — sub-routes', () => {
+  beforeEach(() => {
+    pageState.routeId = '/locations/[...path]/edit-history';
+  });
+
+  afterEach(() => {
+    pageState.routeId = '/locations/[...path]';
+  });
+
   it('publishes the location name and detail href to a sub-route page', () => {
     render(SubrouteHarness, {
       data: { profile: COUNTRY },
@@ -276,6 +284,20 @@ describe('locations layout — entity context for sub-routes', () => {
       'href',
       '/locations/usa',
     );
+  });
+
+  it('hands a focus-mode sub-route the page alone, without the record shell', () => {
+    render(SubrouteHarness, {
+      data: { profile: COUNTRY },
+      pageData: { changesets: [] },
+    } as unknown as Parameters<typeof render>[1]);
+
+    // The sub-route page brings its own header and back link, so the hero,
+    // breadcrumb, action bar and sidebar would be a second set of chrome.
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Page actions' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 1, name: 'United States' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'States' })).toBeNull();
   });
 });
 
