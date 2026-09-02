@@ -12,6 +12,7 @@ vi.mock('$app/state', () => ({
   page: {
     params: { slug: 'wpc-95' },
     url: new URL('http://localhost/systems/wpc-95'),
+    route: { id: '/systems/[slug]' },
   },
 }));
 vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));

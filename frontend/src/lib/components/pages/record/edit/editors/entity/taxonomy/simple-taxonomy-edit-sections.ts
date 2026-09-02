@@ -24,7 +24,7 @@ export const SIMPLE_TAXONOMY_EDIT_SECTIONS: SimpleTaxonomyEditSectionDef[] = [
   {
     key: 'display-order',
     segment: 'display-order',
-    label: 'Display order',
+    label: 'Display Order',
     showCitation: false,
     showMixedEditWarning: false,
     usesSectionEditorForm: true,

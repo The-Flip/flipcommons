@@ -7,6 +7,61 @@ export function buildFullTitle(title: string): string {
   return title === SITE_TITLE ? SITE_TITLE : `${title} — ${SITE_TITLE}`;
 }
 
+/** Title labels for the sub-routes that need no further qualification, keyed by path segment. */
+const SUBROUTE_LABELS: Record<string, string | undefined> = {
+  'edit-history': 'Edit History',
+  sources: 'Sources',
+};
+
+/** The part of an edit-section registry titling needs: a section's URL segment and its label. */
+type TitledSection = { segment: string; label: string };
+
+/**
+ * Browser title for an entity page, qualified by the sub-route being viewed:
+ * `"Earthshaker"`, `"Earthshaker • Sources"`, `"Earthshaker • Edit Name"`.
+ *
+ * `MetaTags` is rendered from the entity's `+layout.svelte`, which also wraps
+ * `edit-history/`, `sources/` and `edit/[section]/`, so the sub-route has to
+ * qualify the title itself or the whole sub-tree shares the bare entity name.
+ *
+ * `detailPath` is the entity's own detail route (`/models/earthshaker`,
+ * `/locations/canada/on`) and the sub-route is whatever `pathname` adds beyond
+ * it. Reading it relative to the entity rather than by segment position is what
+ * keeps multi-segment location paths working, and what stops an entity whose
+ * slug is `sources` from being read as its own sources page.
+ *
+ * `sections` is only consulted under `edit/`, to name the section being edited.
+ */
+export function entityPageTitle(
+  name: string,
+  pathname: string,
+  detailPath: string,
+  sections: readonly TitledSection[] = [],
+): string {
+  const label = subrouteLabel(pathname, detailPath, sections);
+  return label ? `${name} • ${label}` : name;
+}
+
+function subrouteLabel(
+  pathname: string,
+  detailPath: string,
+  sections: readonly TitledSection[],
+): string | null {
+  const base = stripTrailingSlash(detailPath);
+  const path = stripTrailingSlash(pathname);
+  if (!path.startsWith(`${base}/`)) return null;
+
+  const [subroute, section] = path.slice(base.length + 1).split('/');
+  if (subroute !== 'edit') return SUBROUTE_LABELS[subroute] ?? null;
+
+  const sectionLabel = sections.find((s) => s.segment === section)?.label;
+  return sectionLabel ? `Edit ${sectionLabel}` : 'Edit';
+}
+
+function stripTrailingSlash(path: string): string {
+  return path.endsWith('/') ? path.slice(0, -1) : path;
+}
+
 /**
  * Clean, untruncated meta description for an entity. Sources the backend's
  * plain-text projection (`description.plain` — markdown flattened, wikilink

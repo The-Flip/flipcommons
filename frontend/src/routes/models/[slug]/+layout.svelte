@@ -4,7 +4,7 @@
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
@@ -28,7 +28,7 @@
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { modelHasTitleOwnedIdentity } from '$lib/catalog-rules';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
-  import { isFocusModePath } from '$lib/focus-mode';
+  import { isFocusModeRoute } from '$lib/focus-mode';
   import { setEntityContext } from '$lib/entity-context';
   import { modelEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
@@ -44,12 +44,12 @@
     auth.load();
   });
 
-  let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
+  let mode = $derived(resolveDetailSubrouteMode(page.route.id));
   // isDetail still drives (a) the "Reader" back-link in PageActionBar,
   // and (b) whether the sidebar is desktop-only — on sub-routes the sidebar
   // is shown on mobile too because the main column no longer duplicates it.
   let isDetail = $derived(mode === 'detail');
-  let isFocusMode = $derived(isFocusModePath(page.url.pathname));
+  let isFocusMode = $derived(isFocusModeRoute(page.route.id));
 
   setEntityContext({
     get name() {
@@ -110,6 +110,10 @@
   // model-side Name editor from the reader menu or the ?edit=name URL,
   // producing claim writes against the Model row instead of the Title row.
   let availableSections = $derived(modelSectionsFor(modelHasTitleOwnedIdentity(model)));
+
+  let metaTitle = $derived(
+    entityPageTitle(model.name, page.url.pathname, `/models/${slug}`, availableSections),
+  );
 
   let editing = $state<ModelEditSectionKey | null>(null);
   let syncEnabled = $derived(!isMobile && !isFocusMode);
@@ -209,7 +213,7 @@
 </script>
 
 <MetaTags
-  title={model.name}
+  title={metaTitle}
   description={metaDescription}
   url={page.url.href}
   image={model.hero_image_url}

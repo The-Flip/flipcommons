@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { jsonLdGraph, webSite, pageNode, breadcrumbList } from './jsonld';
-import { SITE_NAME } from '$lib/constants';
+import { SITE_NAME, SITE_TITLE } from '$lib/constants';
 
 const ORIGIN = 'https://flipcommons.org';
 
@@ -19,6 +19,7 @@ describe('webSite', () => {
       '@type': 'WebSite',
       '@id': `${ORIGIN}/`,
       name: SITE_NAME,
+      alternateName: SITE_TITLE,
       url: `${ORIGIN}/`,
     });
   });

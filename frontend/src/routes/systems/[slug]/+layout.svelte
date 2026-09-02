@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
@@ -21,7 +21,7 @@
   } from '$lib/components/pages/record/edit/editors/entity/system/system-edit-sections';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
-  import { isFocusModePath } from '$lib/focus-mode';
+  import { isFocusModeRoute } from '$lib/focus-mode';
   import { setEntityContext } from '$lib/entity-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
   import SystemEditorSwitch from './edit/SystemEditorSwitch.svelte';
@@ -30,10 +30,14 @@
   let system = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
+  let metaTitle = $derived(
+    entityPageTitle(system.name, page.url.pathname, `/systems/${slug}`, SYSTEM_EDIT_SECTIONS),
+  );
+
   let metaDescription = $derived(metaDescriptionFor(system));
-  let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
+  let mode = $derived(resolveDetailSubrouteMode(page.route.id));
   let isDetail = $derived(mode === 'detail');
-  let isFocusMode = $derived(isFocusModePath(page.url.pathname));
+  let isFocusMode = $derived(isFocusModeRoute(page.route.id));
 
   setEntityContext({
     get name() {
@@ -110,7 +114,7 @@
   ]);
 </script>
 
-<MetaTags title={system.name} description={metaDescription} url={page.url.href} />
+<MetaTags title={metaTitle} description={metaDescription} url={page.url.href} />
 
 {#if isDetail && data.jsonLd}
   <JsonLd data={data.jsonLd} />

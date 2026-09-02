@@ -7,6 +7,7 @@ import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/en
 import { LISTING_ROUTE_OVERRIDES, listingPath } from '$lib/entities/listing-path';
 import { listingMeta } from '$lib/entities/schema-org';
 import type { Crumb } from '$lib/components/layout/page/head/jsonld';
+import { isPublicIdSegment } from '$lib/route-shape';
 
 /**
  * Non-catalog routes that should be indexed by search engines.
@@ -108,14 +109,6 @@ const PLURAL_TO_KEY: ReadonlyMap<string, CatalogEntityKey> = new Map(
   CATALOG_ENTITY_KEYS.map((key) => [ENTITY_META[key].entity_type_plural, key]),
 );
 
-// Matches both /{plural}/[slug]/... and /{plural}/[...path]/... in route-pattern form.
-// CONVENTION: every catalog entity's detail param is named `[slug]` (or
-// `[...path]` for Location's multi-segment public_id). A new entity using a
-// different param name (e.g. `[id]`, `[handle]`) will fall through to
-// `unclassified` — the fix is to rename the param to `[slug]` or extend
-// this regex. The convention keeps the matcher trivial.
-const PUBLIC_ID_SEGMENT_RE = /^\[(?:slug|\.\.\.path)\]$/;
-
 const INDEXABLE_SET: ReadonlySet<string> = new Set(SEARCH_ENGINE_INDEXABLE_ROUTE_IDS);
 const NON_INDEXABLE_SET: ReadonlySet<string> = new Set(SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS);
 
@@ -170,7 +163,7 @@ function classifyCatalog(id: string): RouteClass | null {
   }
 
   // From here on, the second segment must be a public-id slot.
-  if (!PUBLIC_ID_SEGMENT_RE.test(segments[1])) return null;
+  if (!isPublicIdSegment(segments[1])) return null;
 
   const tail = segments.slice(2);
 

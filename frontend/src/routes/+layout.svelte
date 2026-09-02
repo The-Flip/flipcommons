@@ -9,7 +9,7 @@
   import FocusSiteShell from '$lib/components/layout/site/FocusSiteShell.svelte';
   import MinimalSiteShell from '$lib/components/layout/site/MinimalSiteShell.svelte';
   import ToastHost from '$lib/toast/ToastHost.svelte';
-  import { isFocusModePath, isMinimalShellPath } from '$lib/focus-mode';
+  import { isFocusModeRoute, isMinimalShellRoute } from '$lib/focus-mode';
   import { isKioskCookieSet } from '$lib/kiosk/config';
   import { bootstrapTheme } from '$lib/themes';
   import { onMount } from 'svelte';
@@ -25,8 +25,8 @@
 
   let { children } = $props();
 
-  let isFocusMode = $derived(isFocusModePath(page.url.pathname));
-  let isMinimalShell = $derived(isMinimalShellPath(page.url.pathname));
+  let isFocusMode = $derived(isFocusModeRoute(page.route.id));
+  let isMinimalShell = $derived(isMinimalShellRoute(page.route.id));
 
   // Cookie is checked client-side so the kiosk path doesn't pollute every
   // page's load type. KioskMode itself is client-only (window event listeners).

@@ -4,49 +4,42 @@ import { resolveDetailSubrouteMode } from './detail-subroute-mode';
 
 describe('resolveDetailSubrouteMode', () => {
   it('returns detail for the base reader route', () => {
-    expect(resolveDetailSubrouteMode('/manufacturers/williams')).toBe('detail');
+    expect(resolveDetailSubrouteMode('/manufacturers/[slug]')).toBe('detail');
   });
 
   it('returns edit for the edit route', () => {
-    expect(resolveDetailSubrouteMode('/manufacturers/williams/edit')).toBe('edit');
+    expect(resolveDetailSubrouteMode('/manufacturers/[slug]/edit')).toBe('edit');
   });
 
   it('returns edit for nested edit routes', () => {
-    expect(resolveDetailSubrouteMode('/models/attack-from-mars/edit/overview')).toBe('edit');
-  });
-
-  it('returns media for the media route', () => {
-    expect(resolveDetailSubrouteMode('/models/attack-from-mars/media')).toBe('media');
-  });
-
-  it('returns media for nested media routes', () => {
-    expect(resolveDetailSubrouteMode('/manufacturers/williams/media/upload')).toBe('media');
+    expect(resolveDetailSubrouteMode('/models/[slug]/edit/[section]')).toBe('edit');
   });
 
   it('returns sources for the sources route', () => {
-    expect(resolveDetailSubrouteMode('/titles/medieval-madness/sources')).toBe('sources');
+    expect(resolveDetailSubrouteMode('/titles/[slug]/sources')).toBe('sources');
   });
 
   it('returns edit-history for the edit history route', () => {
-    expect(resolveDetailSubrouteMode('/titles/medieval-madness/edit-history')).toBe('edit-history');
+    expect(resolveDetailSubrouteMode('/titles/[slug]/edit-history')).toBe('edit-history');
   });
 
-  it('returns detail when slug happens to be "sources"', () => {
-    // /titles/sources is a detail page for a title with slug='sources',
-    // not the sources audit route — guards against the includes()-based
-    // classifier bug.
-    expect(resolveDetailSubrouteMode('/titles/sources')).toBe('detail');
+  it('resolves sub-routes of a multi-segment public id', () => {
+    expect(resolveDetailSubrouteMode('/locations/[...path]/sources')).toBe('sources');
+    expect(resolveDetailSubrouteMode('/locations/[...path]/edit-history')).toBe('edit-history');
+    expect(resolveDetailSubrouteMode('/locations/[...path]/edit/[section]')).toBe('edit');
   });
 
-  it('returns detail when slug happens to be "edit-history"', () => {
-    expect(resolveDetailSubrouteMode('/titles/edit-history')).toBe('detail');
+  it('returns detail when a record slug happens to name a sub-route', () => {
+    // /titles/sources is the detail page for a title with slug='sources'. It
+    // is served by /titles/[slug], so no sub-route can be read out of it.
+    expect(resolveDetailSubrouteMode('/titles/[slug]')).toBe('detail');
   });
 
-  it('returns detail when slug happens to be "edit"', () => {
-    expect(resolveDetailSubrouteMode('/titles/edit')).toBe('detail');
+  it('returns detail for a nested listing', () => {
+    expect(resolveDetailSubrouteMode('/manufacturers/[slug]/systems')).toBe('detail');
   });
 
-  it('returns detail when slug happens to be "media"', () => {
-    expect(resolveDetailSubrouteMode('/titles/media')).toBe('detail');
+  it('returns detail for an unmatched URL', () => {
+    expect(resolveDetailSubrouteMode(null)).toBe('detail');
   });
 });

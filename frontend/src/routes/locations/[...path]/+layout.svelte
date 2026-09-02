@@ -1,3 +1,5 @@
+<!-- @component Layout for /locations and every location beneath it: the record
+shell for the reader, the bare sub-route page under focus mode. -->
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
@@ -5,7 +7,7 @@
   import { auth } from '$lib/auth.svelte';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import { entityPageTitle, metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
@@ -25,6 +27,7 @@
     type LocationEditSectionDef,
     type LocationEditSectionKey,
   } from '$lib/components/pages/record/edit/editors/entity/location/location-edit-sections';
+  import { isFocusModeRoute } from '$lib/focus-mode';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
   import { setEntityContext } from '$lib/entity-context';
   import { childrenHeading, newChildLabel, type LocationDetail } from './location-helpers';
@@ -73,7 +76,18 @@
   let visibleSections = $derived<LocationEditSectionDef[]>(
     locationEditSectionsFor(profile.location_type),
   );
-  let syncEnabled = $derived(!isMobile);
+
+  let metaTitle = $derived(
+    entityPageTitle(
+      displayName,
+      page.url.pathname,
+      isRoot ? '/locations' : `/locations/${path}`,
+      visibleSections,
+    ),
+  );
+
+  let isFocusMode = $derived(isFocusModeRoute(page.route.id));
+  let syncEnabled = $derived(!isMobile && !isFocusMode);
   let lastUrlEditing = $state<LocationEditSectionKey | null>(null);
 
   function updateEditQuery(nextEditing: LocationEditSectionKey | null) {
@@ -157,66 +171,70 @@
 </script>
 
 <MetaTags
-  title={displayName}
+  title={metaTitle}
   description={metaDescription}
   url={page.url.href}
   ogType={isRoot ? 'website' : 'article'}
 />
 
-{#snippet actionBar()}
-  {#if isRoot}
-    {#if auth.isAuthenticated}
-      <PageActionBar editSections={editMenuItems} />
-    {/if}
-  {:else}
-    <PageActionBar
-      editSections={auth.isAuthenticated ? editMenuItems : undefined}
-      historyHref={resolve(`/locations/${path}/edit-history`)}
-      sourcesHref={resolve(`/locations/${path}/sources`)}
-    />
-  {/if}
-{/snippet}
-
-{#snippet sidebar()}
-  {#if profile.children.length > 0}
-    <SidebarSection heading={childrenHeading(profile.children)}>
-      <SidebarList>
-        {#each profile.children as child (child.public_id)}
-          <SidebarListItem>
-            <a href={resolve(`/locations/${child.public_id}`)}>
-              {child.name}
-            </a>
-            <span class="count">{child.manufacturer_count}</span>
-          </SidebarListItem>
-        {/each}
-      </SidebarList>
-    </SidebarSection>
-  {/if}
-{/snippet}
-
-<RecordDetailShell name={displayName} {breadcrumbs} {actionBar} {sidebar}>
-  {#snippet main()}
-    {@render children()}
-  {/snippet}
-</RecordDetailShell>
-
-{#if !isRoot}
-  <SectionEditorHost
-    bind:editingKey={editing}
-    sections={visibleSections}
-    switcherItems={editMenuItems}
-  >
-    {#snippet editor(key, { ref, onsaved, onerror })}
-      <LocationEditorSwitch
-        sectionKey={key}
-        initialData={profile}
-        publicId={profile.public_id}
-        bind:editorRef={ref.current}
-        {onsaved}
-        {onerror}
+{#if isFocusMode}
+  {@render children()}
+{:else}
+  {#snippet actionBar()}
+    {#if isRoot}
+      {#if auth.isAuthenticated}
+        <PageActionBar editSections={editMenuItems} />
+      {/if}
+    {:else}
+      <PageActionBar
+        editSections={auth.isAuthenticated ? editMenuItems : undefined}
+        historyHref={resolve(`/locations/${path}/edit-history`)}
+        sourcesHref={resolve(`/locations/${path}/sources`)}
       />
+    {/if}
+  {/snippet}
+
+  {#snippet sidebar()}
+    {#if profile.children.length > 0}
+      <SidebarSection heading={childrenHeading(profile.children)}>
+        <SidebarList>
+          {#each profile.children as child (child.public_id)}
+            <SidebarListItem>
+              <a href={resolve(`/locations/${child.public_id}`)}>
+                {child.name}
+              </a>
+              <span class="count">{child.manufacturer_count}</span>
+            </SidebarListItem>
+          {/each}
+        </SidebarList>
+      </SidebarSection>
+    {/if}
+  {/snippet}
+
+  <RecordDetailShell name={displayName} {breadcrumbs} {actionBar} {sidebar}>
+    {#snippet main()}
+      {@render children()}
     {/snippet}
-  </SectionEditorHost>
+  </RecordDetailShell>
+
+  {#if !isRoot}
+    <SectionEditorHost
+      bind:editingKey={editing}
+      sections={visibleSections}
+      switcherItems={editMenuItems}
+    >
+      {#snippet editor(key, { ref, onsaved, onerror })}
+        <LocationEditorSwitch
+          sectionKey={key}
+          initialData={profile}
+          publicId={profile.public_id}
+          bind:editorRef={ref.current}
+          {onsaved}
+          {onerror}
+        />
+      {/snippet}
+    </SectionEditorHost>
+  {/if}
 {/if}
 
 <style>
