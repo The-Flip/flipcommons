@@ -53,9 +53,11 @@ DJANGO_PID=$!
 # SITE_ORIGIN is the one operator-facing setting for the public origin;
 # derive the per-runtime names from it here so the values cannot drift.
 # ORIGIN tells adapter-node its public URL — without it, Node trusts the
-# Host header, which behind Bunny (Forward Host Header off) is the Railway
-# origin hostname. PUBLIC_SITE_ORIGIN carries the same value to the
-# browser, where $env/dynamic/public exposes only PUBLIC_-prefixed vars.
+# Host header, which is not a reliable source for it: the value varies by
+# caller (Railway's health check sends healthcheck.railway.app, direct hits
+# arrive on the Railway origin hostname), and prerendering has no request
+# at all. PUBLIC_SITE_ORIGIN carries the same value to the browser, where
+# $env/dynamic/public exposes only PUBLIC_-prefixed vars.
 #
 # The :? guard catches set-but-empty — the Dockerfile bakes
 # ENV SITE_ORIGIN="", so `set -u` never fires. It sits on the export

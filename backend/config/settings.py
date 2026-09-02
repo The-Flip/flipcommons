@@ -41,10 +41,11 @@ for _host in ("localhost", "127.0.0.1"):
         ALLOWED_HOSTS.append(_host)
 
 # Railway injects RAILWAY_PUBLIC_DOMAIN as the service's `*.up.railway.app`
-# host. Allow it: once the apex is fronted by the Bunny edge cache, the pull
-# zone forwards the *origin* host (not the client host), so requests reaching
-# Django through Bunny arrive with this Host. Unset off-Railway, so dev/CI are
-# unaffected.
+# host. Allow it as a safety net: Bunny forwards the visitor's Host, and Caddy
+# redirects direct hits on this hostname before they reach Django, so nothing
+# should arrive here wearing it — but a Caddy misconfiguration or a change to
+# the Bunny pull zone would otherwise turn into a 400 on every request rather
+# than something diagnosable. Unset off-Railway, so dev/CI are unaffected.
 _railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
 if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_railway_domain)

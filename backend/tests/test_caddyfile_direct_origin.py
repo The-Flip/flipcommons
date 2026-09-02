@@ -1,0 +1,108 @@
+"""Caddy must redirect direct hits on the Railway origin hostname to the apex.
+
+``flipcommons-production.up.railway.app`` serves the same site as the apex and
+is reachable from the open internet, so crawlers found it and indexed it as a
+duplicate. Bunny forwards the visitor's ``Host`` (pull zone: Forward Host
+Header ON), so its traffic never carries that hostname and the redirect only
+sees requests that bypassed the CDN.
+
+Nothing about this is observable from the application: delete the directive
+and every test still passes, the site still works, and the duplicate host
+quietly returns. These assertions pin it against that.
+
+The ``X-Origin-Auth`` condition is the subtle one. It is not a security
+control — a direct caller can defeat the rule by sending ``Host:
+flipcommons.org``. It is an interlock for the case where Bunny forwards the
+Railway hostname again (a pull-zone rollback, a config edit, an edge that has
+not picked up the setting): those requests still carry the header, so they are
+excluded instead of being redirected to a host Bunny fronts, which would be a
+redirect loop cached at the edge. Testing the header's *presence* rather than
+its *value* is what keeps that failure open rather than closed — matching
+against ``ORIGIN_SHARED_SECRET`` would turn a drifted secret into an outage.
+"""
+
+from __future__ import annotations
+
+import re
+
+from django.conf import settings
+
+ORIGIN_HOST = "flipcommons-production.up.railway.app"
+
+
+def _caddyfile() -> str:
+    return (settings.BASE_DIR.parent / "Caddyfile").read_text()
+
+
+def _direct_origin_block() -> str:
+    match = re.search(
+        r"^@direct_origin \{\n(.*?)^\}", _caddyfile(), re.MULTILINE | re.DOTALL
+    )
+    assert match, "Caddyfile must define a @direct_origin matcher block"
+    return match.group(1)
+
+
+def test_matcher_names_the_railway_origin_hostname() -> None:
+    assert re.search(
+        rf"^\s*host\s+{re.escape(ORIGIN_HOST)}\s*$",
+        _direct_origin_block(),
+        re.MULTILINE,
+    ), f"@direct_origin must match the Railway origin hostname {ORIGIN_HOST}"
+
+
+def test_matcher_keys_on_the_absence_of_the_cdn_header() -> None:
+    assert re.search(
+        r"^\s*header\s+!X-Origin-Auth\s*$", _direct_origin_block(), re.MULTILINE
+    ), (
+        "@direct_origin must match on X-Origin-Auth being absent (`header !X-Origin-Auth`)"
+    )
+
+
+def test_matcher_does_not_compare_the_shared_secret() -> None:
+    assert "ORIGIN_SHARED_SECRET" not in _direct_origin_block(), (
+        "@direct_origin must test whether X-Origin-Auth exists, not whether it matches "
+        "ORIGIN_SHARED_SECRET — a value comparison fails closed, so a drifted or unset "
+        "secret would redirect Bunny's own traffic into a loop"
+    )
+
+
+def test_direct_hits_redirect_permanently_to_the_public_origin() -> None:
+    match = re.search(
+        r"^handle @direct_origin \{\n\s*redir\s+(\S+)\s+(\S+)\s*$",
+        _caddyfile(),
+        re.MULTILINE,
+    )
+    assert match, "Caddyfile must define a handle @direct_origin containing a redir"
+    target, permanence = match.groups()
+    assert target == "https://flipcommons.org{uri}", (
+        f"direct-origin hits must redirect to the public origin, got {target!r}"
+    )
+    assert permanence == "permanent", (
+        f"the redirect must be a 301 so search engines consolidate, got {permanence!r}"
+    )
+
+
+def test_the_redirect_is_not_cacheable() -> None:
+    match = re.search(
+        r'^header\s+@direct_origin\s+Cache-Control\s+"([^"]+)"\s*$',
+        _caddyfile(),
+        re.MULTILINE,
+    )
+    assert match, "Caddyfile must set Cache-Control on the @direct_origin matcher"
+    assert "no-store" in match.group(1), (
+        "the redirect must be uncacheable — Bunny applies a 30-day default TTL to any "
+        f"response arriving without Cache-Control, got {match.group(1)!r}"
+    )
+
+
+def test_the_redirect_is_handled_before_the_upstream_proxies() -> None:
+    caddyfile = _caddyfile()
+    direct = caddyfile.find("handle @direct_origin {")
+    django = caddyfile.find("handle @django {")
+    assert direct != -1, "Caddyfile must define a handle @direct_origin"
+    assert django != -1, "Caddyfile must define a handle @django"
+    assert direct < django, (
+        "handle @direct_origin must precede handle @django: Caddy runs only the first "
+        "matching handle in textual order, so a later block would let direct hits on "
+        "/api/ and /djadmin/ reach Django instead of redirecting"
+    )
