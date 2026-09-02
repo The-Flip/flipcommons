@@ -5,10 +5,11 @@ import { env } from '$env/dynamic/public';
 
 /**
  * Rebase `url` onto `PUBLIC_SITE_ORIGIN`. SEO URLs must not track the
- * request host: on the server the `Host` header behind the CDN is the
- * internal origin hostname, and in the browser `page.url` follows the
- * address bar. The origin's shape (bare https, no trailing slash) is
- * validated upstream, at build and deploy time.
+ * request host: on the server the `Host` header varies by caller (health
+ * checks, direct hits on the Railway origin hostname) and prerendering has
+ * no request at all, while in the browser `page.url` follows the address
+ * bar. The origin's shape (bare https, no trailing slash) is validated
+ * upstream, at build and deploy time.
  */
 export function publicUrl(url: URL): URL {
   // Prerendered pages take their origin from `prerender.origin`, never from

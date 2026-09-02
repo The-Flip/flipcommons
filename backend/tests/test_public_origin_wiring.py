@@ -1,9 +1,10 @@
 """The public origin must reach both SvelteKit runtimes from ``SITE_ORIGIN``.
 
 adapter-node resolves ``event.url.origin`` from the ``ORIGIN`` environment
-variable, falling back to the request's ``Host`` header — which behind
-Bunny is the Railway origin hostname (Forward Host Header is deliberately
-off, see docs/Hosting.md). Browser code needs the same value as
+variable, falling back to the request's ``Host`` header — which is not a
+reliable source for the public origin, since it varies by caller (Railway's
+health check, direct hits on the Railway origin hostname) and prerendering
+has no request at all. Browser code needs the same value as
 ``PUBLIC_SITE_ORIGIN``, since ``$env/dynamic/public`` exposes only
 ``PUBLIC_``-prefixed variables.
 
@@ -36,7 +37,7 @@ def test_entrypoint_derives_node_origin_from_site_origin() -> None:
     ), (
         "scripts/start-production must launch Node with ORIGIN derived from "
         "SITE_ORIGIN; without it adapter-node falls back to the Host header, "
-        "which behind Bunny is the Railway origin hostname"
+        "which varies by caller and is not the public origin"
     )
 
 

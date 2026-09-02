@@ -153,7 +153,7 @@ The apex is a Bunny **`PZ` (Pull Zone)** record bound to the apex pull zone, not
 
 Two consequences worth knowing before touching it:
 
-- **The record names a pull zone by id.** Pointing it at a new pull zone yields valid Bunny addresses that pass every DNS check while silently dropping the origin config, the cache bypasses, the certificate and the `X-Client-IP` / `X-Origin-Auth` Edge Rules that rate limiting depends on (see [Client IP trust](#client-ip-trust)). Verify with `curl -sSI https://flipcommons.org/__health`: `cdn-pullzone` must match the existing apex zone, and the certificate must be the pre-existing one rather than freshly issued.
+- **The record names a pull zone by id.** Pointing it at a new pull zone yields valid Bunny addresses that pass every DNS check while silently dropping the origin config including **Forward Host Header**, the cache bypasses, the certificate and the `X-Client-IP` / `X-Origin-Auth` Edge Rules that rate limiting depends on (see [Client IP trust](#client-ip-trust)). Verify with `curl -sSI https://flipcommons.org/__health`: `cdn-pullzone` must match the existing apex zone, and the certificate must be the pre-existing one rather than freshly issued.
 - **Bunny sets the TTL, not us.** The record's TTL field is not honored; Bunny serves its own short value. This costs nothing, because the flattened address is anycast — edge failover happens in BGP, not DNS.
 
 Bunny omits `PZ`, `RDR` and `SCR` records from its zone exports, so **a Bunny export is never a complete backup of this zone.** Record the apex pull-zone binding separately.
@@ -166,24 +166,22 @@ The pre-Bunny zone is still parked at Joker, undelegated. Reverting is a registr
 
 #### Records
 
-| Name                   |  Type | Purpose                                                        |
-| ---------------------- | ----: | -------------------------------------------------------------- |
-| `flipcommons.org`      |    PZ | Site — apex pull zone                                          |
-| `flipcommons.org`      |    MX | Mail (`10 mx1`, `20 mx2` at `mailcast.io`)                     |
-| `flipcommons.org`      |   TXT | SPF, plus two Google Search Console proofs                     |
-| `_dmarc`               |   TXT | DMARC                                                          |
-| `_railway-verify`      |   TXT | Railway custom-domain proof for the apex                       |
-| `_railway-verify.www`  |   TXT | Railway custom-domain proof for `www`                          |
-| `mailcast._domainkey`  | CNAME | DKIM key 1                                                     |
-| `mailcast2._domainkey` | CNAME | DKIM key 2 — rotation pair with the above                      |
-| `www`                  | CNAME | Railway; exists to serve Caddy's apex redirect                 |
-| `static`               | CNAME | Static asset pull zone                                         |
-| `media`                | CNAME | Media pull zone (iDrive origin)                                |
-| `auth`                 | CNAME | WorkOS custom auth domain — **login breaks if this is missed** |
+| Name                   |  Type | Purpose                                                          |
+| ---------------------- | ----: | ---------------------------------------------------------------- |
+| `flipcommons.org`      |    PZ | Site — apex pull zone                                            |
+| `flipcommons.org`      |    MX | Mail (`10 mx1`, `20 mx2` at `mailcast.io`)                       |
+| `flipcommons.org`      |   TXT | SPF, plus two Google Search Console proofs                       |
+| `_dmarc`               |   TXT | DMARC                                                            |
+| `mailcast._domainkey`  | CNAME | DKIM key 1                                                       |
+| `mailcast2._domainkey` | CNAME | DKIM key 2 — rotation pair with the above                        |
+| `www`                  | CNAME | Railway (`<token>.up.railway.app`); serves Caddy's apex redirect |
+| `static`               | CNAME | Static asset pull zone                                           |
+| `media`                | CNAME | Media pull zone (iDrive origin)                                  |
+| `auth`                 | CNAME | WorkOS custom auth domain — **login breaks if this is missed**   |
 
 No wildcard: unknown names must return `NXDOMAIN`. No DNSSEC and no CAA.
 
-The apex `_railway-verify` may be vestigial, since Bunny forwards the Railway origin host and the apex need not stay a Railway custom domain. The `www` proof is still load-bearing.
+The apex also depends on `flipcommons.org` staying a registered custom domain on the Railway service, because Railway routes by `Host` and answers anything unrecognized with its own `Application not found`.
 
 ### iDrive e2
 
@@ -299,8 +297,8 @@ Caddy ([Caddyfile](../Caddyfile)) then promotes `X-Client-IP` into `X-Real-IP` *
 
 Required config for this path:
 
-- **Bunny:** the two request-header Edge Rules above; **Forward Host Header OFF**, so Bunny forwards the Railway _origin_ host and Railway routes its own permanent `*.up.railway.app` domain — `flipcommons.org` never has to stay a Railway custom domain (Railway routes by `Host`, and a custom domain can de-validate once DNS points at Bunny).
-- **Railway:** `ORIGIN_SHARED_SECRET` set (matching the `X-Origin-Auth` rule); the Railway origin host in `ALLOWED_HOSTS` (Bunny forwards it as the `Host`); `RATE_LIMIT_TRUST_PROXY_HEADERS=true`.
+- **Bunny:** the two request-header Edge Rules above; **Forward Host Header ON**, so Bunny forwards the visitor's `Host` and requests reach Railway as `flipcommons.org`. It requires `flipcommons.org` to stay a registered Railway custom domain; see [Records](#records).
+- **Railway:** `ORIGIN_SHARED_SECRET` set (matching the `X-Origin-Auth` rule); `flipcommons.org` in `ALLOWED_HOSTS`; `RATE_LIMIT_TRUST_PROXY_HEADERS=true`.
 
 `RATE_LIMIT_TRUST_PROXY_HEADERS` stays the master switch here too: if the secret or the Edge Rules drift, Caddy stops promoting `X-Client-IP` and the system degrades to the one-shared-bucket failure above (now keyed on Bunny's IP).
 
@@ -351,9 +349,9 @@ Set these in the Railway web service dashboard. `DATABASE_URL`, `PORT`, and the 
 
 - `SECRET_KEY` — random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"`
 - `DEBUG` — `false`
-- `ALLOWED_HOSTS` — comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`. Also include the Railway origin host Bunny forwards (`<service>.up.railway.app`).
+- `ALLOWED_HOSTS` — comma-separated public hosts, e.g. `flipcommons.org,www.flipcommons.org`. The Railway origin host does not belong here: `settings.py` appends `RAILWAY_PUBLIC_DOMAIN` on its own, which covers the residual paths that still reach Django wearing it.
 - `CSRF_TRUSTED_ORIGINS` — full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`.
-- `SITE_ORIGIN` — public origin, no trailing slash, e.g. `https://flipcommons.org`. Baked into prerendered canonical URLs and OG tags; consumed by `/sitemap.xml` and `robots.txt`. [`scripts/start-production`](../scripts/start-production) also passes it to the Node SSR process as `ORIGIN` (without which adapter-node resolves `page.url` from the `Host` header — behind Bunny that is the Railway origin hostname, since Forward Host Header is off) and mirrors it as `PUBLIC_SITE_ORIGIN` so client-side code can keep SEO URLs on the public origin after hydration. Do not set `ORIGIN` or `PUBLIC_SITE_ORIGIN` in the dashboard — they are derived, and a separately-set value could drift.
+- `SITE_ORIGIN` — public origin, no trailing slash, e.g. `https://flipcommons.org`. Baked into prerendered canonical URLs and OG tags; consumed by `/sitemap.xml` and `robots.txt`. [`scripts/start-production`](../scripts/start-production) also passes it to the Node SSR process as `ORIGIN` (without which adapter-node resolves `page.url` from the `Host` header, which varies by caller — Railway's health check, direct hits on the Railway origin hostname — and is absent entirely when prerendering) and mirrors it as `PUBLIC_SITE_ORIGIN` so client-side code can keep SEO URLs on the public origin after hydration. Do not set `ORIGIN` or `PUBLIC_SITE_ORIGIN` in the dashboard — they are derived, and a separately-set value could drift.
 - `INTERNAL_API_BASE_URL` — base URL SvelteKit SSR uses to reach Django. Do **not** set this in the dashboard: [`scripts/start-production`](../scripts/start-production) derives it from the runtime-injected `PORT` so SSR goes through Caddy rather than Gunicorn (see [Process model](#process-model)). The entrypoint exports it unconditionally, so a dashboard value is silently ignored rather than honoured — set one and the dashboard and the running process disagree.
 
 #### Auth
@@ -396,6 +394,10 @@ Per-user rate limits ([backend/apps/provenance/rate_limits.py](../backend/apps/p
 
 `check --deploy` refuses any deploy where the var is unset (`core.E301`) or not exactly `"true"`/`"false"` (`core.E302`) — so a new Railway service needs the var set before its first deploy.
 
+#### The Railway origin hostname is not a second site
+
+That gate is deployment-level — it reads an env var, never the request host — so `flipcommons-production.up.railway.app` would otherwise serve the same indexable pages and the same permissive `robots.txt` as the apex, and be indexed as a duplicate of it. The `@direct_origin` matcher in [Caddyfile](../Caddyfile) 301s direct hits to the public origin instead. It is not a security boundary: a direct caller can still reach the origin by sending `Host: flipcommons.org`. [`test_caddyfile_direct_origin.py`](../backend/tests/test_caddyfile_direct_origin.py) pins the directive, whose absence is otherwise invisible.
+
 ## Troubleshooting
 
 Every item below starts with reading production logs. [production_logs/](../production_logs/README.md) pulls them from Railway and Sentry and builds a queryable database over them.
@@ -404,6 +406,12 @@ Every item below starts with reading production logs. [production_logs/](../prod
 `/__health` is served by the SvelteKit Node runtime and checks Django in turn via an internal `/api/health` call, which runs a `SELECT 1`. So a failing probe means Node is down, Django is down, or the database is unreachable — check the deploy logs for Node or Python startup errors. Common causes: missing `SECRET_KEY`, database connection issues, a bad migration or the SSR process failing to start. Railway will not promote the deployment while this fails, so the previous container stays live.
 
 A probe that fails with **400** rather than a connection error means it reached Django with an external `Host` header and hit `ALLOWED_HOSTS`. That points at `healthcheckPath` having been changed to a Django route — put it back to `/__health`; see [railway.toml](../railway.toml).
+
+**Apex returns `ERR_TOO_MANY_REDIRECTS`**:
+Bunny is forwarding the Railway origin hostname again and its requests are matching `@direct_origin`, which sends them back to a host Bunny fronts. Check **Forward Host Header** on the apex pull zone (must be ON) and the `X-Origin-Auth` Edge Rule (whose presence is what excludes Bunny's traffic when the toggle is wrong). Fix whichever drifted, then [purge](https://docs.bunny.net/cdn/purge-cache) the affected URLs — the zone has Follow Redirects disabled, so cached 301s survive the repair.
+
+**Every request returns Railway's `{"message":"Application not found"}`**:
+The `flipcommons.org` Railway custom domain has been removed or de-validated. Bunny forwards `Host: flipcommons.org` and Railway routes by that header, so the domain must stay registered — check `railway domain` for an `ACTIVE` row. Re-adding it means completing the ownership challenge Railway issues, a temporary TXT record that can be removed once validation completes; see [Records](#records).
 
 **"Frontend build directory not found" error**:
 The Docker build's Node stage failed to produce the SvelteKit SSR runtime.

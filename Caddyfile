@@ -9,6 +9,42 @@ handle @www {
 	redir https://flipcommons.org{uri} permanent
 }
 
+# Send anything that reaches the Railway origin hostname without passing
+# through Bunny to the public origin instead. Crawlers found that hostname on
+# their own and were indexing it as a second copy of the site — Google alone
+# hit it 1,813 times from its own IP ranges in one 8-day window, and direct
+# traffic overall was 13% of everything reaching this container, none of it
+# cached, rate-limited or fronted by anything. A 301 rather than a 403: these
+# URLs are duplicates of live pages, so the accrued signal should move to the
+# apex rather than be discarded.
+#
+# The X-Origin-Auth condition is NOT a security control — a direct caller can
+# defeat either condition by simply sending `Host: flipcommons.org`. It is an
+# interlock against Bunny ever forwarding this hostname again. Bunny forwards
+# the visitor's Host today (pull zone: Forward Host Header ON), so its traffic
+# fails the host match; but a pull-zone rollback, a config edit, or a stale
+# edge that hasn't picked up the setting would send this hostname with the
+# header still attached, and without the second condition every such request
+# would be redirected to a host Bunny fronts. That is a redirect loop, and
+# because the zone has Follow Redirects disabled it would be cached at the
+# edge and outlive the repair. Testing presence rather than value keeps that
+# failure open rather than closed: a drifted ORIGIN_SHARED_SECRET must not be
+# able to take the site down.
+#
+# Nothing internal matches: SSR's own API calls arrive as 127.0.0.1:$PORT and
+# Railway's health check as healthcheck.railway.app.
+@direct_origin {
+	host flipcommons-production.up.railway.app
+	header !X-Origin-Auth
+}
+# Bunny inherits the pull zone's 30-day default TTL for any response that
+# arrives without Cache-Control, so an unstamped redirect could be cached and
+# served long after the condition that produced it was fixed.
+header @direct_origin Cache-Control "no-store"
+handle @direct_origin {
+	redir https://flipcommons.org{uri} permanent
+}
+
 # Strip the RFC 7239 Forwarded header. Railway passes client-supplied
 # values through verbatim, so it's attacker-controlled.
 request_header -Forwarded
