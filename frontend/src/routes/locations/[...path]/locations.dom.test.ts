@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { authMock, pageState } = vi.hoisted(() => ({
   authMock: { isAuthenticated: true, load: () => Promise.resolve() },
-  pageState: { url: new URL('http://localhost/locations') },
+  pageState: {
+    url: new URL('http://localhost/locations'),
+    routeId: '/locations/[...path]' as string | null,
+  },
 }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
@@ -14,6 +17,9 @@ vi.mock('$app/state', () => ({
     params: {},
     get url() {
       return pageState.url;
+    },
+    get route() {
+      return { id: pageState.routeId };
     },
   },
 }));

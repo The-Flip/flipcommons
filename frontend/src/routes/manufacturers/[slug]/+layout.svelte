@@ -28,7 +28,7 @@
   } from '$lib/components/pages/record/edit/editors/entity/manufacturer/manufacturer-edit-sections';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
-  import { isFocusModePath } from '$lib/focus-mode';
+  import { isFocusModeRoute } from '$lib/focus-mode';
   import { setEntityContext } from '$lib/entity-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
   import ManufacturerEditorSwitch from './edit/ManufacturerEditorSwitch.svelte';
@@ -50,9 +50,9 @@
     ),
   );
   let metaDescription = $derived(metaDescriptionFor(mfr, `${mfr.name} — pinball manufacturer`));
-  let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
+  let mode = $derived(resolveDetailSubrouteMode(page.route.id));
   let isDetail = $derived(mode === 'detail');
-  let isFocusMode = $derived(isFocusModePath(page.url.pathname));
+  let isFocusMode = $derived(isFocusModeRoute(page.route.id));
 
   setEntityContext({
     get name() {

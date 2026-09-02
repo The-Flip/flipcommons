@@ -1,113 +1,120 @@
 import { describe, expect, it } from 'vitest';
 
-import { isFocusModePath, isMinimalShellPath } from './focus-mode';
+import { isFocusModeRoute, isMinimalShellRoute } from './focus-mode';
 
-describe('isFocusModePath', () => {
+describe('isFocusModeRoute', () => {
   describe('focus-mode routes', () => {
     it('matches top-level create', () => {
-      expect(isFocusModePath('/titles/new')).toBe(true);
+      expect(isFocusModeRoute('/titles/new')).toBe(true);
     });
 
     it('matches nested create', () => {
-      expect(isFocusModePath('/titles/medieval-madness/models/new')).toBe(true);
+      expect(isFocusModeRoute('/titles/[slug]/models/new')).toBe(true);
     });
 
     it('matches edit without section', () => {
-      expect(isFocusModePath('/manufacturers/williams/edit')).toBe(true);
-    });
-
-    it('matches edit with trailing slash', () => {
-      expect(isFocusModePath('/manufacturers/williams/edit/')).toBe(true);
+      expect(isFocusModeRoute('/manufacturers/[slug]/edit')).toBe(true);
     });
 
     it('matches edit with section', () => {
-      expect(isFocusModePath('/models/attack-from-mars/edit/overview')).toBe(true);
+      expect(isFocusModeRoute('/models/[slug]/edit/[section]')).toBe(true);
     });
 
     it('matches delete confirmation', () => {
-      expect(isFocusModePath('/titles/medieval-madness/delete')).toBe(true);
+      expect(isFocusModeRoute('/titles/[slug]/delete')).toBe(true);
     });
 
     it('matches edit-history', () => {
-      expect(isFocusModePath('/titles/medieval-madness/edit-history')).toBe(true);
+      expect(isFocusModeRoute('/titles/[slug]/edit-history')).toBe(true);
     });
 
     it('matches sources', () => {
-      expect(isFocusModePath('/titles/medieval-madness/sources')).toBe(true);
+      expect(isFocusModeRoute('/titles/[slug]/sources')).toBe(true);
+    });
+
+    it('matches the kiosk', () => {
+      expect(isFocusModeRoute('/kiosk')).toBe(true);
     });
 
     it('does not match /signup (minimal shell, not focus)', () => {
-      expect(isFocusModePath('/signup')).toBe(false);
+      expect(isFocusModeRoute('/signup')).toBe(false);
+    });
+  });
+
+  describe('records whose public id spans several URL segments', () => {
+    // A Location nested two or more levels deep (/locations/canada/on) still
+    // routes through a single [...path] segment, so its sub-routes classify
+    // exactly like a [slug] entity's.
+    it('matches every location sub-route', () => {
+      expect(isFocusModeRoute('/locations/[...path]/edit-history')).toBe(true);
+      expect(isFocusModeRoute('/locations/[...path]/sources')).toBe(true);
+      expect(isFocusModeRoute('/locations/[...path]/delete')).toBe(true);
+      expect(isFocusModeRoute('/locations/[...path]/edit')).toBe(true);
+      expect(isFocusModeRoute('/locations/[...path]/edit/[section]')).toBe(true);
+      expect(isFocusModeRoute('/locations/[...path]/new')).toBe(true);
+    });
+
+    it('does not match the location detail page', () => {
+      expect(isFocusModeRoute('/locations/[...path]')).toBe(false);
     });
   });
 
   describe('full-chrome routes', () => {
     it('does not match the home page', () => {
-      expect(isFocusModePath('/')).toBe(false);
+      expect(isFocusModeRoute('/')).toBe(false);
     });
 
     it('does not match an entity index', () => {
-      expect(isFocusModePath('/titles')).toBe(false);
+      expect(isFocusModeRoute('/titles')).toBe(false);
     });
 
     it('does not match a detail page', () => {
-      expect(isFocusModePath('/manufacturers/williams')).toBe(false);
+      expect(isFocusModeRoute('/manufacturers/[slug]')).toBe(false);
     });
 
-    it('does not match a detail subroute', () => {
-      expect(isFocusModePath('/manufacturers/williams/media')).toBe(false);
+    it('does not match a record whose slug names a sub-route', () => {
+      // /titles/sources, /titles/edit and friends are detail pages for records
+      // slugged 'sources' / 'edit'. All are served by /titles/[slug], which
+      // carries no sub-route segment.
+      expect(isFocusModeRoute('/titles/[slug]')).toBe(false);
     });
 
-    it('does not match an entity record whose slug is "delete"', () => {
-      // /:entity/delete is the detail page for a record with slug='delete',
-      // not a delete-confirmation route.
-      expect(isFocusModePath('/titles/delete')).toBe(false);
+    it('does not match a nested listing under a detail page', () => {
+      expect(isFocusModeRoute('/manufacturers/[slug]/systems')).toBe(false);
     });
 
-    it('does not match an entity record whose slug is "edit"', () => {
-      expect(isFocusModePath('/titles/edit')).toBe(false);
+    it('does not match "edit" outside a record route', () => {
+      expect(isFocusModeRoute('/kiosk/edit/[id]')).toBe(false);
     });
 
-    it('does not match "new" appearing mid-path', () => {
-      expect(isFocusModePath('/titles/new/something')).toBe(false);
-    });
-
-    it('does not match "delete" appearing mid-path', () => {
-      expect(isFocusModePath('/titles/medieval-madness/delete/extra')).toBe(false);
-    });
-
-    it('does not match an entity record whose slug is "sources"', () => {
-      expect(isFocusModePath('/titles/sources')).toBe(false);
-    });
-
-    it('does not match an entity record whose slug is "edit-history"', () => {
-      expect(isFocusModePath('/titles/edit-history')).toBe(false);
-    });
-
-    it('does not match "sources" with trailing extra segments', () => {
-      expect(isFocusModePath('/titles/medieval-madness/sources/something')).toBe(false);
-    });
-
-    it('does not match "edit-history" with trailing extra segments', () => {
-      expect(isFocusModePath('/titles/medieval-madness/edit-history/something')).toBe(false);
+    it('does not match an unmatched URL', () => {
+      expect(isFocusModeRoute(null)).toBe(false);
     });
   });
 });
 
-describe('isMinimalShellPath', () => {
+describe('isMinimalShellRoute', () => {
   it('matches /signup', () => {
-    expect(isMinimalShellPath('/signup')).toBe(true);
+    expect(isMinimalShellRoute('/signup')).toBe(true);
+  });
+
+  it('matches the auth error page', () => {
+    expect(isMinimalShellRoute('/auth/error')).toBe(true);
   });
 
   it('does not match the home page', () => {
-    expect(isMinimalShellPath('/')).toBe(false);
+    expect(isMinimalShellRoute('/')).toBe(false);
   });
 
   it('does not match a focus-mode route', () => {
-    expect(isMinimalShellPath('/titles/new')).toBe(false);
+    expect(isMinimalShellRoute('/titles/new')).toBe(false);
   });
 
   it('does not match a record whose slug is "signup"', () => {
-    expect(isMinimalShellPath('/titles/signup')).toBe(false);
+    expect(isMinimalShellRoute('/titles/[slug]')).toBe(false);
+  });
+
+  it('does not match an unmatched URL', () => {
+    expect(isMinimalShellRoute(null)).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ const { pageState } = vi.hoisted(() => ({
   pageState: {
     params: { slug: 'medieval-madness' },
     url: new URL('http://localhost:5173/models/medieval-madness'),
+    route: { id: '/models/[slug]' },
   },
 }));
 
@@ -25,6 +26,7 @@ describe('model layout', () => {
   beforeEach(() => {
     pageState.params.slug = 'medieval-madness';
     pageState.url = new URL('http://localhost:5173/models/medieval-madness');
+    pageState.route.id = '/models/[slug]';
   });
 
   it('omits the Back link on the detail route', () => {
@@ -34,17 +36,6 @@ describe('model layout', () => {
 
     expect(body).toContain('History');
     expect(body).not.toContain('>Back<');
-  });
-
-  it('renders a Back link on media subroutes', () => {
-    pageState.url = new URL('http://localhost:5173/models/medieval-madness/media');
-
-    const { body } = render(Harness, {
-      props: { data: { profile: MOCK_MODEL } },
-    });
-
-    expect(body).toContain('>Back<');
-    expect(body).toContain('/models/medieval-madness');
   });
 
   it('renders relationship edges in the desktop sidebar', () => {

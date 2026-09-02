@@ -23,7 +23,7 @@
   } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import type { EditorCallbacks } from '$lib/components/pages/record/edit/editors/editor-callbacks';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
-  import { isFocusModePath } from '$lib/focus-mode';
+  import { isFocusModeRoute } from '$lib/focus-mode';
   import { setEntityContext } from '$lib/entity-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
 
@@ -93,9 +93,9 @@
   );
 
   let metaDescription = $derived(metaDescriptionFor(profile));
-  let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
+  let mode = $derived(resolveDetailSubrouteMode(page.route.id));
   let isDetail = $derived(mode === 'detail');
-  let isFocusMode = $derived(isFocusModePath(page.url.pathname));
+  let isFocusMode = $derived(isFocusModeRoute(page.route.id));
   const isMobileFlag = createBelowBreakpointFlag(WIDE_BREAKPOINT);
   let isMobile = $derived(isMobileFlag.current);
   let editing = $state<TKey | null>(null);

@@ -3,32 +3,42 @@ import { describe, expect, it } from 'vitest';
 import { matchDetailSubroute } from './detail-subroute-match';
 
 describe('matchDetailSubroute', () => {
-  it('returns the subroute segment of /:entity/:slug/:subroute', () => {
-    expect(matchDetailSubroute('/titles/medieval-madness/edit-history')).toBe('edit-history');
-    expect(matchDetailSubroute('/titles/medieval-madness/sources')).toBe('sources');
-    expect(matchDetailSubroute('/manufacturers/williams/edit')).toBe('edit');
-    expect(matchDetailSubroute('/models/attack-from-mars/media')).toBe('media');
+  it('returns the sub-route segment', () => {
+    expect(matchDetailSubroute('/titles/[slug]/edit-history')).toBe('edit-history');
+    expect(matchDetailSubroute('/titles/[slug]/sources')).toBe('sources');
+    expect(matchDetailSubroute('/manufacturers/[slug]/edit')).toBe('edit');
   });
 
-  it('returns the subroute when extra segments follow', () => {
-    expect(matchDetailSubroute('/models/attack-from-mars/edit/overview')).toBe('edit');
-    expect(matchDetailSubroute('/manufacturers/williams/media/upload')).toBe('media');
+  it('returns the first sub-route segment for nested sub-routes', () => {
+    expect(matchDetailSubroute('/models/[slug]/edit/[section]')).toBe('edit');
+    expect(matchDetailSubroute('/titles/[slug]/models/new')).toBe('models');
   });
 
-  it('returns null when there is no slug', () => {
+  it('reads a multi-segment public id as one segment', () => {
+    // A Location's public_id spans several URL segments (`canada/on`) but a
+    // single route segment, so its sub-routes sit where every other entity's do.
+    expect(matchDetailSubroute('/locations/[...path]/edit-history')).toBe('edit-history');
+    expect(matchDetailSubroute('/locations/[...path]/sources')).toBe('sources');
+    expect(matchDetailSubroute('/locations/[...path]/edit/[section]')).toBe('edit');
+  });
+
+  it('returns null for routes with fewer than three segments', () => {
     expect(matchDetailSubroute('/titles')).toBeNull();
     expect(matchDetailSubroute('/')).toBeNull();
-    expect(matchDetailSubroute('')).toBeNull();
   });
 
-  it('returns null when only entity + slug are present (no subroute)', () => {
-    expect(matchDetailSubroute('/titles/medieval-madness')).toBeNull();
-    expect(matchDetailSubroute('/titles/sources')).toBeNull();
-    expect(matchDetailSubroute('/titles/edit-history')).toBeNull();
-    expect(matchDetailSubroute('/titles/edit')).toBeNull();
+  it('returns null for a detail route', () => {
+    // Including one reached by a record whose slug is `sources` — it is served
+    // by /titles/[slug], which carries no sub-route segment at all.
+    expect(matchDetailSubroute('/titles/[slug]')).toBeNull();
+    expect(matchDetailSubroute('/locations/[...path]')).toBeNull();
   });
 
-  it('ignores trailing slash', () => {
-    expect(matchDetailSubroute('/titles/medieval-madness/edit/')).toBe('edit');
+  it('returns null when the second segment is not a public-id slot', () => {
+    expect(matchDetailSubroute('/kiosk/edit/[id]')).toBeNull();
+  });
+
+  it('returns null for an unmatched URL', () => {
+    expect(matchDetailSubroute(null)).toBeNull();
   });
 });

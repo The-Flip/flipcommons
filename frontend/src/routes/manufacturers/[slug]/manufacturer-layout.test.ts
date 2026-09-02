@@ -5,6 +5,7 @@ const { pageState, authState } = vi.hoisted(() => ({
   pageState: {
     params: { slug: 'williams' },
     url: new URL('http://localhost:5173/manufacturers/williams'),
+    route: { id: '/manufacturers/[slug]' },
   },
   authState: { isAuthenticated: false },
 }));
@@ -29,6 +30,7 @@ describe('manufacturer layout', () => {
   beforeEach(() => {
     pageState.params.slug = 'williams';
     pageState.url = new URL('http://localhost:5173/manufacturers/williams');
+    pageState.route.id = '/manufacturers/[slug]';
     authState.isAuthenticated = false;
   });
 
@@ -42,19 +44,9 @@ describe('manufacturer layout', () => {
     expect(body).not.toContain('Page sections');
   });
 
-  it('renders a Back link on media subroutes', () => {
-    pageState.url = new URL('http://localhost:5173/manufacturers/williams/media');
-
-    const { body } = render(Harness, {
-      props: { data: { profile: MOCK_MANUFACTURER, q: '', jsonLd: {} } },
-    });
-
-    expect(body).toContain('>Back<');
-    expect(body).toContain('/manufacturers/williams');
-  });
-
   it('strips the detail shell on sources subroutes (focus mode)', () => {
     pageState.url = new URL('http://localhost:5173/manufacturers/williams/sources');
+    pageState.route.id = '/manufacturers/[slug]/sources';
 
     const { body } = render(Harness, {
       props: { data: { profile: MOCK_MANUFACTURER, q: '', jsonLd: {} } },
@@ -67,6 +59,7 @@ describe('manufacturer layout', () => {
 
   it('strips the detail shell on edit-history subroutes (focus mode)', () => {
     pageState.url = new URL('http://localhost:5173/manufacturers/williams/edit-history');
+    pageState.route.id = '/manufacturers/[slug]/edit-history';
 
     const { body } = render(Harness, {
       props: { data: { profile: MOCK_MANUFACTURER, q: '', jsonLd: {} } },

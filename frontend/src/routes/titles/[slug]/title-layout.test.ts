@@ -5,6 +5,7 @@ const { pageState, authState } = vi.hoisted(() => ({
   pageState: {
     params: { slug: 'medieval-madness' },
     url: new URL('http://localhost:5173/titles/medieval-madness'),
+    route: { id: '/titles/[slug]' },
   },
   authState: { isAuthenticated: false },
 }));
@@ -44,6 +45,7 @@ describe('title layout', () => {
   beforeEach(() => {
     pageState.params.slug = 'medieval-madness';
     pageState.url = new URL('http://localhost:5173/titles/medieval-madness');
+    pageState.route.id = '/titles/[slug]';
     authState.isAuthenticated = false;
   });
 
@@ -75,6 +77,7 @@ describe('title layout', () => {
 
   it('strips the detail shell on sources subroutes (focus mode)', () => {
     pageState.url = new URL('http://localhost:5173/titles/medieval-madness/sources');
+    pageState.route.id = '/titles/[slug]/sources';
 
     const { body } = render(Harness, {
       props: { data: { profile: MOCK_TITLE } },
@@ -89,6 +92,7 @@ describe('title layout', () => {
 
   it('strips the detail shell on edit-history subroutes (focus mode)', () => {
     pageState.url = new URL('http://localhost:5173/titles/medieval-madness/edit-history');
+    pageState.route.id = '/titles/[slug]/edit-history';
 
     const { body } = render(Harness, {
       props: { data: { profile: MOCK_TITLE } },
