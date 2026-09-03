@@ -97,6 +97,8 @@ Bunny runs the following pull zones:
 - [`static.flipcommons.org`](#static-edge-cache): static app assets like `/_app/immutable/*`, pulled through the apex zone
 - [`media.flipcommons.org`](#media-edge-cache): uploaded images
 
+All three zones require TLS 1.2 or higher and verify the origin certificate.
+
 #### Apex edge cache
 
 Bunny fronts `flipcommons.org` for anonymous SSR HTML caching. Configured to:
@@ -126,7 +128,7 @@ The apex resolves to this pull zone through a Bunny [`PZ` record](#dns) rather t
 
 #### Static edge cache
 
-`static.flipcommons.org` serves everything the build and [app.html](../frontend/src/app.html) reference through SvelteKit's assets path: the hashed `/_app/immutable/*` assets, `version.json`, the fonts, the favicons under `/images/favicon/` and `/apple-touch-icon.png`. Respects origin cache headers.
+`static.flipcommons.org` serves everything the build and [app.html](../frontend/src/app.html) reference through SvelteKit's assets path: the hashed `/_app/immutable/*` assets, `version.json`, the fonts, the favicons under `/images/favicon/` and `/apple-touch-icon.png`. Respects origin cache headers. Does not include the query string in the cache key.
 
 Its origin is `https://flipcommons.org`, the apex pull zone, not Railway (Forward Host Header off, Follow Redirects off, no Edge Rules). A static miss is fetched through the apex zone and reaches Railway as an apex request with `Host: flipcommons.org`. Consequences:
 
