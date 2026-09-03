@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from datetime import datetime
 from typing import ClassVar, Self, TypeVar, cast
 
@@ -497,9 +497,7 @@ class SitemappedModel(LinkableModel, LastUpdatedModel):
         ``lastmod_expression()`` (``updated_at`` unless a subclass widens it).
         Override ``lastmod_expression()`` to widen ``lastmod`` (e.g. aggregate
         child timestamps); override this method only to narrow membership, or
-        return ``cls.objects.none()`` to opt out of the sitemap entirely. Use
-        ``non_canonical_detail_slugs()`` to drop a detail URL for canonical-URL
-        reasons without removing the row.
+        return ``cls.objects.none()`` to opt out of the sitemap entirely.
         """
         # ``LinkableModel`` itself doesn't carry ``status`` or the lifecycle
         # manager; the default depends on the parity-tested mixin contract
@@ -514,19 +512,3 @@ class SitemappedModel(LinkableModel, LastUpdatedModel):
             .annotate(_last_modified=cls.lastmod_expression())
             .order_by(cls.public_id_field),
         )
-
-    @classmethod
-    def non_canonical_detail_slugs(cls) -> Iterable[str]:
-        """Slugs whose ``catalog-detail`` URL is non-canonical.
-
-        Default: empty. Override when the detail page collapses to a
-        different entity's page in the UI (canonical URL lives elsewhere) —
-        the row stays in ``sitemap_queryset()`` so ``/edit-history`` and
-        ``/sources`` still emit, but its detail URL is omitted from the
-        sitemap.
-
-        Returned slugs must already be members of ``sitemap_queryset()``;
-        slugs outside that set are ignored (defensive — they wouldn't appear
-        anyway).
-        """
-        return ()

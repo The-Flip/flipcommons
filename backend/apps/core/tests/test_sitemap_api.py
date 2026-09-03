@@ -31,6 +31,7 @@ class TestSitemapEndpoint:
     def test_returns_200_with_feed_shape(self) -> None:
         title = Title.objects.create(name="Solo", slug="solo")
         MachineModel.objects.create(title=title, name="Solo", slug="solo-model")
+        MachineModel.objects.create(title=title, name="Solo LE", slug="solo-le")
 
         resp = self.client.get("/api/sitemap/")
         assert resp.status_code == 200, resp.content
@@ -41,26 +42,10 @@ class TestSitemapEndpoint:
         assert "model" in feeds_by_kind
 
         title_feed = feeds_by_kind["title"]
-        assert set(title_feed.keys()) == {
-            "kind",
-            "entries",
-            "detail_excluded_slugs",
-            "max_lastmod",
-        }
+        assert set(title_feed.keys()) == {"kind", "entries", "max_lastmod"}
         assert title_feed["entries"][0]["slug"] == "solo"
         assert "lastmod" in title_feed["entries"][0]
         assert title_feed["max_lastmod"] is not None
-
-    def test_machine_model_non_canonical_included(self) -> None:
-        """Single-Model-Title rule: the Model slug appears in
-        ``detail_excluded_slugs`` on the ``model`` feed."""
-        title = Title.objects.create(name="Only", slug="only")
-        MachineModel.objects.create(title=title, name="Only", slug="only-model")
-
-        resp = self.client.get("/api/sitemap/")
-        assert resp.status_code == 200
-        feeds_by_kind = {f["kind"]: f for f in json.loads(resp.content)["feeds"]}
-        assert "only-model" in feeds_by_kind["model"]["detail_excluded_slugs"]
 
     def test_sets_cache_control_header(self) -> None:
         Title.objects.create(name="Solo", slug="solo")

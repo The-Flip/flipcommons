@@ -52,6 +52,8 @@ describe('noindexHandle', () => {
     ['/titles/new', true],
     ['/titles/[slug]/edit', true],
     ['/titles/[slug]/delete', true],
+    ['/titles/[slug]/edit-history', true],
+    ['/titles/[slug]/sources', true],
   ];
 
   it.each(CASES)('classifies %s (noindex=%s)', async (routeId, expectedNoindex) => {

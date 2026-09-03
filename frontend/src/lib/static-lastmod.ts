@@ -4,8 +4,7 @@
  * Two consumers:
  *
  *  1. `<LastUpdated />` on the legal pages — surfaces the date to the reader.
- *  2. The `/sitemap.xml` endpoint (per `docs/plans/seo/Sitemap.md`) — emits as
- *     `<lastmod>` per page.
+ *  2. The `/sitemap.xml` endpoint — emits as `<lastmod>` per page.
  *
  * Single source of truth means the user-visible date and the crawler-visible
  * `<lastmod>` cannot disagree. When a page's content changes substantively,

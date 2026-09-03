@@ -3,10 +3,9 @@
 Mirrors the same ``apps.get_models()`` + ``issubclass`` walk as
 ``apps/core/entity_types.py``. Each concrete ``SitemappedModel`` subclass
 contributes one ``SitemapFeed``; per-model behavior (which rows are
-included, their ``lastmod``, and which detail URLs are non-canonical) is
-driven by ``SitemappedModel.sitemap_queryset()`` and
-``SitemappedModel.non_canonical_detail_slugs()``. A ``LinkableModel`` that
-is not a ``SitemappedModel`` (linkable but not in the sitemap) is excluded.
+included and their ``lastmod``) is driven by
+``SitemappedModel.sitemap_queryset()``. A ``LinkableModel`` that is not a
+``SitemappedModel`` (linkable but not in the sitemap) is excluded.
 
 The endpoint that ships this over the wire lives at
 ``apps/core/api/sitemap.py``; this module is pure derivation so it can be
@@ -40,11 +39,6 @@ class SitemapEntry(NamedTuple):
 class SitemapFeed(NamedTuple):
     """All sitemap entries for one entity ``kind`` (``LinkableModel.entity_type``).
 
-    ``detail_excluded_slugs`` carries the slugs whose ``catalog-detail`` URL
-    is non-canonical and must be omitted from the detail-route emissions.
-    Their ``/edit-history`` and ``/sources`` URLs are still emitted (the
-    entries stay in ``entries``).
-
     ``max_lastmod`` is the newest ``lastmod`` across ``entries`` — used by
     the SvelteKit endpoint for sitemap-index ``<lastmod>`` values when the
     feed is paginated.
@@ -52,7 +46,6 @@ class SitemapFeed(NamedTuple):
 
     kind: str
     entries: list[SitemapEntry]
-    detail_excluded_slugs: frozenset[str]
     max_lastmod: datetime | None
 
 
@@ -95,7 +88,6 @@ def all_sitemap_feeds() -> list[SitemapFeed]:
             SitemapFeed(
                 kind=model.entity_type,
                 entries=entries,
-                detail_excluded_slugs=frozenset(model.non_canonical_detail_slugs()),
                 max_lastmod=max(e.lastmod for e in entries),
             )
         )

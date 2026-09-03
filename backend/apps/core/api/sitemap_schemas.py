@@ -33,17 +33,10 @@ class SitemapEntrySchema(Schema):
 
 
 class SitemapFeedSchema(Schema):
-    """All sitemap entries for one entity ``kind``.
-
-    ``detail_excluded_slugs`` is the subset whose ``catalog-detail`` URL is
-    non-canonical and must be omitted from detail-route emissions; their
-    ``/edit-history`` and ``/sources`` URLs are still expected to render
-    (the slugs stay in ``entries``).
-    """
+    """All sitemap entries for one entity ``kind``."""
 
     kind: str
     entries: list[SitemapEntrySchema]
-    detail_excluded_slugs: list[str]
     max_lastmod: datetime | None
 
 
@@ -67,7 +60,6 @@ class SitemapFeedDict(TypedDict):
 
     kind: str
     entries: list[SitemapEntryDict]
-    detail_excluded_slugs: list[str]
     max_lastmod: str | None
 
 

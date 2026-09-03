@@ -231,10 +231,13 @@ export function isSearchEngineIndexable(id: RouteId): boolean {
   switch (c.kind) {
     case 'catalog-listing':
     case 'catalog-detail':
-    case 'catalog-edit-history':
-    case 'catalog-sources':
     case 'listed-indexable':
       return true;
+    // The provenance subroutes re-render the parent entity's content in raw
+    // claim form: nothing for a search engine that the detail page doesn't
+    // already offer, rendered better.
+    case 'catalog-edit-history':
+    case 'catalog-sources':
     case 'catalog-edit':
     case 'catalog-new':
     case 'catalog-delete':

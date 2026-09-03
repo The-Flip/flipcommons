@@ -68,7 +68,6 @@ def _build_payload() -> SitemapPayloadDict:
                     SitemapEntryDict(slug=entry.slug, lastmod=_lastmod(entry.lastmod))
                     for entry in feed.entries
                 ],
-                detail_excluded_slugs=sorted(feed.detail_excluded_slugs),
                 max_lastmod=_lastmod(feed.max_lastmod) if feed.max_lastmod else None,
             )
             for feed in all_sitemap_feeds()
