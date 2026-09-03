@@ -9,12 +9,10 @@
  *   3. Emits URLs additively: one per static indexable route, plus one per
  *      (route, slug) pair for every indexable dynamic route wired to the
  *      feed's entity (`catalogRoutesByEntity` + `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE`).
- *   4. Excludes detail-URL slugs flagged non-canonical (single-Model Title members
- *      collapse to the Title page).
- *   5. Attaches `<lastmod>`: per-entry for dynamic URLs, the feed's
+ *   4. Attaches `<lastmod>`: per-entry for dynamic URLs, the feed's
  *      `max_lastmod` for listing pages, hand-maintained `STATIC_LASTMOD` for
  *      the rest.
- *   6. Answers `304` to a conditional request whose `If-None-Match` already
+ *   5. Answers `304` to a conditional request whose `If-None-Match` already
  *      holds the rendered document (see `respond`).
  *
  * Additive means a dynamic route nobody wired to a feed silently emits
@@ -29,7 +27,6 @@ import type { RouteId } from '$app/types';
 import {
   allRoutes,
   catalogRoutesByEntity,
-  classifyRoute,
   isSearchEngineIndexable,
   LISTED_INDEXABLE_ENTITY_SLUG_SOURCE,
 } from '$lib/route-metadata.server';
@@ -82,14 +79,11 @@ function safeIsIndexable(id: RouteId): boolean {
 
 /**
  * One indexable dynamic route, ready to emit `prefix + slug + suffix` per
- * feed entry. `isDetail` marks the `catalog-detail` route, the only shape
- * that honors the feed's `detail_excluded_slugs` (non-canonical detail URLs
- * are dropped).
+ * feed entry.
  */
 interface SlugRouteEmitter {
   prefix: string;
   suffix: string;
-  isDetail: boolean;
 }
 
 // --- Module-level memoization ------------------------------------------------
@@ -114,7 +108,7 @@ const STATIC_INDEXABLE_URLS: readonly string[] = allRoutes()
 // LISTED_INDEXABLE_ENTITY_SLUG_SOURCE routes (declared).
 const EMITTERS_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly SlugRouteEmitter[]> = (() => {
   const out = new Map<CatalogEntityKey, SlugRouteEmitter[]>();
-  const add = (entity: CatalogEntityKey, id: RouteId, isDetail: boolean) => {
+  const add = (entity: CatalogEntityKey, id: RouteId) => {
     const slot = splitRouteAtParam(stripRouteGroups(id));
     if (!slot) {
       // A wired route this helper can't fill from one slug (no [slug] /
@@ -124,20 +118,20 @@ const EMITTERS_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly SlugRouteEmitte
       return;
     }
     const arr = out.get(entity) ?? [];
-    arr.push({ ...slot, isDetail });
+    arr.push(slot);
     out.set(entity, arr);
   };
   const catalogRoutes = catalogRoutesByEntity(
     (cls, id) => cls.kind !== 'catalog-listing' && safeIsIndexable(id),
   );
   for (const [entity, ids] of catalogRoutes) {
-    for (const id of ids) add(entity, id, classifyRoute(id).kind === 'catalog-detail');
+    for (const id of ids) add(entity, id);
   }
   for (const [id, entity] of Object.entries(LISTED_INDEXABLE_ENTITY_SLUG_SOURCE) as [
     RouteId,
     CatalogEntityKey,
   ][]) {
-    add(entity, id, false);
+    add(entity, id);
   }
   return out;
 })();
@@ -191,10 +185,8 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
     if (!isCatalogEntityKey(feed.kind)) continue;
     const emitters = EMITTERS_BY_ENTITY.get(feed.kind);
     if (!emitters) continue;
-    const excluded = new Set(feed.detail_excluded_slugs);
-    for (const { prefix, suffix, isDetail } of emitters) {
+    for (const { prefix, suffix } of emitters) {
       for (const entry of feed.entries) {
-        if (isDetail && excluded.has(entry.slug)) continue;
         push(prefix + entry.slug + suffix, entry.lastmod);
       }
     }

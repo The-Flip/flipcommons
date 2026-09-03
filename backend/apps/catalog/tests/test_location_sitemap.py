@@ -4,8 +4,7 @@ to locations with at least one manufacturer at or below them.
 A location page's primary content is its aggregated manufacturer grid
 (manufacturers propagate up the ancestor chain), so a zero-manufacturer
 location renders an empty page that search engines cluster as duplicate
-content. Such locations are excluded from the sitemap entirely (detail,
-``/edit-history``, and ``/sources`` URLs).
+content. Such locations are excluded from the sitemap entirely.
 
 Fixtures use Location + CorporateEntityLocation directly (bypassing claims)
 for speed, mirroring ``test_api_locations.py``.
@@ -101,8 +100,7 @@ class TestLocationSitemapQueryset:
 
     def test_feed_drops_excluded_locations(self):
         """The exclusion flows through ``all_sitemap_feeds()`` — a
-        zero-manufacturer location emits no URLs at all (detail,
-        /edit-history, /sources)."""
+        zero-manufacturer location emits no URLs at all."""
         usa = _make_location("usa", "USA")
         vt = _make_location("usa/vt", "Vermont", parent=usa)
         _make_mfr_at("Richard Mfg", "richard-mfg", vt)

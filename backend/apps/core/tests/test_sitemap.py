@@ -18,7 +18,6 @@ from apps.catalog.models import Title
 from apps.core.models import SitemappedModel
 from apps.core.sitemap import (
     SitemapEntry,
-    SitemapFeed,
     all_sitemap_feeds,
 )
 
@@ -56,12 +55,6 @@ class TestPerModelDefaults:
         statuses = list(model.sitemap_queryset().values_list("status", flat=True))
         assert "deleted" not in statuses
 
-    def test_non_canonical_default_iterable(self, model):
-        """The default ``non_canonical_detail_slugs()`` (and any override)
-        returns something the sitemap can wrap in ``frozenset(...)``."""
-        result = frozenset(model.non_canonical_detail_slugs())
-        assert isinstance(result, frozenset)
-
 
 # ---------------------------------------------------------------------------
 # all_sitemap_feeds() shape + behavior
@@ -88,16 +81,6 @@ class TestAllSitemapFeeds:
         assert isinstance(entry.lastmod, datetime)
         assert title_feed.max_lastmod == entry.lastmod
 
-    def test_detail_excluded_slugs_is_frozenset(self):
-        """``detail_excluded_slugs`` is always a ``frozenset`` (default
-        empty), regardless of whether the model overrides
-        ``non_canonical_detail_slugs()``."""
-        Title.objects.create(name="A", slug="a")
-        feeds = all_sitemap_feeds()
-        for feed in feeds:
-            assert isinstance(feed, SitemapFeed)
-            assert isinstance(feed.detail_excluded_slugs, frozenset)
-
     def test_entries_ordered_by_public_id(self):
         """Default ``sitemap_queryset()`` orders by ``public_id_field``."""
         Title.objects.create(name="B", slug="b-title")
@@ -118,19 +101,19 @@ class TestAllSitemapFeeds:
         assert "live" in slugs
         assert "dead" not in slugs
 
-    def test_machine_model_non_canonical_carried_through(self):
-        """A single-Model Title's MachineModel slug appears in
-        ``detail_excluded_slugs`` on the ``model`` feed."""
+    def test_single_model_title_member_absent_from_feed(self):
+        """A single-Model Title's MachineModel contributes no URLs, so its
+        slug is absent from the ``model`` feed while the Title stays."""
         from apps.catalog.models import MachineModel
 
         title = Title.objects.create(name="Only", slug="only-title")
         MachineModel.objects.create(title=title, name="Only", slug="only-model")
 
         feeds = {f.kind: f for f in all_sitemap_feeds()}
-        model_feed = feeds["model"]
-        assert "only-model" in model_feed.detail_excluded_slugs
-        # The entry is still in `entries` so /edit-history and /sources emit.
-        assert any(e.slug == "only-model" for e in model_feed.entries)
+        assert "model" not in feeds or not any(
+            e.slug == "only-model" for e in feeds["model"].entries
+        )
+        assert any(e.slug == "only-title" for e in feeds["title"].entries)
 
     def test_max_lastmod_matches_newest_entry(self):
         Title.objects.create(name="A", slug="a")

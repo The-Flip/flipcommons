@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from enum import Enum, auto
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -14,7 +14,6 @@ from django.db.models.functions import Coalesce
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
-    active_status_q,
     field_not_blank,
     nullable_id_not_empty,
     self_fk_not_self,
@@ -620,25 +619,19 @@ class MachineModel(
         return models.Q(variant_of__isnull=True)
 
     @classmethod
-    def non_canonical_detail_slugs(cls) -> Iterable[str]:
-        # Single-Model-Title rule (docs/SingleModelTitles.md): when a Title
-        # has exactly one active MachineModel, the UI collapses to the Model
-        # page but the Title slug is the canonical URL for the detail page,
-        # so the Model's ``/models/<slug>`` is non-canonical. The Model's
-        # ``/edit-history`` and ``/sources`` remain canonical (they list the
-        # Model's history / sources, not the Title's), so we don't drop the
-        # row from ``sitemap_queryset()`` — only its detail URL.
-        return (
+    def sitemap_queryset(cls) -> models.QuerySet[Self]:
+        # Single-Model-Title rule (docs/SingleModelTitles.md): a Title with
+        # one active MachineModel collapses to the Title page and
+        # ``/models/<slug>`` redirects there, so that Model has no indexable
+        # URL to contribute. A variant counts as a sibling, which keeps an
+        # original-plus-variant pair in. An indexable Model subroute would
+        # force a per-route exclusion.
+        has_active_sibling = (
             cls.objects.active()
-            .annotate(
-                _sibling_count=models.Count(
-                    "title__machine_models",
-                    filter=active_status_q("title__machine_models"),
-                )
-            )
-            .filter(_sibling_count=1)
-            .values_list(cls.public_id_field, flat=True)
+            .filter(title=models.OuterRef("title"))
+            .exclude(pk=models.OuterRef("pk"))
         )
+        return super().sitemap_queryset().filter(models.Exists(has_active_sibling))
 
     def autocomplete_sublabel(self) -> str | None:
         """Disambiguate same-named models with a "manufacturer · year" line.

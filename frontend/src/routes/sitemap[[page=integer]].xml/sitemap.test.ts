@@ -101,7 +101,6 @@ describe('GET /sitemap.xml', () => {
         {
           kind: 'title',
           entries: [{ slug, lastmod: '2026-01-01' }],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-01-01',
         },
       ],
@@ -146,7 +145,6 @@ describe('GET /sitemap.xml', () => {
               slug: `t${i}`,
               lastmod: '2026-01-01',
             })),
-            detail_excluded_slugs: [],
             max_lastmod: '2026-01-01',
           },
         ],
@@ -168,7 +166,6 @@ describe('GET /sitemap.xml', () => {
             { slug: 't1', lastmod: '2026-01-01T00:00:00Z' },
             { slug: 't2', lastmod: '2026-02-01T00:00:00Z' },
           ],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-02-01T00:00:00Z',
         },
       ],
@@ -192,7 +189,6 @@ describe('GET /sitemap.xml', () => {
             { slug: 't1', lastmod: '2026-01-01T00:00:00Z' },
             { slug: 't2', lastmod: '2026-02-01T00:00:00Z' },
           ],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-02-01T00:00:00Z',
         },
       ],
@@ -207,39 +203,12 @@ describe('GET /sitemap.xml', () => {
     expect(xml).not.toMatch(/<loc>https:\/\/flipcommons\.org\/titles<\/loc>/);
   });
 
-  // Single-Model Title members are excluded from `/models/[slug]`; their
-  // /edit-history and /sources are absent like every other entity's, since
-  // those subroutes are not indexable.
-  it('applies detail_excluded_slugs to catalog-detail', async () => {
-    setApiResponse({
-      feeds: [
-        {
-          kind: 'model',
-          entries: [
-            { slug: 'sm1', lastmod: '2026-01-01T00:00:00Z' },
-            { slug: 'mm2', lastmod: '2026-02-01T00:00:00Z' },
-          ],
-          detail_excluded_slugs: ['sm1'],
-          max_lastmod: '2026-02-01T00:00:00Z',
-        },
-      ],
-    });
-    const response = await callGet();
-    const xml = await response.text();
-    expect(xml).not.toMatch(/<loc>https:\/\/flipcommons\.org\/models\/sm1<\/loc>/);
-    expect(xml).toContain('<loc>https://flipcommons.org/models/mm2</loc>');
-    expect(xml).not.toContain('<loc>https://flipcommons.org/models/sm1/edit-history</loc>');
-    expect(xml).not.toContain('<loc>https://flipcommons.org/models/sm1/sources</loc>');
-    expect(xml).not.toContain('<loc>https://flipcommons.org/models/mm2/edit-history</loc>');
-  });
-
   it('bridges manufacturer slugs into /manufacturers/[slug]/systems via LISTED_INDEXABLE_ENTITY_SLUG_SOURCE', async () => {
     setApiResponse({
       feeds: [
         {
           kind: 'manufacturer',
           entries: [{ slug: 'stern', lastmod: '2026-03-01T00:00:00Z' }],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-03-01T00:00:00Z',
         },
       ],
@@ -259,7 +228,6 @@ describe('GET /sitemap.xml', () => {
         {
           kind: 'location',
           entries: [{ slug: 'a/b/c', lastmod: '2026-04-01T00:00:00Z' }],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-04-01T00:00:00Z',
         },
       ],
@@ -338,7 +306,6 @@ describe('GET /sitemap.xml', () => {
               slug: `t${i}`,
               lastmod: '2026-01-01T00:00:00Z',
             })),
-            detail_excluded_slugs: [],
             max_lastmod: '2026-01-01T00:00:00Z',
           },
         ],
@@ -385,13 +352,11 @@ describe('GET /sitemap.xml', () => {
             { slug: 'foo', lastmod: '2026-01-01T00:00:00Z' },
             { slug: 'bar-baz', lastmod: '2026-02-01T00:00:00Z' },
           ],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-02-01T00:00:00Z',
         },
         {
           kind: 'location',
           entries: [{ slug: 'a/b/c', lastmod: '2026-04-01T00:00:00Z' }],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-04-01T00:00:00Z',
         },
       ],
@@ -422,7 +387,6 @@ describe('GET /sitemap.xml', () => {
         {
           kind: 'nonexistent-entity-kind',
           entries: [{ slug: 'whatever', lastmod: '2026-01-01T00:00:00Z' }],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-01-01T00:00:00Z',
         },
       ],
@@ -445,7 +409,6 @@ describe('GET /sitemap.xml', () => {
         feeds: CATALOG_ENTITY_KEYS.map((kind) => ({
           kind,
           entries: [{ slug: slugFor(kind), lastmod: '2026-01-01T00:00:00Z' }],
-          detail_excluded_slugs: [],
           max_lastmod: '2026-01-01T00:00:00Z',
         })),
       });
