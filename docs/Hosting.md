@@ -8,12 +8,12 @@ For the request-routing diagram and the rest of the runtime picture, see [Archit
 
 ### Overview
 
-- [Railway](#railway): hosting web & db
-- [Joker](#dns): domain registration
+- [Railway](#railway): web & db hosting
 - [Bunny.net](#bunny-cdn): CDN edge caching and [DNS](#dns)
+- [Joker](#dns): domain registration
 - [iDrive e2](#idrive-e2): media storage
 - [WorkOS](#workos): authentication
-- [Sentry](#sentry): error monitoring
+- [Sentry](#sentry): error & uptime monitoring
 - [PostHog](#posthog): analytics
 
 ### Railway
@@ -21,8 +21,7 @@ For the request-routing diagram and the rest of the runtime picture, see [Archit
 Railway hosts the project as two services:
 
 - **Web** — one container running Caddy, SvelteKit Node SSR and Django/Gunicorn (see [Process model](#process-model)). Region: US East (Virginia); see [Geography](#geography).
-- **Postgres** — managed database; Railway injects `DATABASE_URL`.
-  - Point-in-time recovery (PITR) is attached to the Postgres service; it restores the database to any timestamp.
+- **Postgres** — managed database; Railway injects `DATABASE_URL`. Point-in-time recovery (PITR) is attached to the Postgres service; it restores the database to any timestamp.
 
 #### Process model
 
@@ -92,7 +91,11 @@ The site already runs as a single Railway service; you only need this to stand u
 
 ### Bunny CDN
 
-Bunny runs three pull zones in front of the site:
+Bunny runs the following pull zones:
+
+- [`flipcommons.org`](#apex-edge-cache): anonymous SSR HTML
+- [`static.flipcommons.org`](#static-edge-cache): static app assets like `/_app/immutable/*`
+- [`media.flipcommons.org`)](#media-edge-cache): uploaded images
 
 #### Apex edge cache
 
@@ -119,18 +122,22 @@ The origin-side cache contract is described in [Architecture.md](Architecture.md
 
 The apex resolves to this pull zone through a Bunny [`PZ` record](#dns) rather than to Railway, but the domain stays registered on the Railway service so it still routes by `Host`.
 
-#### Static & media CDN
+#### Static edge cache
 
-`static.flipcommons.org` fronts Railway's hashed `/_app/immutable/*` assets, fonts and `version.json`; `media.flipcommons.org` fronts the iDrive e2 media bucket. Both respect origin cache headers.
+`static.flipcommons.org` fronts Railway's hashed `/_app/immutable/*` assets, fonts and `version.json`. Respects origin cache headers.
+
+#### Media edge cache
+
+`media.flipcommons.org` fronts the iDrive e2 media bucket. Respects origin cache headers.
 
 #### Rate limiting
 
 Rate limiting is configured in the Bunny dashboard (not in code). The goal is to blunt badly behaved bots; `robots.txt` covers the polite ones.
 
-| Zone                            | Limit                          | Block |
-| ------------------------------- | ------------------------------ | ----- |
-| Apex (`flipcommons.org`)        | 100 requests / 10 seconds / IP | 30 s  |
-| Media (`media.flipcommons.org`) | 300 requests / 10 seconds / IP | 30 s  |
+| Zone                    | Limit                          | Block |
+| ----------------------- | ------------------------------ | ----- |
+| `flipcommons.org`       | 100 requests / 10 seconds / IP | 30 s  |
+| `media.flipcommons.org` | 300 requests / 10 seconds / IP | 30 s  |
 
 Rule shape on both: condition `Request URI` contains `/` (match-all), Counter Key = IP address, Response Action = `RateLimit`. Media's ceiling is higher because one gallery page legitimately fires dozens of image requests in a burst.
 
@@ -143,9 +150,7 @@ Operational caveats:
 
 ### DNS
 
-Registration and nameserving are split. **[Joker](https://joker.com) is the registrar**; **Bunny hosts the zone** on `kiki.bunny.net` and `coco.bunny.net`. Two nameservers rather than Joker's three is not a downgrade — both are anycast, and `.org` requires two.
-
-Changing nameservers is a registrar operation at Joker, not a Bunny one. Check what the registry currently delegates with `whois flipcommons.org | grep -i "name server"`, which reads registry data on port 43 and so survives networks that intercept port 53.
+[Joker](https://joker.com) holds the domain registration; Bunny hosts the DNS zone on `kiki.bunny.net` and `coco.bunny.net`.
 
 #### Apex `PZ` record
 
@@ -158,13 +163,7 @@ Two consequences worth knowing before touching it:
 
 Bunny omits `PZ`, `RDR` and `SCR` records from its zone exports, so **a Bunny export is never a complete backup of this zone.** Record the apex pull-zone binding separately.
 
-#### Reverting to Joker
-
-The pre-Bunny zone is still parked at Joker, undelegated. Reverting is a registrar edit — point the nameservers back at `x/y/z.ns.joker.com` — bounded by the registry's 3600s delegation TTL, so about an hour. Anything needing a faster remedy has to be fixed forward in the Bunny zone, where TTLs are ours.
-
-**This works only for as long as the parked Joker zone exists, so keep it.** It costs nothing, and deleting it turns a registrar edit into a zone rebuild under pressure. Note that the Joker zone's apex is an `ALIAS`, which is what the move to Bunny replaced — a revert reinstates the flattening described in [Apex `PZ` record](#apex-pz-record).
-
-#### Records
+#### DNS Records
 
 | Name                   |  Type | Purpose                                                          |
 | ---------------------- | ----: | ---------------------------------------------------------------- |
@@ -297,7 +296,7 @@ Caddy ([Caddyfile](../Caddyfile)) then promotes `X-Client-IP` into `X-Real-IP` *
 
 Required config for this path:
 
-- **Bunny:** the two request-header Edge Rules above; **Forward Host Header ON**, so Bunny forwards the visitor's `Host` and requests reach Railway as `flipcommons.org`. It requires `flipcommons.org` to stay a registered Railway custom domain; see [Records](#records).
+- **Bunny:** the two request-header Edge Rules above; **Forward Host Header ON**, so Bunny forwards the visitor's `Host` and requests reach Railway as `flipcommons.org`. It requires `flipcommons.org` to stay a registered Railway custom domain; see [DNS Records](#dns-records).
 - **Railway:** `ORIGIN_SHARED_SECRET` set (matching the `X-Origin-Auth` rule); `flipcommons.org` in `ALLOWED_HOSTS`; `RATE_LIMIT_TRUST_PROXY_HEADERS=true`.
 
 `RATE_LIMIT_TRUST_PROXY_HEADERS` stays the master switch here too: if the secret or the Edge Rules drift, Caddy stops promoting `X-Client-IP` and the system degrades to the one-shared-bucket failure above (now keyed on Bunny's IP).
@@ -411,7 +410,7 @@ A probe that fails with **400** rather than a connection error means it reached 
 Bunny is forwarding the Railway origin hostname again and its requests are matching `@direct_origin`, which sends them back to a host Bunny fronts. Check **Forward Host Header** on the apex pull zone (must be ON) and the `X-Origin-Auth` Edge Rule (whose presence is what excludes Bunny's traffic when the toggle is wrong). Fix whichever drifted, then [purge](https://docs.bunny.net/cdn/purge-cache) the affected URLs — the zone has Follow Redirects disabled, so cached 301s survive the repair.
 
 **Every request returns Railway's `{"message":"Application not found"}`**:
-The `flipcommons.org` Railway custom domain has been removed or de-validated. Bunny forwards `Host: flipcommons.org` and Railway routes by that header, so the domain must stay registered — check `railway domain` for an `ACTIVE` row. Re-adding it means completing the ownership challenge Railway issues, a temporary TXT record that can be removed once validation completes; see [Records](#records).
+The `flipcommons.org` Railway custom domain has been removed or de-validated. Bunny forwards `Host: flipcommons.org` and Railway routes by that header, so the domain must stay registered — check `railway domain` for an `ACTIVE` row. Re-adding it means completing the ownership challenge Railway issues, a temporary TXT record that can be removed once validation completes; see [DNS Records](#dns-records).
 
 **"Frontend build directory not found" error**:
 The Docker build's Node stage failed to produce the SvelteKit SSR runtime.
