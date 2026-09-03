@@ -731,7 +731,7 @@ exhaustive = true # so new submodule left unplaced fails build
 exhaustive_ignores = ["apps", "migrations", "tests"]
 containers = ["apps.media"]
 layers = [
-    "api | admin",
+    "api | admin | checks",
     "authz",
     "selectors", # selectors gets its own tier above the storage/schemas/helpers peers because it composes storage + schemas into wire schemas, which helpers may not.
     "processing | storage | schemas | helpers",
