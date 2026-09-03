@@ -60,7 +60,7 @@ Every puller takes the same window: `--start <YYYY-MM-DD>` (required) through `-
 Diagnosis is reconstructing a sequence, and sequence is the one axis you cannot filter away. Slicing by service and severity first is how these logs are browsed and how the vendor UIs are laid out, but it is the wrong way in: during a real outage here, 402 requests failed at Railway's edge while the application logged 36 lines, 10 of them at `error`, and Sentry recorded nothing.
 
 1. **`FROM coverage`** — what can you see? Every later claim is bounded by it.
-2. **`FROM edge_health`** — the shape, before reading any line. Onset and recovery timestamps come from here, and the CDN column is the only one reflecting what users actually got. Read across a row, never down two.
+2. **`FROM edge_health`** — the shape, before reading any line. Onset and recovery timestamps come from here, and the CDN column is the only one reflecting what users actually got. Read across a row, never down two. It is the apex zone against Railway; the static zone pulls through apex and is not in it, so a fault in asset delivery alone shows in `bunny_health`, not here.
 3. **Correlate the onset** against `sentry_releases` and deployments. Most incidents are a change.
 4. **Read the edge unfiltered** — `FROM timeline` over minutes, not hours, around onset, all sources and severities, ordered by `ts`. Causes routinely log at `info`, or are the last line before silence.
 5. **Then slice** by service, status, path, text — to quantify a hypothesis, not to find one.
@@ -68,7 +68,7 @@ Diagnosis is reconstructing a sequence, and sequence is the one axis you cannot 
 
 Habits to keep. Prefer **rates to counts**, because a window rarely covers every source equally — read `coverage` before quoting one. Treat **severity as a ranking, not a filter**: Railway invents a level for every line that is not JSON, so count `summary` and rank `timeline` on `level_confidence` rather than filtering on `level`.
 
-A trap: `apex` and `static` pull from the same Railway host and their traffic arrives mixed in `railway_requests`, with nothing recording which zone forwarded a request. Filter `bunny_requests` by `zone` before comparing it against a Railway relation, and include **both** zones when you do — comparing one against the whole origin makes the origin look bigger than the tier in front of it.
+A trap: `static` pulls through the `apex` zone, not from Railway, so a static miss is also an apex request and only apex misses reach Railway. Compare `apex` alone against a Railway relation; adding `static` counts each of its misses twice at the CDN. The origin can still legitimately exceed the apex by around a tenth, because Railway also logs direct hits on its own hostname that never passed Bunny — 301s since the `@direct_origin` redirect.
 
 ## Editing the analytics
 

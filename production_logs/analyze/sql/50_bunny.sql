@@ -45,6 +45,16 @@ SELECT
   -- caller. railway_requests.src_ip is the Bunny PoP that forwarded the request,
   -- so the two columns are not the same thing.
   nullif(r.remoteIp, '-') AS client_ip,
+  -- Bunny's ASN lookup for that network, for telling datacenter and bot hosting
+  -- from residential clients. It does NOT single out the static zone's origin
+  -- pulls on the apex: Bunny's edges arrive from many networks (Datacamp AS60068
+  -- and AS212238, Bunny's own AS200325, transit such as Cogent), and because the
+  -- static zone forwards whatever it is asked for, HTML included, the path does
+  -- not separate them either. Match static MISS rows on path and time for that.
+  -- NULL when the lookup has no answer for the /24, which is about half of rows
+  -- and constant per network -- a NULL says nothing about the request.
+  r.asn AS client_asn,
+  r.asnOrganization AS client_asn_org,
   nullif(r.userAgent, '-') AS client_ua,
   nullif(r.countryCode, '-') AS country,
   -- Bunny's PoP code (TX, UK, DE...): where the request was served. `country`
@@ -59,7 +69,8 @@ FROM read_json('../../dumps/bunny/*.ndjson',
     'cacheStatus': 'VARCHAR', 'statusCode': 'BIGINT', 'bytesSent': 'BIGINT',
     'remoteIp': 'VARCHAR', 'countryCode': 'VARCHAR', 'edgeLocation': 'VARCHAR',
     'scheme': 'VARCHAR', 'host': 'VARCHAR', 'path': 'VARCHAR',
-    'url': 'VARCHAR', 'userAgent': 'VARCHAR', 'referer': 'VARCHAR'}) r
+    'url': 'VARCHAR', 'userAgent': 'VARCHAR', 'referer': 'VARCHAR',
+    'asn': 'BIGINT', 'asnOrganization': 'VARCHAR'}) r
 LEFT JOIN bunny_pull_zones z ON z.pull_zone = r.pullZoneId;
 
 COMMENT ON TABLE bunny_requests IS 'GRAIN: one row per HTTP request at the Bunny CDN edge, merged by the puller on Bunny''s request id. The OUTERMOST tier -- the only relation that sees cache hits, which never reach Railway. Do NOT union with railway_requests: a cache miss appears in both. No method and no latency; Bunny logs neither.';
@@ -91,12 +102,10 @@ COMMENT ON VIEW bunny_health IS 'GRAIN: one row per minute per pull zone with re
 -- export for the minute, not that it saw no traffic, and both sides are FULL
 -- joined so neither window clips the other.
 --
--- Every zone whose origin is Railway contributes, derived from
--- bunny_pull_zones.origin: railway_requests holds their traffic mixed together
--- with nothing saying which zone forwarded a request, so naming one zone compares
--- a subset of the CDN against the whole origin and makes the origin look larger
--- than the tier in front of it. `edge_tier_inverted` catches that. `media` stays
--- out because its origin is not Railway.
+-- Only railway_facing_zones contribute: a chained zone's misses are already here
+-- as requests on the zone it pulls through, so counting it too would count each of
+-- them twice. The cost is that static's own delivery is not in this view at all --
+-- a fault in the static zone alone shows in bunny_health and problems, not here.
 --
 -- Aggregated from bunny_requests, not rolled up from bunny_health, whose grain is
 -- per zone: summing its rows would duplicate the origin across the join, and its
@@ -110,7 +119,7 @@ WITH cdn AS (
     round(100.0 * count(*) FILTER (is_server_error) / count(*), 1) AS pct_5xx,
     round(100.0 * count(*) FILTER (is_cache_hit) / count(*), 1) AS pct_cache_hit
   FROM bunny_requests
-  WHERE zone IN (SELECT zone FROM bunny_pull_zones WHERE origin IS NOT NULL)
+  WHERE zone IN (SELECT zone FROM railway_facing_zones)
   GROUP BY 1
 )
 SELECT
@@ -121,12 +130,12 @@ SELECT
   h.bad_gateways AS origin_502s,
   b.pct_5xx      AS cdn_pct_5xx,
   h.pct_5xx      AS origin_pct_5xx,
-  -- Blended across the contributing zones. The per-zone rates, which differ by a
-  -- lot, are in bunny_health.
+  -- Apex only, and diluted by the static zone's origin pulls, so it under-reports
+  -- HTML cache effectiveness. Per-zone rates are in bunny_health.
   b.pct_cache_hit AS cdn_pct_cache_hit,
   h.median_ok_ms AS origin_median_ok_ms
 FROM cdn b
 FULL JOIN railway_health h ON h.minute = b.minute
 ORDER BY 1;
 
-COMMENT ON VIEW edge_health IS 'GRAIN: one row per minute, the Railway-fronted CDN zones and the Railway edge side by side. Read ACROSS a row; never sum or subtract the two request columns -- they describe the same requests twice, with different coverage. A NULL means that tier has no export covering the minute.';
+COMMENT ON VIEW edge_health IS 'GRAIN: one row per minute, the CDN zones that pull from Railway directly (apex; static pulls through it and is absent) and the Railway edge side by side. Read ACROSS a row; never sum or subtract the two request columns -- they describe the same requests twice, with different coverage. A NULL means that tier has no export covering the minute.';

@@ -46,9 +46,8 @@ sentry AS (
   FROM sentry_uptime GROUP BY 4
 ),
 -- Streamed by pull zone rather than lumped as one 'cdn', because the zones front
--- different origins: an apex row has a Railway row behind it and a media row does
--- not. One file is one UTC day, so the row count is a day's traffic and the
--- window is the part of that day the file happens to hold.
+-- different origins. One file is one UTC day, so the row count is a day's traffic
+-- and the window is the part of that day the file happens to hold.
 bunny AS (
   SELECT 'bunny', zone, 'cdn', source_file, count(*), count(*), min(ts), max(ts)
   FROM bunny_requests GROUP BY 2, 4

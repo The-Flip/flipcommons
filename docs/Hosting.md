@@ -94,8 +94,8 @@ The site already runs as a single Railway service; you only need this to stand u
 Bunny runs the following pull zones:
 
 - [`flipcommons.org`](#apex-edge-cache): anonymous SSR HTML
-- [`static.flipcommons.org`](#static-edge-cache): static app assets like `/_app/immutable/*`
-- [`media.flipcommons.org`)](#media-edge-cache): uploaded images
+- [`static.flipcommons.org`](#static-edge-cache): static app assets like `/_app/immutable/*`, pulled through the apex zone
+- [`media.flipcommons.org`](#media-edge-cache): uploaded images
 
 #### Apex edge cache
 
@@ -124,7 +124,15 @@ The apex resolves to this pull zone through a Bunny [`PZ` record](#dns) rather t
 
 #### Static edge cache
 
-`static.flipcommons.org` fronts Railway's hashed `/_app/immutable/*` assets, fonts and `version.json`. Respects origin cache headers.
+`static.flipcommons.org` serves everything the build and [app.html](../frontend/src/app.html) reference through SvelteKit's assets path: the hashed `/_app/immutable/*` assets, `version.json`, the fonts, the favicons under `/images/favicon/` and `/apple-touch-icon.png`. Respects origin cache headers.
+
+Its origin is `https://flipcommons.org`, the apex pull zone, not Railway (Forward Host Header off, Follow Redirects off, no Edge Rules). A static miss is fetched through the apex zone and reaches Railway as an apex request with `Host: flipcommons.org`. Consequences:
+
+- **Caddy cannot see the static hostname.** Static-origin traffic is indistinguishable from apex traffic at the origin, so anything static-specific has to be an Edge Rule on the static zone in the Bunny dashboard. A `host static.flipcommons.org` matcher in the [Caddyfile](../Caddyfile) would silently never match.
+- **Do not repoint static at Railway without first adding the `X-Origin-Auth` Edge Rule to it.** `@direct_origin` redirects every Railway-host request lacking that header, and with Follow Redirects off the static zone would cache the 301 for every asset, site-wide, until purged. The chain is what keeps static's traffic out of that matcher today.
+- **A purge of an asset path has to hit both zones, apex first.** The apex zone holds a copy of everything static has pulled, so purging static alone re-pulls the same bytes from apex. The hashed `/_app/immutable/*` assets and the fonts never need one, and `version.json` ages out of both zones within two minutes because its 60-second TTL applies at each hop. In practice this means the favicons and `apple-touch-icon.png`: unfingerprinted, they reach Bunny without `Cache-Control` and sit in two 30-day caches, so replacing one without purging both zones can take 60 days to fully age out.
+
+Log analytics count a static miss once, at the apex; see [production_logs/README.md](../production_logs/README.md).
 
 #### Media edge cache
 

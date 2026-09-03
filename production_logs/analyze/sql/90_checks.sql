@@ -146,26 +146,16 @@ FROM bunny_requests WHERE request_id IS NULL OR request_id = ''
 HAVING count(*) > 0
 
 UNION ALL
--- The only check here guarding topology rather than format. Bunny is in front of
--- Railway, so over minutes both tiers cover, the CDN cannot have seen fewer
--- requests than the origin behind it. When it appears to, the layer is misreading:
--- a Railway-fronted pull zone missing from edge_health's zone set is how this
--- breaks, and it is invisible to every shape check because each file parses.
---
--- Thresholded and aggregated rather than tested per minute. A request Bunny stamps
--- at 11:59:59.9 and Railway at 12:00:00.1 inverts both minutes, so a per-minute
--- test fires constantly; across a window the skew cancels. The 5% allowance covers
--- what does not, chiefly anything reaching the Railway host without passing the
--- edge. Restricted to shared minutes because comparing raw totals would measure
--- the Railway export's per-deployment cap rather than the cache.
-SELECT 'edge_tier_inverted',
-       'Origin logged ' || sum(origin_requests) || ' requests against the CDN''s '
-         || sum(cdn_requests) || ' over ' || count(*) || ' shared minutes; the CDN is '
-         || 'in front and cannot see fewer. A Railway-fronted pull zone is probably '
-         || 'missing from edge_health -- check bunny_pull_zones.origin'
-FROM edge_health
-WHERE cdn_requests IS NOT NULL AND origin_requests IS NOT NULL
-HAVING sum(origin_requests) > 1.05 * sum(cdn_requests)
+-- Zero zones means edge_health's CDN column is NULL for every minute with nothing
+-- else to say so; two means a chained zone's origin is mistyped and its misses
+-- count twice, or a second zone really does pull from Railway and blending them is
+-- a decision nobody has made yet.
+SELECT 'railway_facing_zones_not_one',
+       count(*) || ' zones resolve as pulling from Railway directly ('
+         || coalesce(string_agg(zone, ', ' ORDER BY zone), 'none')
+         || '); edge_health expects exactly one -- check bunny_pull_zones.origin'
+FROM railway_facing_zones
+HAVING count(*) <> 1
 
 UNION ALL
 -- Uptime events must not also appear in the errors dataset, or every downtime

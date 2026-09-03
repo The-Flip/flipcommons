@@ -9,9 +9,22 @@
    "last_ts": "2026-08-20T10:00:05.00+00:00",
    "logging_enabled": true,
    "pulled_at": "2026-08-21T00:00:00.000000Z",
-   "rows": 3,
+   "rows": 4,
    "zone_id": 5969801,
    "zone_name": "flipcommons-html"
+  },
+  {
+   "complete": true,
+   "file": "flipcommons-static.5915890.2026-08-20.ndjson",
+   "first_ts": "2026-08-20T10:00:04.30+00:00",
+   "ip_anonymization": "OneDigit",
+   "kind": "edge",
+   "last_ts": "2026-08-20T10:00:04.30+00:00",
+   "logging_enabled": true,
+   "pulled_at": "2026-08-21T00:00:00.000000Z",
+   "rows": 1,
+   "zone_id": 5915890,
+   "zone_name": "flipcommons-static"
   }
  ]
 }
