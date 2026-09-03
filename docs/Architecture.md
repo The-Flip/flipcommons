@@ -33,9 +33,9 @@ Bunny CDN fronts every request.
 
 ```text
 Browser
-   ├─ flipcommons.org        → Bunny CDN → Railway /*
-   ├─ static.flipcommons.org → Bunny CDN → Railway /static/*
-   └─ media.flipcommons.org  → Bunny CDN → iDrive e2 private bucket
+   ├─ flipcommons.org        → Bunny CDN (apex)   → Railway /*
+   ├─ static.flipcommons.org → Bunny CDN (static) → Bunny CDN (apex) → Railway /_app/*, /fonts/*, favicons
+   └─ media.flipcommons.org  → Bunny CDN (media)  → iDrive e2 private bucket
 
 Railway (single Caddy service)
    ├─ /api/*                 → Django Ninja API
@@ -118,7 +118,7 @@ Bunny.net CDN pull zone for anonymous public SSR HTML.
 
 ### Static asset CDN
 
-Bunny.net CDN pull zone for hashed `/_app/immutable/*`, fonts and `version.json`.
+Bunny.net CDN pull zone for the build's assets. It pulls through the apex zone rather than from Railway; [Hosting.md](Hosting.md#static-edge-cache) has the inventory and what the chain constrains.
 
 ## Provenance
 

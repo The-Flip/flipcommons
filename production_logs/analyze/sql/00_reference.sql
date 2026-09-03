@@ -56,10 +56,11 @@ CREATE OR REPLACE MACRO norm_level(raw) AS
 -- which site that number fronts is nowhere in the file. Unknown ids fall through
 -- to 'zone:<id>' rather than NULL, and `unknown_bunny_pull_zone` names them.
 --
--- `origin` is what the zone pulls from, and it ties a CDN row to the tier behind
--- it: the apex origin is the Railway host that appears as `host` in
--- railway_requests. NULL where the origin is not Railway, which is the point -- a
--- media request has no downstream row to correlate with.
+-- `origin` is what the zone pulls from, when that leads to Railway: either the
+-- Railway host itself or the hostname of another zone here. Zones chain -- static
+-- pulls from the apex zone, so a static miss is fetched through apex and reaches
+-- Railway as ONE apex request. NULL where nothing behind the zone is Railway,
+-- which is the point -- a media request has no downstream row to correlate with.
 --
 -- `zone` is the short tier label used everywhere, and what appears as a stream in
 -- coverage and timeline; `bunny_name` is what Bunny calls the zone, and the slug
@@ -74,9 +75,19 @@ INSERT INTO bunny_pull_zones VALUES
    'flipcommons-production.up.railway.app',
    'Anonymous SSR HTML; bypasses /api/, /djadmin/ and session or kiosk cookies'),
   (5915890, 'static', 'flipcommons-static', 'static.flipcommons.org',
-   'flipcommons-production.up.railway.app',
-   'Hashed /_app/immutable/* assets, fonts and version.json'),
+   'flipcommons.org',
+   'The build assets SvelteKit serves off the CDN; see docs/Hosting.md for the inventory'),
   (5782405, 'media', 'flipcommons-media', 'media.flipcommons.org', NULL,
    'iDrive e2 media bucket. NULL origin: nothing behind it is Railway, so a media row has no downstream row to correlate with');
 
 COMMENT ON TABLE bunny_pull_zones IS 'One row per known Bunny pull zone. Hand-maintained: a CDN log line names its zone only by numeric id.';
+
+-- NOT EXISTS rather than NOT IN: a NULL hostname anywhere in the table would make
+-- NOT IN NULL for every row and empty the set silently.
+CREATE OR REPLACE VIEW railway_facing_zones AS
+SELECT p.zone
+FROM bunny_pull_zones p
+WHERE p.origin IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM bunny_pull_zones z WHERE z.hostname = p.origin);
+
+COMMENT ON VIEW railway_facing_zones IS 'GRAIN: one row per pull zone that pulls from Railway directly. Derived from bunny_pull_zones.origin; a chained zone is absent because its origin is another zone''s hostname.';

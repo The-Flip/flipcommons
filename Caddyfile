@@ -32,7 +32,13 @@ handle @www {
 # able to take the site down.
 #
 # Nothing internal matches: SSR's own API calls arrive as 127.0.0.1:$PORT and
-# Railway's health check as healthcheck.railway.app.
+# Railway's health check as healthcheck.railway.app. Nor does the static pull
+# zone's origin traffic, but only because of how it is chained: static pulls
+# from the apex zone rather than from Railway, so its misses arrive here as
+# apex requests wearing Host: flipcommons.org. Point static at Railway without
+# first giving it the X-Origin-Auth Edge Rule and every asset miss lands in
+# this matcher — and the static zone, with Follow Redirects off, caches the
+# 301 for every asset until purged.
 @direct_origin {
 	host flipcommons-production.up.railway.app
 	header !X-Origin-Auth
@@ -97,7 +103,9 @@ header @fonts Cache-Control "public, max-age=31536000, immutable"
 # SHA to this path and the client polls it hourly (svelte.config.js
 # kit.version.pollInterval) to detect deploys. Without an explicit
 # header, Bunny applies its 30-day zone default and open tabs would
-# miss new deploys until the cache expires.
+# miss new deploys until the cache expires. The static zone pulls this
+# through the apex zone, so the TTL applies at each hop and a tab can
+# see a deploy up to two TTLs late.
 #
 # CORS headers are required because the poll runs cross-origin once
 # kit.paths.assets points at the CDN — see node_modules/@sveltejs/kit

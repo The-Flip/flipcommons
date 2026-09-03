@@ -56,7 +56,19 @@ case_baseline() {
   expect "no findings"    "0" "$(q "$w" 'SELECT count(*) FROM checks;')"
   expect "app lines"      "3" "$(q "$w" "SELECT count(*) FROM railway_lines WHERE service='app';")"
   expect "postgres lines" "1" "$(q "$w" "SELECT count(*) FROM railway_lines WHERE service='postgres';")"
-  expect "cdn requests"   "3" "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
+  expect "cdn requests"   "5" "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
+  # The fixture's one static miss appears three times: at static, at apex and at
+  # Railway. The CDN must count it once.
+  expect "chained miss counted once at the cdn" "4" \
+    "$(q "$w" 'SELECT cdn_requests FROM edge_health;')"
+  expect "and once at the origin" "1" \
+    "$(q "$w" "SELECT count(*) FROM railway_requests WHERE path='/_app/immutable/chunks/x.js';")"
+  # Bunny omits asn entirely rather than sending null or zero, so the reader has to
+  # yield NULL for those rows instead of failing the build on the missing key.
+  expect "asn parses when present" "60068" \
+    "$(q "$w" "SELECT client_asn FROM bunny_requests WHERE request_id='reqE';")"
+  expect "and is null when the field is absent" "4" \
+    "$(q "$w" "SELECT count(*) FROM bunny_requests WHERE client_asn IS NULL;")"
   # builder output stays out of the container stream: it is its own relation,
   # keyed by the snapshot id, and never inflates the app service's line counts
   expect "build lines"    "3" "$(q "$w" 'SELECT count(*) FROM railway_build_lines;')"
@@ -80,7 +92,7 @@ case_empty_sentry() {
   expect "no findings"      "0" "$(q "$w" 'SELECT count(*) FROM checks;')"
   expect "sentry errors"    "0" "$(q "$w" 'SELECT count(*) FROM sentry_errors;')"
   expect "sentry uptime"    "0" "$(q "$w" 'SELECT count(*) FROM sentry_uptime;')"
-  expect "other sources unaffected" "3" "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
+  expect "other sources unaffected" "5" "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
 }
 
 # --- a malformed line fails the build loudly, never parses as data -------------
@@ -124,7 +136,24 @@ case_ssr_json() {
     "$(q "$w" "SELECT extra_keys FROM railway_lines WHERE logger='handle-error';")"
 }
 
-for c in baseline empty_sentry bunny_bad_json missing_level ssr_json; do
+# --- a mistyped chain origin brings the double count back, and is named --------
+# The topology lives in a hand-typed table, so this is the mistake a live dump can
+# never contain: static's origin no longer matches the apex hostname, so it resolves
+# as Railway-facing and its misses count twice. The check must say so.
+case_zone_origin_typo() {
+  w=$1
+  f=$w/analyze/sql/00_reference.sql
+  sed "s/^   'flipcommons.org',\$/   'flipcommons.og',/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
+  expect "static resolves as railway-facing" "apex|static" \
+    "$(q "$w" "SELECT string_agg(zone, '|' ORDER BY zone) FROM railway_facing_zones;")"
+  expect "railway_facing_zones_not_one fires" "1" \
+    "$(q "$w" "SELECT count(*) FROM checks WHERE check_name='railway_facing_zones_not_one';")"
+  expect "and the double count is back" "5" \
+    "$(q "$w" 'SELECT cdn_requests FROM edge_health;')"
+}
+
+for c in baseline empty_sentry bunny_bad_json missing_level ssr_json zone_origin_typo; do
   name=$(echo "$c" | tr '_' '-')
   skip_case "$name" && continue
   printf '  %s\n' "$name"
