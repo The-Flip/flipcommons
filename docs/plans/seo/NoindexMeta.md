@@ -83,7 +83,7 @@ Every route where `isSearchEngineIndexable(routeId) === false`. With current rou
 
 - Auth-gated (anything under a `requireCapability` layout): `/admin/*`, `/kiosk/edit/*`, and all catalog `*/edit` subroutes.
 - Listed non-indexable (entries in `SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS`): `/login`, `/signup`, `/verify-email`, `/auth/error`, `/search`, `/kiosk`, `/style-lab`, `/api-docs`, `/_sentry_test`, `/changesets`, `/review`, `/users/[username]`.
-- Catalog non-indexable kinds (`catalog-new`, `catalog-delete`) for every entity, plus edit subroutes through their auth-gated layouts. Catalog listings are indexable now that they are SSR.
+- Catalog non-indexable kinds (`catalog-new`, `catalog-delete`, `catalog-edit-history`, `catalog-sources`) for every entity, plus edit subroutes through their auth-gated layouts. Catalog listings are indexable now that they are SSR. The edit-history and sources subroutes re-render the parent entity's content in raw claim form and offer search engines nothing the detail page doesn't; see the 2026-09 update in [`Sitemap.md`](Sitemap.md).
 
 The list isn't enumerated in this doc — it's whatever `isSearchEngineIndexable()` returns false for, and the route-walking test (per [`RouteWalking.md`](RouteWalking.md)) already enforces that every route classifies.
 
@@ -100,7 +100,7 @@ No. Both signals are emitted on every deploy regardless of whether indexing is a
 `frontend/src/hooks-noindex.server.test.ts` imports `noindexHandle` and parameterizes over anchor routes from each bucket. For each routeId it calls the handle with a stubbed `event` and a `resolve` that captures the `transformPageChunk` invocation and returns a fake HTML response, then asserts:
 
 - Indexable (`/`, `/about`, `/titles`, `/titles/[slug]`) → `resolve` called without options, response has no `X-Robots-Tag`, response body has no `name="robots"` meta tag.
-- Listed non-indexable (`/login`, `/search`, `/users/[username]`), auth-gated (`/admin/dashboard`, `/kiosk/edit`), catalog non-indexable kinds (`/titles/new`, `/titles/[slug]/edit`, `/titles/[slug]/delete`), and `route.id === null` → header set, body contains the meta tag, `resolve` called with a `transformPageChunk` function.
+- Listed non-indexable (`/login`, `/search`, `/users/[username]`), auth-gated (`/admin/dashboard`, `/kiosk/edit`), catalog non-indexable kinds (`/titles/new`, `/titles/[slug]/edit`, `/titles/[slug]/delete`, `/titles/[slug]/edit-history`, `/titles/[slug]/sources`), and `route.id === null` → header set, body contains the meta tag, `resolve` called with a `transformPageChunk` function.
 - Unclassified routes (`/__health`, the only `+server.ts` endpoint today) → header set, no crash. Pins the `try/catch` behavior so a future refactor that "cleans up" the catch surfaces here instead of crashing the liveness probe in production.
 
 ## Implementation order

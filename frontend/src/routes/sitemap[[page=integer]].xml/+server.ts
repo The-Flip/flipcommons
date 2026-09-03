@@ -10,7 +10,7 @@
  *      (route, slug) pair for every indexable dynamic route wired to the
  *      feed's entity (`catalogRoutesByEntity` + `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE`).
  *   4. Excludes detail-URL slugs flagged non-canonical (single-Model Title members
- *      collapse to the Title page) — but keeps `/edit-history` and `/sources`.
+ *      collapse to the Title page).
  *   5. Attaches `<lastmod>`: per-entry for dynamic URLs, the feed's
  *      `max_lastmod` for listing pages, hand-maintained `STATIC_LASTMOD` for
  *      the rest.
@@ -84,7 +84,7 @@ function safeIsIndexable(id: RouteId): boolean {
  * One indexable dynamic route, ready to emit `prefix + slug + suffix` per
  * feed entry. `isDetail` marks the `catalog-detail` route, the only shape
  * that honors the feed's `detail_excluded_slugs` (non-canonical detail URLs
- * are dropped; their `/edit-history` and `/sources` URLs are kept).
+ * are dropped).
  */
 interface SlugRouteEmitter {
   prefix: string;
@@ -110,8 +110,8 @@ const STATIC_INDEXABLE_URLS: readonly string[] = allRoutes()
   .map(stripRouteGroups);
 
 // Every indexable dynamic route, grouped by the entity whose feed supplies
-// its slugs: the catalog detail/edit-history/sources routes (by route
-// convention) plus the LISTED_INDEXABLE_ENTITY_SLUG_SOURCE routes (declared).
+// its slugs: the catalog detail routes (by route convention) plus the
+// LISTED_INDEXABLE_ENTITY_SLUG_SOURCE routes (declared).
 const EMITTERS_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly SlugRouteEmitter[]> = (() => {
   const out = new Map<CatalogEntityKey, SlugRouteEmitter[]>();
   const add = (entity: CatalogEntityKey, id: RouteId, isDetail: boolean) => {
