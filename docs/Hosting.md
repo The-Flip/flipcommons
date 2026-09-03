@@ -102,17 +102,19 @@ Bunny runs the following pull zones:
 Bunny fronts `flipcommons.org` for anonymous SSR HTML caching. Configured to:
 
 - respect origin `Cache-Control`
+- include the URL query string in the cache key
 - bypass `/api/` and `/djadmin/`
 - bypass any request carrying a `sessionid` **cookie**
 - bypass any request carrying a `mode=kiosk` **cookie**
 
-The last two match cookies, not query strings. `mode` is only ever a cookie — set by "Enter Kiosk Mode" and read server-side ([kiosk/config.ts](../frontend/src/lib/kiosk/config.ts)); nothing reads it from the URL. So `/?mode=kiosk` is an ordinary anonymous request and is cached as one, which is correct. Probe a bypass with the cookie, not the query string:
+The last two bypasses match cookies, not query strings. `mode` is only ever a cookie — set by "Enter Kiosk Mode" and read server-side ([kiosk/config.ts](../frontend/src/lib/kiosk/config.ts)); nothing reads it from the URL. So `/?mode=kiosk` is an ordinary anonymous request and is cached as one, which is correct. Probe a bypass with the cookie, not the query string:
 
 ```bash
-curl -sSI -H 'Cookie: mode=kiosk' https://flipcommons.org/ | grep -i cdn-cache
+curl -sSI 'https://flipcommons.org/?mode=kiosk' | grep -i cdn-cache   # HIT — cookie-less, cached
+curl -sSI -H 'Cookie: mode=kiosk' https://flipcommons.org/ | grep -i cdn-cache   # BYPASS
 ```
 
-Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed response, discarding the origin's `private, no-cache` / `private, no-store`. The bullet above applies to cached and MISS responses; bypassed ones are re-stamped by the edge.
+Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed response, discarding the origin's `private, no-cache` / `private, no-store`. The `Cache-Control` bullet above applies to cached and MISS responses; bypassed ones are re-stamped by the edge.
 
 Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. SvelteKit leaves `+server.ts` endpoints unstamped, so [Caddyfile](../Caddyfile) sets `Cache-Control: no-store` on `/__health` — otherwise an edge PoP serves uptime probes a cached `ok` for weeks after the origin stops responding.
 
