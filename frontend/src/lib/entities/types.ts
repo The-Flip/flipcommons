@@ -58,8 +58,7 @@ export interface ListingInfo {
 
 /**
  * Per-model schema.org presentation declarations. Lives frontend-side because
- * schema.org type/property names are vocabulary the backend never consumes
- * (see docs/plans/seo/JsonLdAndFriends.md, "Why frontend assembly").
+ * schema.org type/property names are vocabulary the backend never consumes.
  */
 export interface SchemaOrgInfo<TSchema> {
   /**

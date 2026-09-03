@@ -6,12 +6,12 @@ entity needs no new endpoint: the field set is discovered from the claim-field
 partition (``get_claim_fields`` for scalars + FKs) plus the relationship-claim
 registry (M2M / list relations), with a small per-entity ``ExportSpec`` for the
 things introspection can't express (exempt fields, relation shapes, canonical
-derived fields). See plans/model_driven_metadata and the bulk-export plan doc.
+derived fields).
 
-NOTE on the approved plan: ``get_claim_fields`` returns scalars + FKs only —
-M2M/relationship claims live in a separate registry and are heterogeneous in
-shape, so relationships are declared per entity via ``ExportSpec.relations``
-rather than falling out of one introspection call.
+``get_claim_fields`` returns scalars + FKs only — M2M/relationship claims live
+in a separate registry and are heterogeneous in shape, so relationships are
+declared per entity via ``ExportSpec.relations`` rather than falling out of one
+introspection call.
 """
 
 from __future__ import annotations

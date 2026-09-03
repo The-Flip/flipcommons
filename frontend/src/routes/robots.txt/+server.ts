@@ -17,10 +17,10 @@ const CRAWL_DELAY_SECONDS = 5;
 
 /**
  * Do NOT add user-facing routes (`/login`, `/search`, `/*\/edit`, …) here —
- * they're kept out of the index via per-page `<meta name="robots" content="noindex">`
- * (see `docs/plans/seo/NoindexMeta.md`). A `Disallow:` would block crawlers
- * from ever fetching the page, so the `noindex` meta would never be seen
- * and the URL could still appear in results via inbound links.
+ * they're kept out of the index via per-page `<meta name="robots" content="noindex">`.
+ * A `Disallow:` would block crawlers from ever fetching the page, so the
+ * `noindex` meta would never be seen and the URL could still appear in
+ * results via inbound links.
  *
  * A per-bot group must repeat every rule below: a crawler obeys only its most
  * specific matching `User-agent` group and inherits nothing from `*`
