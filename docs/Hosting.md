@@ -136,8 +136,8 @@ Rate limiting is configured in the Bunny dashboard (not in code). The goal is to
 
 | Zone                    | Limit                          | Block |
 | ----------------------- | ------------------------------ | ----- |
-| `flipcommons.org`       | 100 requests / 10 seconds / IP | 30 s  |
-| `media.flipcommons.org` | 300 requests / 10 seconds / IP | 30 s  |
+| `flipcommons.org`       | 100 requests / 10 seconds / IP | 60 s  |
+| `media.flipcommons.org` | 300 requests / 10 seconds / IP | 60 s  |
 
 Rule shape on both: condition `Request URI` contains `/` (match-all), Counter Key = IP address, Response Action = `RateLimit`. Media's ceiling is higher because one gallery page legitimately fires dozens of image requests in a burst.
 
@@ -145,8 +145,8 @@ This is edge abuse control, separate from the application rate limits under [Cli
 
 Operational caveats:
 
+- Limiting per-IP means a shared NAT -- such as a fixed wireless operator like Verizon 5G Home that puts all their traffic behind a pool of IPs -- could trip a limit as one "client".
 - Enforcement propagates across PoPs, so a burst can leak a few requests past a freshly tripped block
-- Per-IP counters mean a shared NAT (the museum's network, kiosks) could trip a limit as one "client"
 
 ### DNS
 
