@@ -16,13 +16,13 @@
     {
       name: 'Dean Moses',
       homeLocation: 'Berkeley, CA',
-      image: '/about/people/moses.avif',
+      image: '/images/people/moses.avif',
       bio: 'Moses has been making software since the web was born. A veteran of the early internet era in 1990s San Francisco, he believes in the decentralized, community-built ideals that prevailed before the rise of giant platforms and feed algorithms.',
     },
     {
       name: 'William Pietri',
       homeLocation: 'Chicago, IL',
-      image: '/about/people/william.avif',
+      image: '/images/people/william.avif',
       bio: 'William is a software developer and founder of <a href="https://www.theflip.museum/">The Flip</a>: Chicago\'s Playable Pinball Museum. He is a big Wikipedia fan and used to be a Wikipedia administrator. He\'s owned his Addams Family for 30 years, and has only gotten "dirty pool" once.',
     },
   ];
@@ -84,7 +84,7 @@
 
 <figure class="both">
   <img
-    src="/about/people/founders.avif"
+    src="/images/people/founders.avif"
     alt="Dean and William together"
     loading="lazy"
     width="900"
