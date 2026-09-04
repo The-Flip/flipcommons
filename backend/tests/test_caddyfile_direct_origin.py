@@ -1,24 +1,14 @@
 """Caddy must redirect direct hits on the Railway origin hostname to the apex.
 
 ``flipcommons-production.up.railway.app`` serves the same site as the apex and
-is reachable from the open internet, so crawlers found it and indexed it as a
-duplicate. Bunny forwards the visitor's ``Host`` (pull zone: Forward Host
-Header ON), so its traffic never carries that hostname and the redirect only
-sees requests that bypassed the CDN.
+crawlers indexed it as a duplicate. Nothing about the redirect is observable
+from the application, so these assertions pin it.
 
-Nothing about this is observable from the application: delete the directive
-and every test still passes, the site still works, and the duplicate host
-quietly returns. These assertions pin it against that.
-
-The ``X-Origin-Auth`` condition is the subtle one. It is not a security
-control — a direct caller can defeat the rule by sending ``Host:
-flipcommons.org``. It is an interlock for the case where Bunny forwards the
-Railway hostname again (a pull-zone rollback, a config edit, an edge that has
-not picked up the setting): those requests still carry the header, so they are
-excluded instead of being redirected to a host Bunny fronts, which would be a
-redirect loop cached at the edge. Testing the header's *presence* rather than
-its *value* is what keeps that failure open rather than closed — matching
-against ``ORIGIN_SHARED_SECRET`` would turn a drifted secret into an outage.
+The ``X-Origin-Auth`` condition is an interlock, not a security control: if
+Bunny ever forwards the Railway hostname again, its requests still carry the
+header and are excluded rather than redirected into a loop. Testing presence
+rather than value keeps a drifted ``ORIGIN_SHARED_SECRET`` from becoming an
+outage.
 """
 
 from __future__ import annotations

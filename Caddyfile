@@ -9,36 +9,23 @@ handle @www {
 	redir https://flipcommons.org{uri} permanent
 }
 
-# Send anything that reaches the Railway origin hostname without passing
-# through Bunny to the public origin instead. Crawlers found that hostname on
-# their own and were indexing it as a second copy of the site — Google alone
-# hit it 1,813 times from its own IP ranges in one 8-day window, and direct
-# traffic overall was 13% of everything reaching this container, none of it
-# cached, rate-limited or fronted by anything. A 301 rather than a 403: these
-# URLs are duplicates of live pages, so the accrued signal should move to the
-# apex rather than be discarded.
+# Crawlers found the Railway origin hostname and indexed it as a second copy
+# of the site. A 301 to the apex rather than a 403: the URLs are duplicates
+# of live pages, so their accrued signal should move rather than be lost.
 #
-# The X-Origin-Auth condition is NOT a security control — a direct caller can
-# defeat either condition by simply sending `Host: flipcommons.org`. It is an
-# interlock against Bunny ever forwarding this hostname again. Bunny forwards
-# the visitor's Host today (pull zone: Forward Host Header ON), so its traffic
-# fails the host match; but a pull-zone rollback, a config edit, or a stale
-# edge that hasn't picked up the setting would send this hostname with the
-# header still attached, and without the second condition every such request
-# would be redirected to a host Bunny fronts. That is a redirect loop, and
-# because the zone has Follow Redirects disabled it would be cached at the
-# edge and outlive the repair. Testing presence rather than value keeps that
-# failure open rather than closed: a drifted ORIGIN_SHARED_SECRET must not be
-# able to take the site down.
+# The X-Origin-Auth condition is not a security control; a direct caller can
+# send `Host: flipcommons.org`. It is an interlock for the day Bunny forwards
+# this hostname again (a pull-zone rollback, a stale edge): its requests still
+# carry the header, so they are excluded instead of being redirected to a host
+# Bunny fronts, which would loop. Testing presence rather than value keeps a
+# drifted ORIGIN_SHARED_SECRET from turning into that outage.
 #
-# Nothing internal matches: SSR's own API calls arrive as 127.0.0.1:$PORT and
-# Railway's health check as healthcheck.railway.app. Nor does the static pull
-# zone's origin traffic, but only because of how it is chained: static pulls
-# from the apex zone rather than from Railway, so its misses arrive here as
-# apex requests wearing Host: flipcommons.org. Point static at Railway without
-# first giving it the X-Origin-Auth Edge Rule and every asset miss lands in
-# this matcher — and the static zone, with Follow Redirects off, caches the
-# 301 for every asset until purged.
+# Nothing internal matches: SSR's API calls arrive as 127.0.0.1:$PORT, the
+# health check as healthcheck.railway.app, and the static zone's misses as the
+# apex host (or its own host once it pulls from Railway with the host
+# forwarded). Forward Host Header off on a Railway origin would land every
+# asset miss here, and browsers reject scripts and fonts redirected
+# cross-origin.
 @direct_origin {
 	host flipcommons-production.up.railway.app
 	header !X-Origin-Auth
@@ -48,6 +35,36 @@ handle @www {
 # served long after the condition that produced it was fixed.
 header @direct_origin Cache-Control "no-store"
 handle @direct_origin {
+	redir https://flipcommons.org{uri} permanent
+}
+
+# The static pull zone (static.flipcommons.org) exists to serve the build
+# assets SvelteKit emits through its assets path, but it is not path-
+# restricted: it proxies everything, so it serves the site as HTML on a
+# second, crawlable hostname. 301 the rest to the apex, robots.txt included.
+# Googlebot applies the redirect target's rules to this host, and a
+# `Disallow: /` here would stop crawlers fetching the scripts they need to
+# render apex pages.
+#
+# The allowlist must be exact. Module scripts and fonts are CORS-mode
+# fetches; a cross-origin 301 taints their origin to `null` and the apex
+# sends no Access-Control-Allow-Origin, so the browser rejects them. A
+# missing prefix is an outage.
+#
+# No X-Origin-Auth interlock, unlike @direct_origin: the target is the apex,
+# which nothing in the static zone's chain fronts, so no Forward Host Header
+# state can loop.
+#
+# Dormant while the static zone pulls through the apex zone (its misses
+# arrive as Host: flipcommons.org); live once it pulls from Railway with its
+# own host forwarded.
+@static_non_asset {
+	host static.flipcommons.org
+	not path /_app/* /fonts/* /images/* /apple-touch-icon.png
+}
+# Uncacheable for the same reason as @direct_origin.
+header @static_non_asset Cache-Control "no-store"
+handle @static_non_asset {
 	redir https://flipcommons.org{uri} permanent
 }
 
