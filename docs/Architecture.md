@@ -34,7 +34,7 @@ Bunny CDN fronts every request.
 ```text
 Browser
    ├─ flipcommons.org        → Bunny CDN (apex)   → Railway /*
-   ├─ static.flipcommons.org → Bunny CDN (static) → Bunny CDN (apex) → Railway /_app/*, /fonts/*, favicons
+   ├─ static.flipcommons.org → Bunny CDN (static) → Bunny CDN (apex) → Railway  (retiring; only pre-cutover clients)
    └─ media.flipcommons.org  → Bunny CDN (media)  → iDrive e2 private bucket
 
 Railway (single Caddy service)
