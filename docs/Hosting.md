@@ -156,7 +156,7 @@ Every matcher-bound `Cache-Control` line in the Caddyfile, the gate's 403 and th
 
 The origin-side cache contract is described in [Architecture.md](Architecture.md#edge-caching-of-ssr-html). The client-IP and origin-locking prerequisites for fronting the apex are under [Client IP trust](#client-ip-trust).
 
-The apex resolves to this pull zone through a Bunny [`PZ` record](#dns) rather than to Railway, but the domain stays registered on the Railway service so it still routes by `Host`.
+The apex resolves to this pull zone through a Bunny [`PZ` record](#dns) rather than to Railway.
 
 `www.flipcommons.org` is also registered as a hostname on this zone, with SSL not yet enabled, alongside an Edge Rule that 301s `*://www.flipcommons.org/*` to `https://flipcommons.org{{path}}` — `{{path}}` carries the leading slash and the query string. DNS still points `www` at Railway, so the rule is inert; it exists ahead of the DNS change because Bunny's cache key excludes the hostname, and without it a `www` request for an already-cached path would be served the apex page under the `www` host. Reach it before DNS moves by pinning the hostname to a Bunny edge address over plain HTTP:
 
@@ -249,8 +249,6 @@ Bunny omits `PZ`, `RDR` and `SCR` records from its zone exports, so **a Bunny ex
 | `auth`                 | CNAME | WorkOS custom auth domain — **login breaks if this is missed**   |
 
 No wildcard: unknown names must return `NXDOMAIN`. No DNSSEC and no CAA.
-
-The apex also depends on `flipcommons.org` staying a registered custom domain on the Railway service, because Railway routes by `Host` and answers anything unrecognized with its own `Application not found`.
 
 ### iDrive e2
 
