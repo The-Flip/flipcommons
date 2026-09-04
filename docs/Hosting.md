@@ -134,8 +134,6 @@ Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed res
 
 **Request Coalescing is deliberately off.** Bunny coalesces any uncached request, and bypassed signed-in `__data.json` responses are per-user, so two contributors at one PoP could be served each other's payload.
 
-**Origin Shield is off.** It would add a mid-tier cache so that a miss costs one origin pull rather than one per PoP, but it also adds a hop that can break Bunny's `%{User.IP}` derivation and silently collapse every visitor into one rate-limit bucket — see [Client IP trust](#client-ip-trust). Nothing in production echoes back what Caddy computed for `X-Real-IP`, so that regression cannot currently be observed; do not enable it without a way to check. The location is preset to Chicago (Bunny offers only Chicago or Paris on this zone) so enabling will not begin with a transatlantic pull to the Virginia origin.
-
 Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. So every response leaving the container carries an explicit header. The SvelteKit hook ([cache-control.server.ts](../frontend/src/lib/cache-control.server.ts)) stamps everything it sees, with `private, no-store` for anything that is not a successful page or data request; [Caddyfile](../Caddyfile) is the backstop for what the hook never sees, because it is the only layer that sees every response:
 
 | Path                                                                  | `Cache-Control`                        | Why                                                                                                       |
@@ -365,7 +363,7 @@ The gate fails closed on purpose: the Caddyfile default for an unset variable is
 
 #### Verifying the chain
 
-Nothing in the chain fails loudly: if a hop stops carrying the visitor's address, every visitor shares one rate-limit bucket and no request looks wrong. `GET /api/edge/echo/` (staff-only, gated by `Activity.OBSERVABILITY_DEBUG`) returns what Django received — `x_real_ip`, `x_client_ip`, `x_forwarded_for`, whether `X-Origin-Auth` was present (never its value), `remote_addr` and `host`. Through Bunny, `x_real_ip` and `x_client_ip` must both be your own public address and `x_forwarded_for` must equal `x_real_ip`. Probe it before and after any change to the chain — enabling Origin Shield, moving hosts, adding a CDN hop — and treat a Bunny edge address or a `100.64.0.x` address in `x_real_ip` as a regression to revert.
+Nothing in the chain fails loudly: if a hop stops carrying the visitor's address, every visitor shares one rate-limit bucket and no request looks wrong. `GET /api/edge/echo/` (staff-only, gated by `Activity.OBSERVABILITY_DEBUG`) returns what Django received — `x_real_ip`, `x_client_ip`, `x_forwarded_for`, whether `X-Origin-Auth` was present (never its value), `remote_addr` and `host`. Through Bunny, `x_real_ip` and `x_client_ip` must both be your own public address and `x_forwarded_for` must equal `x_real_ip`. Probe it before and after any change to the chain — a new cache tier, moving hosts, adding a CDN hop — and treat a Bunny edge address or a `100.64.0.x` address in `x_real_ip` as a regression to revert.
 
 Required config for this path:
 

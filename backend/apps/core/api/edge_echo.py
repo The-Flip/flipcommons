@@ -10,8 +10,8 @@ The chain is described in docs/Hosting.md § Client IP trust. Its failure
 mode is silent: if a hop stops carrying the visitor's address, every
 visitor lands in one rate-limit bucket and nothing else changes. This
 endpoint is the only place that failure is observable, so it is what gets
-probed after any change to the chain — enabling Origin Shield, moving
-hosts, adding a CDN hop.
+probed after any change to the chain — a new cache tier, moving hosts,
+adding a CDN hop.
 """
 
 from __future__ import annotations
