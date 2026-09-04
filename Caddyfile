@@ -83,8 +83,7 @@ request_header -Forwarded
 # both custom headers, which Railway forwards verbatim. We promote
 # X-Client-IP to X-Real-IP (the rate limiter's single sanctioned reader) ONLY
 # when X-Origin-Auth matches the secret, so a direct *.railway.app hit can't
-# spoof it. Pre-cutover direct traffic carries no X-Origin-Auth, so nothing
-# changes for it. ORIGIN_SHARED_SECRET is a deployment contract (like
+# spoof it. ORIGIN_SHARED_SECRET is a deployment contract (like
 # RATE_LIMIT_TRUST_PROXY_HEADERS); the sentinel default never matches real
 # traffic when the env is unset.
 @trusted_cdn header X-Origin-Auth {$ORIGIN_SHARED_SECRET:__origin_secret_unset__}
