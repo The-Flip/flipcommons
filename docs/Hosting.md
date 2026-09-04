@@ -376,7 +376,7 @@ Nothing in the chain fails loudly: if a hop stops carrying the visitor's address
 
 Required config for this path:
 
-- **Bunny:** the two request-header Edge Rules above; **Forward Host Header ON**, so Bunny forwards the visitor's `Host` and requests reach Railway as `flipcommons.org`. It requires `flipcommons.org` to stay a registered Railway custom domain; see [DNS Records](#dns-records).
+- **Bunny:** the two request-header Edge Rules above.
 - **Railway:** `ORIGIN_SHARED_SECRET` set (matching the `X-Origin-Auth` rule); `RATE_LIMIT_TRUST_PROXY_HEADERS=true`.
 
 `RATE_LIMIT_TRUST_PROXY_HEADERS` stays the master switch here too: if the secret or the Edge Rules drift, Caddy stops promoting `X-Client-IP` and the system degrades to the one-shared-bucket failure above (now keyed on Bunny's IP).
