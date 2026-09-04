@@ -68,7 +68,7 @@ Diagnosis is reconstructing a sequence, and sequence is the one axis you cannot 
 
 Habits to keep. Prefer **rates to counts**, because a window rarely covers every source equally — read `coverage` before quoting one. Treat **severity as a ranking, not a filter**: Railway invents a level for every line that is not JSON, so count `summary` and rank `timeline` on `level_confidence` rather than filtering on `level`.
 
-A trap: `static` pulls through the `apex` zone, not from Railway, so a static miss is also an apex request and only apex misses reach Railway. Compare `apex` alone against a Railway relation; adding `static` counts each of its misses twice at the CDN. The origin can still legitimately exceed the apex by around a tenth, because Railway also logs direct hits on its own hostname that never passed Bunny — 301s since the `@direct_origin` redirect.
+A trap: `static` pulls through the `apex` zone, not from Railway, so a static miss is also an apex request and only apex misses reach Railway. Compare `apex` alone against a Railway relation; adding `static` counts each of its misses twice at the CDN. The origin can still legitimately exceed the apex by around a tenth, because Railway also logs requests that never passed Bunny. Nothing identifies those rows individually — every Railway row carries the origin hostname, and `@direct_origin` and the site's own canonical redirects both answer 301 — so the excess is measurable only in aggregate, against the apex zone's origin pulls.
 
 ## Editing the analytics
 
