@@ -52,3 +52,15 @@ def test_entrypoint_mirrors_site_origin_into_the_public_namespace() -> None:
         "to the public origin — with the :? guard, because the Dockerfile "
         'bakes ENV SITE_ORIGIN="" and set -u does not catch set-but-empty'
     )
+
+
+def test_entrypoint_refuses_to_boot_without_the_origin_secret() -> None:
+    assert re.search(
+        r'^: "\$\{ORIGIN_SHARED_SECRET:\?[^}]+\}"$',
+        _start_production(),
+        re.MULTILINE,
+    ), (
+        "scripts/start-production must guard ORIGIN_SHARED_SECRET with :? — "
+        "Caddy's origin gate rejects every request when it is unset, and a "
+        "container that never passes its health check is the louder failure"
+    )

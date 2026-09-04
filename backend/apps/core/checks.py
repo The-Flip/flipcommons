@@ -12,6 +12,7 @@ contract.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Sequence
 from typing import Any, Literal, NamedTuple
 from urllib.parse import urlparse
@@ -728,6 +729,66 @@ def check_search_engine_indexing_env(
                     "silently disable production indexing."
                 ),
                 id="core.E302",
+            )
+        ]
+    return []
+
+
+# The exact shape the Caddyfile origin gate can compare safely. The value is
+# substituted into `header X-Origin-Auth {$ORIGIN_SHARED_SECRET:...}` as raw
+# Caddyfile text before parsing, so whitespace, quotes or braces change the
+# directive's structure, and a leading or trailing `*` turns the exact match
+# into a prefix or suffix match. Bunny's Edge Rule sends the value verbatim,
+# so this charset costs nothing on that side.
+_ORIGIN_SHARED_SECRET_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+
+@register(Tags.security, deploy=True)
+def check_origin_shared_secret(
+    app_configs: Sequence[AppConfig] | None,
+    **kwargs: Any,  # noqa: ANN401
+) -> list[CheckMessage]:
+    """Block deploy when ORIGIN_SHARED_SECRET is missing or malformed.
+
+    Caddy's origin gate rejects every request when this is unset, so the
+    drift has to surface before traffic, in the deploy logs, with a
+    greppable id. The charset check exists because the value is spliced
+    into a Caddyfile matcher as raw text.
+
+    Short-circuits on ``settings.DEBUG`` like ``check_site_origin``:
+    ``make dev`` runs no Caddy, so a local value would gate nothing.
+    """
+    _ = app_configs, kwargs
+    if settings.DEBUG:
+        return []
+    raw = os.environ.get("ORIGIN_SHARED_SECRET", "")
+    if not raw.strip():
+        return [
+            Error(
+                "ORIGIN_SHARED_SECRET is empty in a non-DEBUG environment. "
+                "Caddy rejects every request that does not carry it, so the "
+                "deploy would answer 403 to all traffic from the CDN.",
+                hint=(
+                    "Set ORIGIN_SHARED_SECRET on the Railway service to the "
+                    "value the Bunny X-Origin-Auth Edge Rule sends; see "
+                    "docs/Hosting.md § Client IP trust."
+                ),
+                id="core.E305",
+            )
+        ]
+    if not _ORIGIN_SHARED_SECRET_RE.fullmatch(raw):
+        return [
+            Error(
+                "ORIGIN_SHARED_SECRET contains characters outside "
+                "[A-Za-z0-9_-]. The value is substituted into a Caddyfile "
+                "matcher as raw text, so whitespace, quotes, braces or a "
+                "leading/trailing `*` change what the gate compares.",
+                hint=(
+                    "Generate a value from that charset, for example "
+                    '`python -c "import secrets; print(secrets.token_urlsafe(32))"`, '
+                    "and set it on both Railway and the Bunny Edge Rule."
+                ),
+                id="core.E306",
             )
         ]
     return []

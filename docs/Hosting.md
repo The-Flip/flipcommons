@@ -9,7 +9,7 @@ For the request-routing diagram and the rest of the runtime picture, see [Archit
 ### Overview
 
 - [Railway](#railway): web & db hosting
-- [Bunny.net](#bunny-cdn): CDN edge caching and [DNS](#dns)
+- Bunny.net: [CDN edge caching](#cdn) and [DNS](#dns)
 - [Joker](#dns): domain registration
 - [iDrive e2](#idrive-e2): media storage
 - [WorkOS](#workos): authentication
@@ -20,8 +20,10 @@ For the request-routing diagram and the rest of the runtime picture, see [Archit
 
 Railway hosts the project as two services:
 
-- **Web** — one container running Caddy, SvelteKit Node SSR and Django/Gunicorn (see [Process model](#process-model)). Region: US East (Virginia); see [Geography](#geography).
+- **Web** — one container running Caddy, SvelteKit Node SSR and Django/Gunicorn (see [Process model](#process-model)).
 - **Postgres** — managed database; Railway injects `DATABASE_URL`. Point-in-time recovery (PITR) is attached to the Postgres service; it restores the database to any timestamp.
+
+Both are in region US East (Virginia); see [Geography](#geography).
 
 #### Process model
 
@@ -89,9 +91,9 @@ The site already runs as a single Railway service; you only need this to stand u
 5. The environment should automatically deploy when you connect the branch.
 6. Grant the first admin: sign in through WorkOS to create your user, then run `uv run python manage.py grant_admin you@example.com` in the Railway shell (or via `railway run`). `createsuperuser` can't help — the admin password form is disabled, so it only produces a row that can never sign in.
 
-### Bunny CDN
+### CDN
 
-Bunny runs the following pull zones:
+Bunny.net runs the following pull zones:
 
 - [`flipcommons.org`](#apex-edge-cache): anonymous SSR HTML
 - [`static.flipcommons.org`](#static-edge-cache): static app assets like `/_app/immutable/*`, pulled through the apex zone
@@ -134,7 +136,20 @@ Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed res
 
 **Origin Shield is off.** It would add a mid-tier cache so that a miss costs one origin pull rather than one per PoP, but it also adds a hop that can break Bunny's `%{User.IP}` derivation and silently collapse every visitor into one rate-limit bucket — see [Client IP trust](#client-ip-trust). Nothing in production echoes back what Caddy computed for `X-Real-IP`, so that regression cannot currently be observed; do not enable it without a way to check. The location is preset to Chicago (Bunny offers only Chicago or Paris on this zone) so enabling will not begin with a transatlantic pull to the Virginia origin.
 
-Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. SvelteKit leaves `+server.ts` endpoints unstamped, so [Caddyfile](../Caddyfile) sets `Cache-Control: no-store` on `/__health` — otherwise an edge PoP serves uptime probes a cached `ok` for weeks after the origin stops responding.
+Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. So every response leaving the container carries an explicit header. The SvelteKit hook ([cache-control.server.ts](../frontend/src/lib/cache-control.server.ts)) stamps everything it sees, with `private, no-store` for anything that is not a successful page or data request; [Caddyfile](../Caddyfile) is the backstop for what the hook never sees, because it is the only layer that sees every response:
+
+| Path                                                                  | `Cache-Control`                        | Why                                                                                                       |
+| --------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| anything still unstamped (site-level `?` default)                     | `private, no-store`                    | prerendered pages such as `/privacy` are served by Node on every request rather than frozen for 30 days   |
+| `/images/*`, `/apple-touch-icon.png`, `/site.webmanifest`, `/fakes/*` | `public, max-age=3600, s-maxage=86400` | unfingerprinted files replaced in place; a day at the edge bounds staleness without a purge               |
+| `/fonts/*`                                                            | `public, max-age=31536000, immutable`  | stable bytes; a changed font must be renamed                                                              |
+| `/_app/env.js`                                                        | `public, max-age=0, s-maxage=60`       | carries the Sentry release tag; SvelteKit answers it before its hooks run                                 |
+| `/_app/immutable/*`                                                   | `public, max-age=31536000, immutable`  | set by adapter-node's static handler on 200s, not by Caddy: content-hashed, so a wrong copy is impossible |
+| `/_app/version.json`                                                  | `public, max-age=60`                   | the deploy poll                                                                                           |
+| `/__health`                                                           | `no-store`                             | uptime probes must see the origin's current state                                                         |
+| the 502 Caddy writes itself when it cannot dial Node or Gunicorn      | `no-store`                             | written outside the deferred header wrappers, so `handle_errors` stamps it separately                     |
+
+Every matcher-bound `Cache-Control` line in the Caddyfile, the gate's 403 and the two redirects included, uses Caddy's deferred `>` form. Two reasons: Caddy's value then replaces a header the hook also set rather than stacking beside it, and a deferred op replaces a plain one that ran earlier, so a plain `no-store` on the 403 would be overwritten by the font policy on a font URL and a PoP that pulled it during a secret rotation would cache the 403 for a year. The cost is that a 404 on one of the unfingerprinted paths is cached for the path's TTL, which only bites during a rename. [test_caddyfile_cache_backstop.py](../backend/tests/test_caddyfile_cache_backstop.py) pins the default, the form and that every file under `frontend/static/` has a policy.
 
 **Changing a cache header is not retroactive.** Bunny consults the origin header only when it pulls, so a PoP holding an object keeps serving it for the remainder of the TTL it was cached under. After deploying a `Cache-Control` change, [purge](https://docs.bunny.net/cdn/purge-cache) the affected URL from the pull zone — otherwise the old policy survives up to its original expiry, unevenly across PoPs as eviction pressure varies. Confirm with `curl -sSI https://flipcommons.org/__health`: a `cdn-cache: HIT` still reporting the previous `Cache-Control` means the purge hasn't landed.
 
@@ -157,7 +172,7 @@ Its origin is `https://flipcommons.org`, the apex pull zone, not Railway (Forwar
 
 - **Caddy cannot see the static hostname.** Static-origin traffic is indistinguishable from apex traffic at the origin, so anything static-specific has to be an Edge Rule on the static zone in the Bunny dashboard. A `host static.flipcommons.org` matcher in the [Caddyfile](../Caddyfile) would silently never match.
 - **Do not repoint static at Railway without first adding the `X-Origin-Auth` Edge Rule to it.** `@direct_origin` redirects every Railway-host request lacking that header, and with Follow Redirects off the static zone would cache the 301 for every asset, site-wide, until purged. The chain is what keeps static's traffic out of that matcher today.
-- **A purge of an asset path has to hit both zones, apex first.** The apex zone holds a copy of everything static has pulled, so purging static alone re-pulls the same bytes from apex. The hashed `/_app/immutable/*` assets and the fonts never need one, and `version.json` ages out of both zones within two minutes because its 60-second TTL applies at each hop. In practice this means the favicons and `apple-touch-icon.png`: unfingerprinted, they reach Bunny without `Cache-Control` and sit in two 30-day caches, so replacing one without purging both zones can take 60 days to fully age out.
+- **A purge of an asset path has to hit both zones, apex first.** The apex zone holds a copy of everything static has pulled, so purging static alone re-pulls the same bytes from apex. The hashed `/_app/immutable/*` assets and the fonts never need one, and `version.json` ages out of both zones within two minutes because its 60-second TTL applies at each hop. The unfingerprinted files (favicons, `apple-touch-icon.png`, the manifest) carry a one-day edge TTL from Caddy, so a replacement takes at most two days to age out through both hops without a purge.
 
 Log analytics count a static miss once, at the apex; see [production_logs/README.md](../production_logs/README.md).
 
@@ -340,7 +355,17 @@ The real client IP is recovered through two Bunny **Edge Rules** that set _reque
 - `X-Client-IP` = `%{User.IP}` — the true client IP.
 - `X-Origin-Auth` = `<shared secret>` — proves the request came through Bunny.
 
-Caddy ([Caddyfile](../Caddyfile)) then promotes `X-Client-IP` into `X-Real-IP` **only** when `X-Origin-Auth` matches `ORIGIN_SHARED_SECRET`. So `_client_ip` keeps reading `X-Real-IP`, unchanged — it just receives the true client IP behind Bunny. A direct `*.railway.app` hit carries no valid secret, so its forged `X-Client-IP` is ignored and it's rate-limited on its own (direct) IP — no spoof, no bypass. Verified end-to-end on the pull zone (including spoof attempts) before cutover.
+Caddy ([Caddyfile](../Caddyfile)) then promotes `X-Client-IP` into `X-Real-IP` **only** when `X-Origin-Auth` matches `ORIGIN_SHARED_SECRET`. So `_client_ip` keeps reading `X-Real-IP`, unchanged — it just receives the true client IP behind Bunny. Verified end-to-end on the pull zone (including spoof attempts) before cutover.
+
+#### Origin gate
+
+The same comparison is a hard gate: Caddy answers **403** to any request whose `X-Origin-Auth` does not equal `ORIGIN_SHARED_SECRET`, whatever `Host` it wears, so a caller that bypassed Bunny also bypassed its cache and rate limits and gets nothing. Two exemptions: SSR's own API calls, which arrive on the loopback interface, and Railway's health probe, matched by `Host: healthcheck.railway.app` together with the `/__health` path. The pairing matters: the Sentry uptime monitor also fetches `/__health`, but through Bunny under the public host, so it has to carry the secret like everything else, and a drifted secret turns that monitor red rather than leaving the site answering 403 behind a green health check. The redirect for the Railway hostname sits ahead of the gate so crawlers that found that host still get a 301 rather than a 403.
+
+The gate fails closed on purpose: the Caddyfile default for an unset variable is a sentinel that matches nothing, so a missing or drifted secret rejects every request from Bunny. Two guards make that a failed deploy rather than an outage — `check --deploy` refuses an unset or malformed value (`core.E305`, `core.E306`) and [`scripts/start-production`](../scripts/start-production) refuses to boot without one — and a wrong-but-well-formed value shows up as the post-deploy 403 curl in the verification steps and, after that, as the uptime monitor. Railway's probe `Host` is documented rather than observed (the probe never appears in Railway's HTTP logs), so a deploy whose health check never passes after a Caddyfile change is the signal that the value changed; the previous container keeps serving meanwhile. [test_caddyfile_origin_gate.py](../backend/tests/test_caddyfile_origin_gate.py) pins the matcher.
+
+#### Verifying the chain
+
+Nothing in the chain fails loudly: if a hop stops carrying the visitor's address, every visitor shares one rate-limit bucket and no request looks wrong. `GET /api/edge/echo/` (staff-only, gated by `Activity.OBSERVABILITY_DEBUG`) returns what Django received — `x_real_ip`, `x_client_ip`, `x_forwarded_for`, whether `X-Origin-Auth` was present (never its value), `remote_addr` and `host`. Through Bunny, `x_real_ip` and `x_client_ip` must both be your own public address and `x_forwarded_for` must equal `x_real_ip`. Probe it before and after any change to the chain — enabling Origin Shield, moving hosts, adding a CDN hop — and treat a Bunny edge address or a `100.64.0.x` address in `x_real_ip` as a regression to revert.
 
 Required config for this path:
 
@@ -423,7 +448,7 @@ Set `MEDIA_STORAGE_BUCKET` to serve media from object storage (iDrive e2 behind 
 #### Edge & rate limiting
 
 - `RATE_LIMIT_TRUST_PROXY_HEADERS` — `true`, required in production. See [Client IP trust](#client-ip-trust).
-- `ORIGIN_SHARED_SECRET` — secret matching the Bunny `X-Origin-Auth` Edge Rule; lets Caddy trust the Bunny-forwarded `X-Client-IP`. See [Client IP trust](#client-ip-trust).
+- `ORIGIN_SHARED_SECRET` — secret matching the Bunny `X-Origin-Auth` Edge Rule; Caddy rejects every request that does not carry it and trusts the Bunny-forwarded `X-Client-IP` on those that do. Characters from `[A-Za-z0-9_-]` only: the value is substituted into a Caddyfile matcher as raw text, so whitespace, quotes, braces or a leading or trailing `*` would change what the gate compares. `check --deploy` refuses an empty (`core.E305`) or malformed (`core.E306`) value and `start-production` refuses to boot without one. See [Origin gate](#origin-gate).
 
 #### SEO
 
@@ -443,7 +468,7 @@ Per-user rate limits ([backend/apps/provenance/rate_limits.py](../backend/apps/p
 
 #### The Railway origin hostname is not a second site
 
-That gate is deployment-level — it reads an env var, never the request host — so `flipcommons-production.up.railway.app` would otherwise serve the same indexable pages and the same permissive `robots.txt` as the apex, and be indexed as a duplicate of it. The `@direct_origin` matcher in [Caddyfile](../Caddyfile) 301s direct hits to the public origin instead. It is not a security boundary: a direct caller can still reach the origin by sending `Host: flipcommons.org`. [`test_caddyfile_direct_origin.py`](../backend/tests/test_caddyfile_direct_origin.py) pins the directive, whose absence is otherwise invisible.
+That gate is deployment-level — it reads an env var, never the request host — so `flipcommons-production.up.railway.app` would otherwise serve the same indexable pages and the same permissive `robots.txt` as the apex, and be indexed as a duplicate of it. The `@direct_origin` matcher in [Caddyfile](../Caddyfile) 301s direct hits to the public origin instead. It is a search-engine consolidation measure, not the security boundary: a direct caller that sends `Host: flipcommons.org` skips the redirect and lands on the [origin gate](#origin-gate), which answers 403. [`test_caddyfile_direct_origin.py`](../backend/tests/test_caddyfile_direct_origin.py) pins the directive, whose absence is otherwise invisible.
 
 ## Troubleshooting
 
@@ -453,6 +478,9 @@ Every item below starts with reading production logs. [production_logs/](../prod
 `/__health` is served by the SvelteKit Node runtime and checks Django in turn via an internal `/api/health` call, which runs a `SELECT 1`. So a failing probe means Node is down, Django is down, or the database is unreachable — check the deploy logs for Node or Python startup errors. Common causes: missing `SECRET_KEY`, database connection issues, a bad migration or the SSR process failing to start. Railway will not promote the deployment while this fails, so the previous container stays live.
 
 A probe that fails with **400** rather than a connection error means it reached Django with an external `Host` header and hit `ALLOWED_HOSTS`. That points at `healthcheckPath` having been changed to a Django route — put it back to `/__health`; see [railway.toml](../railway.toml).
+
+**Every request through Bunny returns 403 with `Cache-Control: no-store`**:
+The [origin gate](#origin-gate) is rejecting Bunny's traffic, which means `ORIGIN_SHARED_SECRET` on the Railway service and the value the apex zone's `X-Origin-Auth` Edge Rule sends have drifted apart, or the Edge Rule is gone. The Sentry uptime monitor on `/__health` goes red for the same reason, while Railway's own health check stays green because its probe is exempt. Fix whichever side drifted; the 403s carry `no-store`, so nothing needs purging.
 
 **Apex returns `ERR_TOO_MANY_REDIRECTS`**:
 Bunny is forwarding the Railway origin hostname again and its requests are matching `@direct_origin`, which sends them back to a host Bunny fronts. Check **Forward Host Header** on the apex pull zone (must be ON) and the `X-Origin-Auth` Edge Rule (whose presence is what excludes Bunny's traffic when the toggle is wrong). Fix whichever drifted, then [purge](https://docs.bunny.net/cdn/purge-cache) the affected URLs — the zone has Follow Redirects disabled, so cached 301s survive the repair.
