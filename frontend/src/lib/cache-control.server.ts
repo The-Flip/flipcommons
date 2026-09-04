@@ -12,7 +12,7 @@ const EDGE_MAX_AGE = 60; // seconds
 
 /** Strictest directive: never stored by any cache. Used for kiosk, for any
  * response that sets a cookie, and for every response that is not a
- * successful page (errors, redirects, form-action POSTs, non-page
+ * successful page (errors, temporary redirects, form-action POSTs, non-page
  * endpoints). */
 const NO_STORE = 'private, no-store';
 
@@ -94,23 +94,10 @@ function directiveFor(cookie: string): string {
   return ANON;
 }
 
-/**
- * Whether the response is a successful SSR HTML document — the only surface
- * the cookie-driven directives apply to. SvelteKit stamps its own
- * `private, no-store` on a `__data.json` response, so one never arrives
- * here unstamped; Architecture.md has why we leave it that way. Everything
- * else is `private, no-store`:
- * - non-GET/HEAD (form-action POSTs flow through `handle` too — never
- *   `public`; HEAD mirrors GET so cache probes see identical headers)
- * - non-2xx responses: 4xx/5xx (a transient 500 or a 404 for a just-created
- *   record must not be cached) AND 3xx redirects — an auth-gate redirect
- *   (`requireCapability` throws `redirect`) stamped `public` would be
- *   replayed from the browser cache after the user signs in, bouncing them
- *   off a route they're now authorized for
- * - non-page `+server.ts` endpoints (e.g. the `/__health` liveness probe)
- */
 function isCacheablePage(event: RequestEvent, response: Response): boolean {
   if (event.request.method !== 'GET' && event.request.method !== 'HEAD') return false;
+  // Answered before the content-type test, which a redirect would fail.
+  if (response.status === 301) return true;
   if (response.status < 200 || response.status >= 300) return false;
   return (response.headers.get('content-type') ?? '').startsWith('text/html');
 }

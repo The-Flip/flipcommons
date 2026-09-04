@@ -185,7 +185,7 @@ See [Svelte.md](Svelte.md) for route-level guidance and [ApiDesign.md](ApiDesign
 
 Public SSR HTML is **per-user-invariant**: the server renders identical markup for every visitor because auth state loads **client-side only** (the nav and auth store hydrate in the browser, never during SSR). The HTML carries no per-user content, so it is safe to share across users — the property a shared cache depends on.
 
-To make that shareable HTML edge-cacheable without ever serving a contributor a stale copy of their own edit, a SvelteKit server hook ([`cache-control.server.ts`](../frontend/src/lib/cache-control.server.ts), in the `handle` sequence) stamps `Cache-Control` on SSR HTML responses, driven by the request's cookies:
+To make that shareable HTML edge-cacheable without ever serving a contributor a stale copy of their own edit, a SvelteKit server hook ([`cache-control.server.ts`](../frontend/src/lib/cache-control.server.ts), in the `handle` sequence) stamps `Cache-Control` on SSR HTML responses and permanent (301) redirects, driven by the request's cookies:
 
 | Request                         | `Cache-Control`                 |
 | ------------------------------- | ------------------------------- |
@@ -195,7 +195,7 @@ To make that shareable HTML edge-cacheable without ever serving a contributor a 
 | any response that sets a cookie | `private, no-store`             |
 | anything else                   | `private, no-store`             |
 
-"Anything else" is every response that is not a successful page or data request — errors, redirects, form-action POSTs, non-page endpoints such as `/__health` — and every response that set no `Cache-Control` of its own gets one, because the edge gives an unstamped response a 30-day default. What SvelteKit answers before its hooks run (prerendered pages, files under `static/`, `/_app/env.js`) is stamped by Caddy instead; see [Hosting.md](Hosting.md#apex-edge-cache) for that table.
+Every response that set no `Cache-Control` of its own gets one, because the edge gives an unstamped response a 30-day default. What SvelteKit answers before its hooks run (prerendered pages, files under `static/`, `/_app/env.js`) is stamped by Caddy instead; see [Hosting.md](Hosting.md#apex-edge-cache) for that table.
 
 The directive is **cookie-driven, not route-driven** — the markup is the same for everyone, so only the directive differs. Anonymous caching is **CDN-only** (`s-maxage` for the shared edge, `max-age=0` so browsers always revalidate): once a request carries `sessionid` it reaches the edge bypass rather than a stale local copy. `private` keeps authenticated and kiosk responses out of every cache, and the `Set-Cookie` fallback keeps any cookie-bearing response from being shared-cached. The hook never sets `Vary: Cookie` — the audience split rides on `public` vs `private` plus the edge's cookie bypass, not on keying the cache by cookie (which would fragment it per `csrftoken`).
 

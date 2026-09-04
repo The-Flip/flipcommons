@@ -28,7 +28,8 @@ function runCacheControl({
   presetCacheControl,
   setCookie,
 }: RunOptions) {
-  const headers: Record<string, string> = { 'content-type': contentType };
+  const headers: Record<string, string> = {};
+  if (contentType) headers['content-type'] = contentType;
   if (presetCacheControl) headers['cache-control'] = presetCacheControl;
   if (setCookie) headers['set-cookie'] = setCookie;
 
@@ -76,10 +77,6 @@ describe('cacheControlHandle', () => {
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=300');
   });
 
-  // Everything that is not a successful page or data request is stamped
-  // `private, no-store` rather than left bare: an unstamped response reaching
-  // the edge inherits the zone's 30-day default.
-
   it('stamps non-GET requests (form-action POSTs) private, no-store', async () => {
     const res = await runCacheControl({ method: 'POST' });
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
@@ -116,9 +113,25 @@ describe('cacheControlHandle', () => {
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
-  it('stamps a 3xx HTML redirect private, no-store', async () => {
+  it('stamps a 302 redirect private, no-store', async () => {
     const res = await runCacheControl({ status: 302 });
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  it('stamps an anonymous 301 with the anonymous page directive', async () => {
+    // A redirect carries no content-type, so the status must decide before
+    // the HTML check does.
+    const res = await runCacheControl({ status: 301, contentType: '' });
+    expect(res.headers.get('Cache-Control')).toBe(ANON);
+  });
+
+  it('stamps a 301 on a sessionid request as private, no-cache', async () => {
+    const res = await runCacheControl({
+      status: 301,
+      contentType: '',
+      cookies: { sessionid: 'abc' },
+    });
+    expect(res.headers.get('Cache-Control')).toBe(AUTHED);
   });
 
   it('never upgrades an error to the anonymous public directive', async () => {
