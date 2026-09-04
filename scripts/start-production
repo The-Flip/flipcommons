@@ -65,6 +65,11 @@ DJANGO_PID=$!
 # empty ORIGIN crashes Node at boot anyway.
 export PUBLIC_SITE_ORIGIN="${SITE_ORIGIN:?SITE_ORIGIN must be the public origin, e.g. https://flipcommons.org}"
 
+# Caddy's origin gate rejects every request when this is unset. Refusing to
+# boot is the louder failure: the health check never passes and the previous
+# container keeps serving, instead of a new one answering 403 to everything.
+: "${ORIGIN_SHARED_SECRET:?ORIGIN_SHARED_SECRET must be set; Caddy rejects every request without it}"
+
 cd frontend_runtime
 ORIGIN="${SITE_ORIGIN}" HOST=127.0.0.1 PORT="${NODE_PORT}" node build/index.js &
 NODE_PID=$!

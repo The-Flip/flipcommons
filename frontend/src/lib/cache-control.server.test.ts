@@ -5,6 +5,7 @@ import { cacheControlHandle } from './cache-control.server';
 const ANON = 'public, s-maxage=60, max-age=0';
 const AUTHED = 'private, no-cache';
 const KIOSK = 'private, no-store';
+const NO_STORE = 'private, no-store';
 
 interface RunOptions {
   cookies?: Record<string, string>;
@@ -92,32 +93,41 @@ describe('cacheControlHandle', () => {
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=300');
   });
 
-  it('does not stamp non-GET requests (form-action POSTs)', async () => {
+  // Everything that is not a successful page or data request is stamped
+  // `private, no-store` rather than left bare: an unstamped response reaching
+  // the edge inherits the zone's 30-day default.
+
+  it('stamps non-GET requests (form-action POSTs) private, no-store', async () => {
     const res = await runCacheControl({ method: 'POST' });
-    expect(res.headers.get('Cache-Control')).toBeNull();
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
-  it('does not stamp non-page JSON endpoints like /__health', async () => {
+  it('stamps non-page JSON endpoints like /__health private, no-store', async () => {
     const res = await runCacheControl({ pathname: '/__health', contentType: 'application/json' });
-    expect(res.headers.get('Cache-Control')).toBeNull();
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
-  it('does not stamp error responses (transient 500 must not be cached)', async () => {
+  it('stamps error responses private, no-store (a transient 500 must not be cached)', async () => {
     const res = await runCacheControl({ status: 500 });
-    expect(res.headers.get('Cache-Control')).toBeNull();
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
-  it('does not stamp a 404 (e.g. a just-created record)', async () => {
+  it('stamps a 404 private, no-store (e.g. a just-created record)', async () => {
     const res = await runCacheControl({ status: 404 });
-    expect(res.headers.get('Cache-Control')).toBeNull();
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
-  it('does not stamp a 3xx HTML redirect', async () => {
+  it('stamps a HEAD 404 identically to a GET 404', async () => {
+    const res = await runCacheControl({ method: 'HEAD', status: 404 });
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  it('stamps a 3xx HTML redirect private, no-store', async () => {
     const res = await runCacheControl({ status: 302 });
-    expect(res.headers.get('Cache-Control')).toBeNull();
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
-  it('does not stamp a 3xx __data.json redirect (auth-gate bounce)', async () => {
+  it('stamps a 3xx __data.json redirect (auth-gate bounce) private, no-store', async () => {
     // requireCapability() throws redirect on an anonymous SPA nav to an
     // auth-gated route; stamping it `public` would replay the bounce from
     // browser cache after sign-in. The pathname branch must not catch it.
@@ -126,7 +136,19 @@ describe('cacheControlHandle', () => {
       pathname: '/admin/__data.json',
       contentType: 'application/json',
     });
-    expect(res.headers.get('Cache-Control')).toBeNull();
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  it('never upgrades an error to the anonymous public directive', async () => {
+    // The cookie branches apply only to successful pages: an anonymous 500
+    // must not be shared-cached even though the request carries no cookie.
+    const res = await runCacheControl({ status: 500, cookies: {} });
+    expect(res.headers.get('Cache-Control')).not.toBe(ANON);
+  });
+
+  it('preserves a Cache-Control an error response already set', async () => {
+    const res = await runCacheControl({ status: 404, presetCacheControl: 'public, max-age=5' });
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=5');
   });
 
   it('stamps a HEAD request identically to GET (cache probes see the same header)', async () => {

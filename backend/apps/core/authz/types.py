@@ -32,8 +32,10 @@ class Activity(StrEnum):
     # on `is_staff`; this activity exists so the SPA can decide whether to
     # render the nav link without the schema exposing the underlying flag.
     DJANGO_ADMIN_ACCESS = "django_admin.access"
-    # Operator-surface activity gating the on-demand exception-trigger
-    # route used to verify the Sentry pipeline end-to-end. Staff-only.
+    # Operator-surface activity gating the diagnostic routes that verify
+    # infrastructure plumbing end-to-end: the on-demand exception trigger
+    # for the Sentry pipeline and the edge header echo for the client-IP
+    # chain. Staff-only.
     OBSERVABILITY_DEBUG = "observability.debug"
     # Operator-surface activity gating the admin SPA area (`/admin/*`) and
     # its supporting page-API endpoints. Verb-led `VIEW_` makes the

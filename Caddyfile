@@ -4,7 +4,12 @@
 # enter on 127.0.0.1 and are routed to Django by the @django handle below. Any
 # directive added at site level therefore applies to internal SSR traffic too.
 
+# Bunny inherits the pull zone's 30-day default TTL for any response that
+# arrives without Cache-Control, so a redirect that ever reached it unstamped
+# could be served long after the condition that produced it was fixed. The
+# `>` form matters: see the note above `header ?Cache-Control` below.
 @www host www.flipcommons.org
+header @www >Cache-Control "no-store"
 handle @www {
 	redir https://flipcommons.org{uri} permanent
 }
@@ -28,8 +33,8 @@ handle @www {
 # would be redirected to a host Bunny fronts. That is a redirect loop, and
 # because the zone has Follow Redirects disabled it would be cached at the
 # edge and outlive the repair. Testing presence rather than value keeps that
-# failure open rather than closed: a drifted ORIGIN_SHARED_SECRET must not be
-# able to take the site down.
+# failure out of this matcher: a drifted ORIGIN_SHARED_SECRET must surface as
+# the plain 403 the gate below produces, never as a cached redirect loop.
 #
 # Nothing internal matches: SSR's own API calls arrive as 127.0.0.1:$PORT and
 # Railway's health check as healthcheck.railway.app. Nor does the static pull
@@ -46,9 +51,36 @@ handle @www {
 # Bunny inherits the pull zone's 30-day default TTL for any response that
 # arrives without Cache-Control, so an unstamped redirect could be cached and
 # served long after the condition that produced it was fixed.
-header @direct_origin Cache-Control "no-store"
+header @direct_origin >Cache-Control "no-store"
 handle @direct_origin {
 	redir https://flipcommons.org{uri} permanent
+}
+
+# Refuse anything that did not come through Bunny: the apex zone's Edge Rule
+# stamps every origin pull with X-Origin-Auth, so a request without the right
+# value bypassed the edge cache and its rate limits, whatever Host it wears.
+# Exempt are SSR's own API calls, which arrive on loopback, and Railway's
+# health probe. The probe exemption pairs its Host with the path on purpose:
+# a /__health request under the public host is Bunny forwarding the uptime
+# monitor, which must carry the secret like everything else so that a
+# drifted secret turns the monitor red rather than 403ing the site behind a
+# green health check.
+#
+# The :__origin_secret_unset__ default is load-bearing. Caddy substitutes
+# {$VAR} into the raw file before parsing, so an unset variable would leave a
+# bare `header X-Origin-Auth`, which matches any value. The sentinel makes an
+# unset secret reject everything instead. Same expression as @trusted_cdn.
+@unauthenticated {
+	not header X-Origin-Auth {$ORIGIN_SHARED_SECRET:__origin_secret_unset__}
+	not remote_ip 127.0.0.1 ::1
+	not {
+		host healthcheck.railway.app
+		path /__health
+	}
+}
+header @unauthenticated >Cache-Control "no-store"
+handle @unauthenticated {
+	respond 403
 }
 
 # Strip the RFC 7239 Forwarded header. Railway passes client-supplied
@@ -90,6 +122,44 @@ header {
 	Strict-Transport-Security "max-age=86400"
 }
 
+# Every response leaving this container carries an explicit Cache-Control,
+# because Bunny gives anything without one its 30-day zone default. The
+# SvelteKit hook (frontend/src/lib/cache-control.server.ts) stamps what it
+# sees, but it never sees prerendered pages, files under frontend/static/ or
+# /_app/env.js; only Caddy sees every response. The default is `private,
+# no-store` so a prerendered page such as /privacy is re-served by Node
+# rather than frozen in Bunny for 30 days after its text changes. The 502
+# Caddy writes itself when it cannot dial an upstream is the one response
+# these lines never reach; handle_errors at the bottom covers it.
+header ?Cache-Control "private, no-store"
+
+# Every matcher-bound Cache-Control in this file uses the deferred `>` form,
+# for two reasons. A plain `header` runs before reverse_proxy, and the proxy
+# then copies upstream headers with Add, so on a response the hook also
+# stamped (a 404 under /images/, the /__health probe) the two values would
+# stack as two Cache-Control headers; `>` sets at write time and replaces.
+# And a deferred op replaces a plain one that ran earlier, so a plain
+# `no-store` on the 403 or a redirect would be overwritten by the font or
+# image policy on those paths, and a PoP that pulled a font during a secret
+# rotation would cache the 403 for a year. Deferred ops are response-writer
+# wrappers that unwind innermost first, so the earliest line applies last
+# and wins. The cost is that a 404 on an unfingerprinted path is cached for
+# the path's TTL, which only bites during a rename.
+
+# Unfingerprinted files under frontend/static/ that are referenced by fixed
+# path: favicons, logos, portraits, the web manifest. An hour in the browser
+# and a day at the edge bounds how long a replaced file stays stale without
+# a purge. Fonts are below with their own longer policy.
+@static_files path /images/* /apple-touch-icon.png /site.webmanifest /fakes/*
+header @static_files >Cache-Control "public, max-age=3600, s-maxage=86400"
+
+# SvelteKit answers /_app/env.js itself, before its hooks run, with only an
+# ETag. It carries the $env/dynamic/public values, including the Sentry
+# release tag, so an unstamped copy would freeze the release for 30 days at
+# each PoP. Browsers revalidate on every load; the edge holds it a minute.
+@env path /_app/env.js
+header @env >Cache-Control "public, max-age=0, s-maxage=60"
+
 # Long-cache the self-hosted fonts. SvelteKit's Node adapter serves
 # files from frontend/static/ without cache headers because they're
 # unfingerprinted; we know these specific bytes are stable, so override.
@@ -97,7 +167,7 @@ header {
 # updated, the file MUST be renamed (e.g. lora-latin-v2.woff2) or
 # cached clients will never see the new version.
 @fonts path /fonts/*
-header @fonts Cache-Control "public, max-age=31536000, immutable"
+header @fonts >Cache-Control "public, max-age=31536000, immutable"
 
 # Short TTL on the deploy-version probe. SvelteKit writes the current
 # SHA to this path and the client polls it hourly (svelte.config.js
@@ -118,8 +188,8 @@ header @fonts Cache-Control "public, max-age=31536000, immutable"
 # dedicated handle below short-circuits OPTIONS to a 204 rather than
 # letting SvelteKit serve the full body on a preflight.
 @version path /_app/version.json
+header @version >Cache-Control "public, max-age=60"
 header @version {
-	Cache-Control "public, max-age=60"
 	Access-Control-Allow-Origin "*"
 	Access-Control-Allow-Headers "Cache-Control, Pragma"
 	Access-Control-Max-Age "7200"
@@ -133,14 +203,12 @@ handle @version_preflight {
 }
 
 # Never cache the liveness probe. Uptime monitoring has to observe the
-# origin's current state, and a response reaching Bunny without a
-# Cache-Control header inherits the pull zone's 30-day default, which
-# would let an edge PoP answer probes from cache while the app is down.
-# SvelteKit leaves +server.ts endpoints unstamped (see
-# frontend/src/lib/cache-control.server.ts), so the header must come
-# from here.
+# origin's current state, and an edge PoP answering probes from cache
+# would report the app up while it is down. The SvelteKit hook stamps
+# this endpoint too; this line is the Caddy-side statement of the same
+# policy, so the probe stays uncacheable if the hook's rules change.
 @health path /__health
-header @health Cache-Control "no-store"
+header @health >Cache-Control "no-store"
 
 # XFF rewrite must live inside reverse_proxy: Caddy's reverse_proxy has
 # special handling for X-Forwarded-* headers and overrides any
@@ -166,4 +234,15 @@ handle {
 	reverse_proxy 127.0.0.1:{$NODE_PORT:3000} {
 		header_up X-Forwarded-For {http.request.header.X-Real-IP}
 	}
+}
+
+# When reverse_proxy cannot dial Node or Gunicorn (a restart, a crash), Caddy
+# writes the 502 itself, outside the response-writer wrappers the deferred
+# header ops live in, so neither the `?` default nor any `>` policy above
+# reaches it. Without this block that 502 would arrive at Bunny bare and
+# inherit the 30-day zone default. The status is preserved; the body is the
+# code, which is what an uptime monitor or a curl needs and nothing more.
+handle_errors {
+	header >Cache-Control "no-store"
+	respond "{err.status_code}" {err.status_code}
 }

@@ -84,11 +84,15 @@ def test_direct_hits_redirect_permanently_to_the_public_origin() -> None:
 
 def test_the_redirect_is_not_cacheable() -> None:
     match = re.search(
-        r'^header\s+@direct_origin\s+Cache-Control\s+"([^"]+)"\s*$',
+        r'^header\s+@direct_origin\s+>Cache-Control\s+"([^"]+)"\s*$',
         _caddyfile(),
         re.MULTILINE,
     )
-    assert match, "Caddyfile must set Cache-Control on the @direct_origin matcher"
+    assert match, (
+        "Caddyfile must set Cache-Control on the @direct_origin matcher in the "
+        "deferred `>` form, or a redirect on an asset path leaves with the "
+        "asset's TTL"
+    )
     assert "no-store" in match.group(1), (
         "the redirect must be uncacheable — Bunny applies a 30-day default TTL to any "
         f"response arriving without Cache-Control, got {match.group(1)!r}"

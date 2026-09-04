@@ -10,8 +10,10 @@ import { MODE_COOKIE_NAME, MODE_COOKIE_VALUE } from '$lib/kiosk/config';
  */
 const EDGE_MAX_AGE = 60; // seconds
 
-/** Strictest directive: never stored by any cache. Used for kiosk and as the
- * defensive fallback for any response that sets a cookie. */
+/** Strictest directive: never stored by any cache. Used for kiosk, for any
+ * response that sets a cookie, and for every response that is not a
+ * successful page or data request (errors, redirects, form-action POSTs,
+ * non-page endpoints). */
 const NO_STORE = 'private, no-store';
 
 /**
@@ -31,25 +33,26 @@ const AUTHED = 'private, no-cache';
 const KIOSK = NO_STORE;
 
 /**
- * Stamp `Cache-Control` on SSR responses so a shared edge cache (Bunny) can
- * absorb anonymous traffic without ever serving a contributor a stale copy
- * of their own edit.
+ * Stamp `Cache-Control` on every SSR response that did not set its own, so
+ * a shared edge cache (Bunny) can absorb anonymous traffic without ever
+ * serving a contributor a stale copy of their own edit, and so nothing
+ * leaves unstamped: Bunny gives an unstamped response its 30-day default.
  *
- * The directive is driven by the request's COOKIES, not the route: the SSR
- * HTML is per-user-invariant (auth UI hydrates client-side), so every
- * visitor gets identical markup and only the caching directive differs.
- *
- * - `mode=kiosk` → `private, no-store` (licensing-gated audience; never
- *   shared, checked first because a kiosk terminal may also be signed in)
- * - `sessionid`  → `private, no-cache` (a contributor; bypass the shared
- *   cache, and stop their own browser cache serving a stale local copy)
- * - anonymous    → CDN-only `public, s-maxage, max-age=0` (see ANON)
+ * For a successful page or data request the directive is driven by the
+ * request's COOKIES, not the route: the SSR HTML is per-user-invariant
+ * (auth UI hydrates client-side), so every visitor gets identical markup
+ * and only the caching directive differs. Everything else is
+ * `private, no-store`; `isCacheablePage` says why each case must not be
+ * cached.
  *
  * Deliberately NO `Vary: Cookie`: keying the anonymous entry on the Cookie
  * header would fragment it per-`csrftoken` (one entry per visitor) and
- * shatter the shared cache. The audience split is expressed by this
- * `public`/`private` choice plus the edge's own cookie-bypass rule — not by
- * `Vary`.
+ * shatter the shared cache. The audience split is expressed by the
+ * `public`/`private` choice plus the edge's own cookie-bypass rule.
+ *
+ * Responses SvelteKit answers before `handle` runs (`/_app/env.js`, static
+ * files, prerendered pages) never reach this hook; the Caddyfile carries the
+ * matching backstop for those.
  */
 export const cacheControlHandle: Handle = async ({ event, resolve }) => {
   // Read the ORIGINAL request Cookie header, captured before `resolve()`:
@@ -59,26 +62,33 @@ export const cacheControlHandle: Handle = async ({ event, resolve }) => {
   // post-`resolve` `event.cookies.get`).
   const cookie = event.request.headers.get('cookie') ?? '';
   const response = await resolve(event);
-  if (shouldStamp(event, response)) {
-    // A response that sets a cookie must never be shared-cached. The whole
-    // scheme assumes anonymous responses are cookie-less; an edge that stored
-    // a `Set-Cookie` would replay one visitor's session/CSRF cookie to every
-    // other visitor. Force the strictest directive — downgrading even the
-    // anonymous `public` branch — so a violation of that invariant becomes a
-    // safe non-cache instead of a cross-user leak. (SvelteKit surfaces any
-    // `cookies.set()` from a load as a `set-cookie` header here, before
-    // `handle` returns.)
-    const directive = response.headers.has('set-cookie') ? NO_STORE : directiveFor(cookie);
-    response.headers.set('Cache-Control', directive);
+  // Endpoints that set their own policy (`robots.txt`, the sitemap) keep it.
+  if (!response.headers.has('Cache-Control')) {
+    response.headers.set('Cache-Control', directive(event, response, cookie));
   }
   return response;
 };
 
+/** The directive for a response that set none of its own. */
+function directive(event: RequestEvent, response: Response, cookie: string): string {
+  if (!isCacheablePage(event, response)) return NO_STORE;
+  // A response that sets a cookie must never be shared-cached. The whole
+  // scheme assumes anonymous responses are cookie-less; an edge that stored
+  // a `Set-Cookie` would replay one visitor's session/CSRF cookie to every
+  // other visitor. Force the strictest directive — downgrading even the
+  // anonymous `public` branch — so a violation of that invariant becomes a
+  // safe non-cache instead of a cross-user leak. (SvelteKit surfaces any
+  // `cookies.set()` from a load as a `set-cookie` header here, before
+  // `handle` returns.)
+  if (response.headers.has('set-cookie')) return NO_STORE;
+  return directiveFor(cookie);
+}
+
 const MODE_KIOSK = new RegExp(`(?:^|;\\s*)${MODE_COOKIE_NAME}=${MODE_COOKIE_VALUE}(?:;|$)`);
 const SESSION = /(?:^|;\s*)sessionid=/;
 
-/** Pick the cache directive from the raw request Cookie header. Kiosk wins
- * over an also-present `sessionid` (a kiosk terminal may be signed in). */
+/** Kiosk (a licensing-gated audience) wins over an also-present `sessionid`,
+ * since a kiosk terminal may be signed in. */
 function directiveFor(cookie: string): string {
   if (MODE_KIOSK.test(cookie)) return KIOSK;
   if (SESSION.test(cookie)) return AUTHED;
@@ -86,8 +96,10 @@ function directiveFor(cookie: string): string {
 }
 
 /**
- * Stamp only SSR HTML documents and SvelteKit `__data.json` data requests —
- * the two surfaces a visitor navigates. Excludes:
+ * Whether the response is a successful SSR HTML document or SvelteKit
+ * `__data.json` data request — the two surfaces a visitor navigates, and
+ * the only ones the cookie-driven directives apply to. Everything else is
+ * `private, no-store`:
  * - non-GET/HEAD (form-action POSTs flow through `handle` too — never
  *   `public`; HEAD mirrors GET so cache probes see identical headers)
  * - non-2xx responses: 4xx/5xx (a transient 500 or a 404 for a just-created
@@ -95,17 +107,14 @@ function directiveFor(cookie: string): string {
  *   (`requireCapability` throws `redirect`) stamped `public` would be
  *   replayed from the browser cache after the user signs in, bouncing them
  *   off a route they're now authorized for
- * - responses that already set their own `Cache-Control` (`robots.txt`,
- *   `sitemap`, the version probe) — don't clobber them
  * - non-page `+server.ts` endpoints (e.g. the `/__health` liveness probe):
  *   `__data.json` is detected by pathname, not content-type, because its
  *   content-type is `application/json`, indistinguishable from a JSON
  *   endpoint.
  */
-function shouldStamp(event: RequestEvent, response: Response): boolean {
+function isCacheablePage(event: RequestEvent, response: Response): boolean {
   if (event.request.method !== 'GET' && event.request.method !== 'HEAD') return false;
   if (response.status < 200 || response.status >= 300) return false;
-  if (response.headers.has('Cache-Control')) return false;
   if (event.url.pathname.endsWith('/__data.json')) return true;
   return (response.headers.get('content-type') ?? '').startsWith('text/html');
 }
