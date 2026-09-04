@@ -14,7 +14,7 @@
 
 Provenance owns claim data (Claim, ChangeSet, Source). Catalog owns what happens when claim data changes — resolving winning values into entity fields, materializing relationships, invalidating caches. But there's no clean boundary between them. Every claim mutation must trigger catalog-specific resolution, and the knowledge of _how_ to resolve is scattered across the codebase.
 
-This coupling was tolerable when claim mutations only happened in two places: interactive edits (catalog PATCH endpoints) and bulk ingestion (management commands). Both lived in catalog or were orchestrated by catalog-aware code. But as provenance gains its own write operations — such as one-click revert ( /Users/moses/.claude/plans/linked-mixing-piglet.md ) — the coupling becomes a real problem. Provenance can't deactivate a claim and trigger re-resolution without importing half of catalog.
+This coupling was tolerable when claim mutations only happened in two places: interactive edits (catalog PATCH endpoints) and bulk ingestion (management commands). Both lived in catalog or were orchestrated by catalog-aware code. But as provenance gains its own write operations — such as one-click revert — the coupling becomes a real problem. Provenance can't deactivate a claim and trigger re-resolution without importing half of catalog.
 
 ## Where the Coupling Lives
 

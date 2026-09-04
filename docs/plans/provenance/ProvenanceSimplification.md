@@ -24,7 +24,7 @@ That has created a system that is technically coherent but hard to reason about 
 
 **The mental model is unintuitive.** Most people, including AI agents, naturally think in terms of "latest edit wins" or "human override beats source data." They do not naturally think in terms of a global numeric precedence graph shared by IPDB, OPDB, this project, users, and media primaries.
 
-**Simple product features become design-heavy.** The per-field revert plan is much more complicated than it should be because "current truth" is not a simple edit history. It is a derived result of the active-claim set plus resolution ordering. See `/Users/moses/.claude/plans/linked-mixing-piglet.md`.
+**Simple product features become design-heavy.** The per-field revert plan is much more complicated than it should be because "current truth" is not a simple edit history. It is a derived result of the active-claim set plus resolution ordering. See [ChangeSet.md § Revert](ChangeSet.md#revert-future-needs-design) for the open questions that follow from that.
 
 **One mechanism is doing too many jobs.** Source trust, editorial override, user editing, ingest bootstrapping, relationship disputes, and media primary selection all currently lean on the same priority rule even when they are conceptually different problems.
 

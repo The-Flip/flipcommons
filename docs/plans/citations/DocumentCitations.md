@@ -6,7 +6,7 @@ IPDB has a huge trove of documents: thousands of manufacturer manuals, handbooks
 
 ## Exploring IPDB docs
 
-You can explore the IPDB doc trove in Pinexplore's DuckDB analytics database. Read Pinexplore's `sql/01_reference.sql` (class vocabulary, parent edges, detection patterns) and `sql/12_documents.sql` (`ipdb_documents`, `ipdb_patents`, `ipdb_trade_articles`) as a working prototype of the document schema — four independent axes (class, container, publisher, subject), a shallow is-a hierarchy where one document legitimately holds several classes, and patents and trade articles as separate source kinds — but treat its classification as coverage-measured and precision-unmeasured, and read `~/.claude/plans/pinexplore-document-classification-remaining-work.md` for what's known broken.
+You can explore the IPDB doc trove in Pinexplore's DuckDB analytics database. Read Pinexplore's `sql/01_reference.sql` (class vocabulary, parent edges, detection patterns) and `sql/12_documents.sql` (`ipdb_documents`, `ipdb_patents`, `ipdb_trade_articles`) as a working prototype of the document schema — four independent axes (class, container, publisher, subject), a shallow is-a hierarchy where one document legitimately holds several classes, and patents and trade articles as separate source kinds — but treat its classification as coverage-measured and precision-unmeasured: about 91% of the non-image trove matches a class, while spot-checks put the loosest class (`strategy_guide`, where `\bguide\b` cannot separate a strategy guide from a setup guide) at roughly 70% precision. Two axes are unmodelled and are design-relevant rather than analytics polish: revision (the WPC schematic has a 1992/1993/1997 edition chain) and language.
 
 ## Citing IPDB
 
