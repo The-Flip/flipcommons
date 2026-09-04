@@ -43,6 +43,7 @@ from apps.core.rate_limits import (
     check_and_record_session,
 )
 from apps.core.schemas import RateLimitErrorSchema
+from apps.core.site_origin import absolute_site_url
 
 log = logging.getLogger(__name__)
 
@@ -245,16 +246,6 @@ def signup_submit(
     return SignupSubmitResponseSchema(redirect_url=pending["next_url"])
 
 
-def _absolute_return_to(request: HttpRequest, path: str) -> str:
-    """Resolve a relative return URL to absolute, since WorkOS requires that.
-
-    The setting accepts either form so dev/test can use a bare path.
-    """
-    if path.startswith(("http://", "https://")):
-        return path
-    return request.build_absolute_uri(path)
-
-
 @signup_router.post(
     "/cancel/",
     response={200: SignupCancelResponseSchema, 429: RateLimitErrorSchema},
@@ -288,7 +279,7 @@ def signup_cancel(request: HttpRequest) -> SignupCancelResponseSchema:
             client = get_workos_client()
             logout_url = client.user_management.get_logout_url(
                 session_id=payload["workos_session_id"],
-                return_to=_absolute_return_to(request, return_to),
+                return_to=absolute_site_url(return_to),
             )
             return SignupCancelResponseSchema(logout_url=logout_url)
         except Exception:

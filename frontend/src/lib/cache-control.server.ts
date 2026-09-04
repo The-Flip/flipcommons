@@ -12,8 +12,8 @@ const EDGE_MAX_AGE = 60; // seconds
 
 /** Strictest directive: never stored by any cache. Used for kiosk, for any
  * response that sets a cookie, and for every response that is not a
- * successful page or data request (errors, redirects, form-action POSTs,
- * non-page endpoints). */
+ * successful page (errors, temporary redirects, form-action POSTs, non-page
+ * endpoints). */
 const NO_STORE = 'private, no-store';
 
 /**
@@ -38,12 +38,11 @@ const KIOSK = NO_STORE;
  * serving a contributor a stale copy of their own edit, and so nothing
  * leaves unstamped: Bunny gives an unstamped response its 30-day default.
  *
- * For a successful page or data request the directive is driven by the
- * request's COOKIES, not the route: the SSR HTML is per-user-invariant
- * (auth UI hydrates client-side), so every visitor gets identical markup
- * and only the caching directive differs. Everything else is
- * `private, no-store`; `isCacheablePage` says why each case must not be
- * cached.
+ * For a successful page the directive is driven by the request's COOKIES,
+ * not the route: the SSR HTML is per-user-invariant (auth UI hydrates
+ * client-side), so every visitor gets identical markup and only the caching
+ * directive differs. Everything else is `private, no-store`;
+ * `isCacheablePage` says why each case must not be cached.
  *
  * Deliberately NO `Vary: Cookie`: keying the anonymous entry on the Cookie
  * header would fragment it per-`csrftoken` (one entry per visitor) and
@@ -95,26 +94,10 @@ function directiveFor(cookie: string): string {
   return ANON;
 }
 
-/**
- * Whether the response is a successful SSR HTML document or SvelteKit
- * `__data.json` data request — the two surfaces a visitor navigates, and
- * the only ones the cookie-driven directives apply to. Everything else is
- * `private, no-store`:
- * - non-GET/HEAD (form-action POSTs flow through `handle` too — never
- *   `public`; HEAD mirrors GET so cache probes see identical headers)
- * - non-2xx responses: 4xx/5xx (a transient 500 or a 404 for a just-created
- *   record must not be cached) AND 3xx redirects — an auth-gate redirect
- *   (`requireCapability` throws `redirect`) stamped `public` would be
- *   replayed from the browser cache after the user signs in, bouncing them
- *   off a route they're now authorized for
- * - non-page `+server.ts` endpoints (e.g. the `/__health` liveness probe):
- *   `__data.json` is detected by pathname, not content-type, because its
- *   content-type is `application/json`, indistinguishable from a JSON
- *   endpoint.
- */
 function isCacheablePage(event: RequestEvent, response: Response): boolean {
   if (event.request.method !== 'GET' && event.request.method !== 'HEAD') return false;
+  // Answered before the content-type test, which a redirect would fail.
+  if (response.status === 301) return true;
   if (response.status < 200 || response.status >= 300) return false;
-  if (event.url.pathname.endsWith('/__data.json')) return true;
   return (response.headers.get('content-type') ?? '').startsWith('text/html');
 }

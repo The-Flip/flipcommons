@@ -54,7 +54,7 @@ class FlipAdminSite(admin.AdminSite):
         # ``url_has_allowed_host_and_scheme`` only gates host/scheme.
         next_url = request.GET.get(REDIRECT_FIELD_NAME, _ADMIN_ROOT)
         if not url_has_allowed_host_and_scheme(
-            next_url, allowed_hosts={request.get_host()}
+            next_url, allowed_hosts=set()
         ) or not next_url.startswith(_ADMIN_ROOT):
             next_url = _ADMIN_ROOT
 

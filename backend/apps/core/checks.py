@@ -874,3 +874,32 @@ def check_site_origin(
             )
         ]
     return []
+
+
+_RAILWAY_ORIGIN_SUFFIX = ".up.railway.app"
+
+
+@register(Tags.security, deploy=True)
+def check_allowed_hosts_origin(
+    app_configs: Sequence[AppConfig] | None,
+    **kwargs: Any,  # noqa: ANN401
+) -> list[CheckMessage]:
+    """Block deploy when ALLOWED_HOSTS omits the Railway origin hostname."""
+    _ = app_configs, kwargs
+    if settings.DEBUG:
+        return []
+    if any(h.endswith(_RAILWAY_ORIGIN_SUFFIX) for h in settings.ALLOWED_HOSTS):
+        return []
+    return [
+        Error(
+            "ALLOWED_HOSTS contains no *.up.railway.app host. The CDN sends "
+            "the Railway origin hostname, so Django would answer 400 to "
+            "every request.",
+            hint=(
+                "Add the service's origin hostname (for production, "
+                "flipcommons-production.up.railway.app) to ALLOWED_HOSTS on "
+                "the Railway service."
+            ),
+            id="core.E307",
+        )
+    ]

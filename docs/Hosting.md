@@ -108,9 +108,10 @@ Bunny fronts `flipcommons.org` for anonymous SSR HTML caching. Configured to:
 - respect origin `Cache-Control`
 - include the URL query string in the cache key
 - bypass `/api/` and `/djadmin/`
-- bypass **HTML** for any request carrying a `sessionid` **cookie** or a `mode=kiosk` **cookie**, while still caching those visitors' asset requests
+- bypass everything but static assets, such as HTML, for any authenticated request (carrying a `sessionid` **cookie**) or a request from a museum kiosk (`mode=kiosk` **cookie**), while still caching those clients' asset requests
 - serve stale content while revalidating and while the origin is offline
 - cache error responses for 5 seconds
+- retry an origin request once, but only when the connection never opened
 
 The bypasses are three separate Edge Rules. "Bypass API" keys on URL alone; "Bypass signed-in HTML" and "Bypass kiosk HTML" each pair their cookie trigger with a **Match none** URL trigger listing `*/_app/*`, `*/fonts/*`, `*/images/*`, `*/apple-touch-icon.png` and `*/site.webmanifest`. The two cookie triggers are different trigger types — Request Header versus Cookie Value — so they cannot share one rule. The Match none carve-out is the whole point: a single cookie-keyed bypass sends a signed-in visitor's roughly 100 asset requests to the origin on every page load. Probe both directions after touching these rules:
 
@@ -132,9 +133,11 @@ Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed res
 
 **Cache Error Responses** is on. Bunny holds 4xx and 5xx for a fixed 5 seconds, not configurable, which absorbs probe bursts for nonexistent asset hashes and collapses Caddy-level 502s while Node restarts.
 
+**SafeHop** is on with one retry, no delay, and **Connection Timeout** as the only retry reason. A connection that never opened never reached the container, so re-sending is safe for every method, and a container restart is exactly the failure it covers. **Response Timeout** and **Origin 5xx** stay off: this zone passes bypassed `/api/` POSTs to Django, Bunny documents no exemption for non-idempotent methods, and a write that reached Django and then exceeded the 60-second response timeout would be submitted twice. Media upload is the one request that can plausibly run that long, and a duplicated upload is worse than a 502.
+
 **Request Coalescing is deliberately off.** Bunny coalesces any uncached request, and bypassed signed-in `__data.json` responses are per-user, so two contributors at one PoP could be served each other's payload.
 
-Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. So every response leaving the container carries an explicit header. The SvelteKit hook ([cache-control.server.ts](../frontend/src/lib/cache-control.server.ts)) stamps everything it sees, with `private, no-store` for anything that is not a successful page or data request; [Caddyfile](../Caddyfile) is the backstop for what the hook never sees, because it is the only layer that sees every response:
+Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. So every response leaving the container carries an explicit header. The SvelteKit hook ([cache-control.server.ts](../frontend/src/lib/cache-control.server.ts)) stamps everything it sees, with `private, no-store` for anything that is not a successful page or a permanent redirect; [Caddyfile](../Caddyfile) is the backstop for what the hook never sees, because it is the only layer that sees every response:
 
 | Path                                                                  | `Cache-Control`                        | Why                                                                                                       |
 | --------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -176,7 +179,13 @@ Log analytics count a static miss once, at the apex; see [production_logs/README
 
 #### Media edge cache
 
-`media.flipcommons.org` fronts the iDrive e2 media bucket. Respects origin cache headers.
+`media.flipcommons.org` fronts the iDrive e2 media bucket. Respects origin cache headers. POST is blocked at the edge, so every request that reaches the bucket is a GET.
+
+Resilience settings mirror the apex, with one difference that follows from the zone being read-only:
+
+- **Stale Cache** — While Updating and While Origin Offline both on, so an expired image is served immediately and refreshed behind the visitor, and an iDrive outage keeps already-cached images on screen instead of surfacing as broken images.
+- **Cache Error Responses** on — a burst of requests for a missing object becomes one bucket request per 5 seconds instead of one per request.
+- **SafeHop** on with one retry, no delay, and all three reasons ticked: Connection Timeout, Response Timeout and Origin 5xx. The apex keeps the last two off because it carries writes; this zone cannot, so retrying is always safe.
 
 #### Rate limiting
 
@@ -368,7 +377,7 @@ Nothing in the chain fails loudly: if a hop stops carrying the visitor's address
 Required config for this path:
 
 - **Bunny:** the two request-header Edge Rules above; **Forward Host Header ON**, so Bunny forwards the visitor's `Host` and requests reach Railway as `flipcommons.org`. It requires `flipcommons.org` to stay a registered Railway custom domain; see [DNS Records](#dns-records).
-- **Railway:** `ORIGIN_SHARED_SECRET` set (matching the `X-Origin-Auth` rule); `flipcommons.org` in `ALLOWED_HOSTS`; `RATE_LIMIT_TRUST_PROXY_HEADERS=true`.
+- **Railway:** `ORIGIN_SHARED_SECRET` set (matching the `X-Origin-Auth` rule); `RATE_LIMIT_TRUST_PROXY_HEADERS=true`.
 
 `RATE_LIMIT_TRUST_PROXY_HEADERS` stays the master switch here too: if the secret or the Edge Rules drift, Caddy stops promoting `X-Client-IP` and the system degrades to the one-shared-bucket failure above (now keyed on Bunny's IP).
 
@@ -419,7 +428,7 @@ Set these in the Railway web service dashboard. `DATABASE_URL`, `PORT`, and the 
 
 - `SECRET_KEY` — random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"`
 - `DEBUG` — `false`
-- `ALLOWED_HOSTS` — comma-separated public hosts, e.g. `flipcommons.org,www.flipcommons.org`. The Railway origin host does not belong here: `settings.py` appends `RAILWAY_PUBLIC_DOMAIN` on its own, which covers the residual paths that still reach Django wearing it.
+- `ALLOWED_HOSTS` — comma-separated hosts, e.g. `flipcommons.org,flipcommons-production.up.railway.app`. The deploy is refused if the Railway origin host is missing.
 - `CSRF_TRUSTED_ORIGINS` — full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`.
 - `SITE_ORIGIN` — public origin, no trailing slash, e.g. `https://flipcommons.org`. Baked into prerendered canonical URLs and OG tags; consumed by `/sitemap.xml` and `robots.txt`. [`scripts/start-production`](../scripts/start-production) also passes it to the Node SSR process as `ORIGIN` (without which adapter-node resolves `page.url` from the `Host` header, which varies by caller — Railway's health check, direct hits on the Railway origin hostname — and is absent entirely when prerendering) and mirrors it as `PUBLIC_SITE_ORIGIN` so client-side code can keep SEO URLs on the public origin after hydration. Do not set `ORIGIN` or `PUBLIC_SITE_ORIGIN` in the dashboard — they are derived, and a separately-set value could drift.
 - `INTERNAL_API_BASE_URL` — base URL SvelteKit SSR uses to reach Django. Do **not** set this in the dashboard: [`scripts/start-production`](../scripts/start-production) derives it from the runtime-injected `PORT` so SSR goes through Caddy rather than Gunicorn (see [Process model](#process-model)). The entrypoint exports it unconditionally, so a dashboard value is silently ignored rather than honoured — set one and the dashboard and the running process disagree.
@@ -478,13 +487,13 @@ Every item below starts with reading production logs. [production_logs/](../prod
 A probe that fails with **400** rather than a connection error means it reached Django with an external `Host` header and hit `ALLOWED_HOSTS`. That points at `healthcheckPath` having been changed to a Django route — put it back to `/__health`; see [railway.toml](../railway.toml).
 
 **Every request through Bunny returns 403 with `Cache-Control: no-store`**:
-The [origin gate](#origin-gate) is rejecting Bunny's traffic, which means `ORIGIN_SHARED_SECRET` on the Railway service and the value the apex zone's `X-Origin-Auth` Edge Rule sends have drifted apart, or the Edge Rule is gone. The Sentry uptime monitor on `/__health` goes red for the same reason, while Railway's own health check stays green because its probe is exempt. Fix whichever side drifted; the 403s carry `no-store`, so nothing needs purging.
+The [origin gate](#origin-gate) is rejecting Bunny's traffic, which means `ORIGIN_SHARED_SECRET` on the Railway service and the value the apex zone's `X-Origin-Auth` Edge Rule sends have drifted apart. The Sentry uptime monitor on `/__health` goes red for the same reason, while Railway's own health check stays green because its probe is exempt. Fix whichever side drifted; the 403s carry `no-store`, so nothing needs purging.
 
 **Apex returns `ERR_TOO_MANY_REDIRECTS`**:
-Bunny is forwarding the Railway origin hostname again and its requests are matching `@direct_origin`, which sends them back to a host Bunny fronts. Check **Forward Host Header** on the apex pull zone (must be ON) and the `X-Origin-Auth` Edge Rule (whose presence is what excludes Bunny's traffic when the toggle is wrong). Fix whichever drifted, then [purge](https://docs.bunny.net/cdn/purge-cache) the affected URLs — the zone has Follow Redirects disabled, so cached 301s survive the repair.
+The apex zone's `X-Origin-Auth` Edge Rule is gone. Bunny's pulls wear the Railway origin hostname, so the header's presence is the only thing keeping them out of `@direct_origin`, which sends them back to a host Bunny fronts. Restore the Edge Rule. The 301 carries `no-store`, so nothing was cached and the repair takes effect immediately.
 
 **Every request returns Railway's `{"message":"Application not found"}`**:
-The `flipcommons.org` Railway custom domain has been removed or de-validated. Bunny forwards `Host: flipcommons.org` and Railway routes by that header, so the domain must stay registered — check `railway domain` for an `ACTIVE` row. Re-adding it means completing the ownership challenge Railway issues, a temporary TXT record that can be removed once validation completes; see [DNS Records](#dns-records).
+Bunny is sending a hostname Railway does not route. Railway answers this for any `Host` but its own, and the apex zone should be sending exactly that — so either **Forward Host Header** was turned back on, or the zone's origin URL was edited. Compare the zone's origin against the service's `*.up.railway.app` hostname and turn the toggle back off.
 
 **"Frontend build directory not found" error**:
 The Docker build's Node stage failed to produce the SvelteKit SSR runtime.

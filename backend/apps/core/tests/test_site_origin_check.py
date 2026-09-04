@@ -84,3 +84,16 @@ class TestSiteOriginCheck:
         settings.DEBUG = False
         monkeypatch.setenv("SITE_ORIGIN", "https://flipcommons.org")
         assert check_site_origin(app_configs=None, databases=["default"]) == []
+
+    def test_reads_the_environment_not_the_setting(
+        self, settings: SettingsWrapper, monkeypatch: MonkeyPatch
+    ) -> None:
+        # settings.SITE_ORIGIN carries a localhost fallback, so it is never
+        # empty. Reading it here would make core.E303 unreachable and let an
+        # unset variable through to production.
+        settings.DEBUG = False
+        settings.SITE_ORIGIN = "https://flipcommons.org"
+        monkeypatch.delenv("SITE_ORIGIN", raising=False)
+        messages = check_site_origin(app_configs=None)
+        assert len(messages) == 1
+        assert messages[0].id == "core.E303"

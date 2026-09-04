@@ -40,15 +40,10 @@ for _host in ("localhost", "127.0.0.1"):
     if _host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_host)
 
-# Railway injects RAILWAY_PUBLIC_DOMAIN as the service's `*.up.railway.app`
-# host. Allow it as a safety net: Bunny forwards the visitor's Host, and Caddy
-# redirects direct hits on this hostname before they reach Django, so nothing
-# should arrive here wearing it — but a Caddy misconfiguration or a change to
-# the Bunny pull zone would otherwise turn into a 400 on every request rather
-# than something diagnosable. Unset off-Railway, so dev/CI are unaffected.
-_railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
-if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(_railway_domain)
+# ── Public origin ─────────────────────────────────────────────────
+# The CDN sends its own origin hostname, so the request Host is not the
+# origin the visitor is on and cannot build a user-facing URL.
+SITE_ORIGIN = os.environ.get("SITE_ORIGIN", "http://localhost:5173").strip()
 
 INSTALLED_APPS = [
     "apps.core.admin_apps.FlipAdminConfig",  # replaces "django.contrib.admin" — disables admin password login

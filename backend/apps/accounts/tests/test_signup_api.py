@@ -282,11 +282,12 @@ class TestSignupSubmit:
 
 @pytest.mark.django_db
 class TestSignupCancel:
-    def _cancel(self, client):
+    def _cancel(self, client, **extra):
         client.cookies["csrftoken"] = "x" * 32
         return client.post(
             "/api/auth/signup/cancel/",
             HTTP_X_CSRFTOKEN="x" * 32,
+            **extra,
         )
 
     def test_clears_pending_and_returns_local_url_without_sid(self, client, settings):
@@ -310,6 +311,7 @@ class TestSignupCancel:
         settings.WORKOS_API_KEY = "sk_test"  # pragma: allowlist secret
         settings.WORKOS_CLIENT_ID = "client_x"
         settings.SIGNUP_CANCEL_RETURN_URL = "/"
+        settings.SITE_ORIGIN = "https://flipcommons.org"
         _stash_pending(client, workos_session_id="session_xyz")
 
         captured: dict[str, object] = {}
@@ -332,7 +334,59 @@ class TestSignupCancel:
         assert captured["session_id"] == "session_xyz"
         # The setting accepts a relative path; we expand to absolute since
         # WorkOS rejects bare paths.
-        assert str(captured["return_to"]).endswith("/")
+        assert captured["return_to"] == "https://flipcommons.org/"
+
+    def test_logout_return_to_ignores_the_request_host(
+        self, client, settings, monkeypatch
+    ):
+        """The CDN sends its origin hostname; the return URL must not follow it."""
+        settings.WORKOS_API_KEY = "sk_test"  # pragma: allowlist secret
+        settings.WORKOS_CLIENT_ID = "client_x"
+        settings.SIGNUP_CANCEL_RETURN_URL = "/"
+        settings.SITE_ORIGIN = "https://flipcommons.org"
+        settings.ALLOWED_HOSTS = [*settings.ALLOWED_HOSTS, "cdn-origin.example"]
+        _stash_pending(client, workos_session_id="session_xyz")
+
+        captured: dict[str, object] = {}
+
+        class _FakeUserManagement:
+            def get_logout_url(self, *, session_id, return_to):
+                captured["return_to"] = return_to
+                return "https://auth.workos.com/sessions/logout?token=fake"
+
+        class _FakeClient:
+            user_management = _FakeUserManagement()
+
+        monkeypatch.setattr(
+            "apps.accounts.api.signup.get_workos_client", lambda: _FakeClient()
+        )
+        resp = self._cancel(client, HTTP_HOST="cdn-origin.example")
+        assert resp.status_code == 200
+        assert captured["return_to"] == "https://flipcommons.org/"
+
+    def test_absolute_return_url_passes_through(self, client, settings, monkeypatch):
+        settings.WORKOS_API_KEY = "sk_test"  # pragma: allowlist secret
+        settings.WORKOS_CLIENT_ID = "client_x"
+        settings.SIGNUP_CANCEL_RETURN_URL = "https://elsewhere.test/bye"
+        settings.SITE_ORIGIN = "https://flipcommons.org"
+        _stash_pending(client, workos_session_id="session_xyz")
+
+        captured: dict[str, object] = {}
+
+        class _FakeUserManagement:
+            def get_logout_url(self, *, session_id, return_to):
+                captured["return_to"] = return_to
+                return "https://auth.workos.com/sessions/logout?token=fake"
+
+        class _FakeClient:
+            user_management = _FakeUserManagement()
+
+        monkeypatch.setattr(
+            "apps.accounts.api.signup.get_workos_client", lambda: _FakeClient()
+        )
+        resp = self._cancel(client)
+        assert resp.status_code == 200
+        assert captured["return_to"] == "https://elsewhere.test/bye"
 
     def test_workos_logout_failure_falls_back_to_local_return(
         self, client, settings, monkeypatch
