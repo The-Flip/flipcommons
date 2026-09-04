@@ -379,35 +379,13 @@ Required config for this path:
 
 ### HSTS
 
-HTTP Strict Transport Security is sticky: once a browser sees `Strict-Transport-Security: max-age=N`, it refuses plain HTTP to that host for `N` seconds — even if the header later disappears or shortens. A wrong `max-age` locks users out for the duration, so we ratchet it up deliberately.
+The site has enabled HSTS (HTTP Strict Transport Security). It forces web browsers to communicate with the site using only HTTPS.
 
-#### Emitted by Caddy, not Django
+HSTS is sticky: once a browser sees `Strict-Transport-Security: max-age=N`, it refuses plain HTTP to that host for `N` seconds, even if the header later shortens or disappears. Shortening it therefore changes nothing for anyone already carrying the longer value, which is why [`backend/tests/test_caddyfile_hsts.py`](../backend/tests/test_caddyfile_hsts.py) pins the exact value rather than merely asserting the header is present.
 
-The header lives in the `header { ... }` block in [`Caddyfile`](../Caddyfile), not in Django settings.
+Caddy emits `max-age=31536000` for the apex, from the `header { ... }` block in [`Caddyfile`](../Caddyfile). Django can't usefully: it sees plaintext loopback HTTP, so `SecurityMiddleware` adds HSTS only when `request.is_secure()` is true, and forcing that via `SECURE_SSL_REDIRECT` would loop on the internal callers — SSR, health checks — that legitimately arrive over loopback. `security.W004`, `W005` and `W021` are silenced in `config/settings.py` for that reason: the absent deploy warnings are the policy working, not a gap to close.
 
-Django can't emit it usefully in this topology: it sees plaintext loopback HTTP, so `SecurityMiddleware` only adds HSTS when `request.is_secure()` returns `True`, which it doesn't here. Bridging that gap would require setting `SECURE_PROXY_SSL_HEADER` — but enabling that without `SECURE_SSL_REDIRECT` is a footgun, and turning on `SECURE_SSL_REDIRECT` would loop on internal callers (SSR, health checks) that legitimately reach Django over plain loopback HTTP. Caddy fronts the HTTPS edge and has no such gate, so it's the right place.
-
-The Django deploy warnings `security.W004`, `W005` and `W021` are silenced via `SILENCED_SYSTEM_CHECKS` in `config/settings.py` because Caddy owns this policy. A pytest test (`backend/tests/test_caddyfile_hsts.py`) guards against accidental deletion or weakening of the directive.
-
-#### Apex policy only — subdomains opt in individually
-
-`includeSubDomains` is intentionally **not** set. The apex policy covers `flipcommons.org` itself; each subdomain owns its own HSTS via its own server. This preserves the option of adding a future subdomain (a SaaS-hosted status page, a LAN-local device, anything we can't foresee) that's HTTPS-capable but for whatever reason can't or shouldn't emit HSTS on day 1.
-
-In practice, modern providers cover their own subdomains: `media.flipcommons.org` already gets `Strict-Transport-Security: max-age=31536000; includeSubDomains` from iDrive (through Bunny), and any future SaaS-hosted subdomain will do the same. So the cost of omitting `includeSubDomains` is narrow — it only matters for an HTTPS-capable subdomain that emits no HSTS of its own.
-
-#### Rollout sequence
-
-Three steps, not four — the conventional 1-week intermediate buys ceremony, not signal:
-
-1. **`max-age=60`** — header-emission check. Too short to be a soak; just confirms the header is emitted (`curl -sI https://flipcommons.org | grep -i strict-transport`). Only the apex: `www` is 301'd by an Edge Rule at the CDN, so its response never comes from the origin and carries no origin headers.
-2. **`max-age=86400`** (1 day) — current. The real soak: a day of sticky HSTS under real traffic. Anything that breaks (an HTTP-only apex resource, a redirect loop) surfaces here, with lockout bounded at 24h.
-3. **`max-age=31536000`** (1 year) — destination. Edit the `Strict-Transport-Security` line in `Caddyfile`, commit, deploy.
-
-Verify after each step: response includes `Strict-Transport-Security: max-age=N` (no `includeSubDomains`, by design).
-
-#### Preload list — intentionally never enabled
-
-Submission to [hstspreload.org](https://hstspreload.org/) is irreversible regardless of `max-age` (browsers ship the domain hardcoded; removal takes months) and requires `includeSubDomains`, which we've ruled out for the same flexibility reason above. The two are inseparable: if we're not committing to "every subdomain HTTPS-only forever," preload is unreachable.
+`includeSubDomains` is off so each subdomain owns its own HSTS, preserving room for a future one that is HTTPS-capable but can't emit the header on day 1. Preload is off for a harder reason: submission to [hstspreload.org](https://hstspreload.org/) is irreversible for months regardless of `max-age`, and requires `includeSubDomains` besides.
 
 ## Configuration
 
