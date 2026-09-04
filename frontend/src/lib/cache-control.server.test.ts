@@ -71,23 +71,6 @@ describe('cacheControlHandle', () => {
     expect(res.headers.get('Cache-Control')).toBe(ANON);
   });
 
-  it('stamps anonymous __data.json (JSON content-type) — proves pathname detection', async () => {
-    const res = await runCacheControl({
-      pathname: '/titles/__data.json',
-      contentType: 'application/json',
-    });
-    expect(res.headers.get('Cache-Control')).toBe(ANON);
-  });
-
-  it('stamps a sessionid __data.json request as private, no-cache', async () => {
-    const res = await runCacheControl({
-      pathname: '/titles/__data.json',
-      contentType: 'application/json',
-      cookies: { sessionid: 'abc' },
-    });
-    expect(res.headers.get('Cache-Control')).toBe(AUTHED);
-  });
-
   it('preserves a Cache-Control the response already set (no clobber)', async () => {
     const res = await runCacheControl({ presetCacheControl: 'public, max-age=300' });
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=300');
@@ -99,6 +82,17 @@ describe('cacheControlHandle', () => {
 
   it('stamps non-GET requests (form-action POSTs) private, no-store', async () => {
     const res = await runCacheControl({ method: 'POST' });
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  it('never edge-caches a __data.json response', async () => {
+    // SvelteKit stamps these itself, so the hook only sees one if that stops.
+    // It must still not be shared-cached: an auth-gate bounce is a 200
+    // carrying a redirect payload, indistinguishable here from a page.
+    const res = await runCacheControl({
+      pathname: '/titles/__data.json',
+      contentType: 'application/json',
+    });
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
@@ -127,18 +121,6 @@ describe('cacheControlHandle', () => {
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
-  it('stamps a 3xx __data.json redirect (auth-gate bounce) private, no-store', async () => {
-    // requireCapability() throws redirect on an anonymous SPA nav to an
-    // auth-gated route; stamping it `public` would replay the bounce from
-    // browser cache after sign-in. The pathname branch must not catch it.
-    const res = await runCacheControl({
-      status: 302,
-      pathname: '/admin/__data.json',
-      contentType: 'application/json',
-    });
-    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
-  });
-
   it('never upgrades an error to the anonymous public directive', async () => {
     // The cookie branches apply only to successful pages: an anonymous 500
     // must not be shared-cached even though the request carries no cookie.
@@ -161,15 +143,6 @@ describe('cacheControlHandle', () => {
     // carries Set-Cookie, it must never be shared-cached as `public` — that
     // would replay one visitor's session/CSRF cookie to everyone.
     const res = await runCacheControl({ setCookie: 'sessionid=leak; Path=/' });
-    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
-  });
-
-  it('forces private, no-store on a cookie-setting __data.json response', async () => {
-    const res = await runCacheControl({
-      pathname: '/titles/__data.json',
-      contentType: 'application/json',
-      setCookie: 'csrftoken=leak; Path=/',
-    });
     expect(res.headers.get('Cache-Control')).toBe('private, no-store');
   });
 

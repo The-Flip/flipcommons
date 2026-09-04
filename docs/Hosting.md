@@ -108,9 +108,10 @@ Bunny fronts `flipcommons.org` for anonymous SSR HTML caching. Configured to:
 - respect origin `Cache-Control`
 - include the URL query string in the cache key
 - bypass `/api/` and `/djadmin/`
-- bypass **HTML** for any request carrying a `sessionid` **cookie** or a `mode=kiosk` **cookie**, while still caching those visitors' asset requests
+- bypass everything but static assets, such as HTML, for any authenticated request (carrying a `sessionid` **cookie**) or a request from a museum kiosk (`mode=kiosk` **cookie**), while still caching those clients' asset requests
 - serve stale content while revalidating and while the origin is offline
 - cache error responses for 5 seconds
+- retry an origin request once, but only when the connection never opened
 
 The bypasses are three separate Edge Rules. "Bypass API" keys on URL alone; "Bypass signed-in HTML" and "Bypass kiosk HTML" each pair their cookie trigger with a **Match none** URL trigger listing `*/_app/*`, `*/fonts/*`, `*/images/*`, `*/apple-touch-icon.png` and `*/site.webmanifest`. The two cookie triggers are different trigger types — Request Header versus Cookie Value — so they cannot share one rule. The Match none carve-out is the whole point: a single cookie-keyed bypass sends a signed-in visitor's roughly 100 asset requests to the origin on every page load. Probe both directions after touching these rules:
 
@@ -132,9 +133,11 @@ Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed res
 
 **Cache Error Responses** is on. Bunny holds 4xx and 5xx for a fixed 5 seconds, not configurable, which absorbs probe bursts for nonexistent asset hashes and collapses Caddy-level 502s while Node restarts.
 
+**SafeHop** is on with one retry, no delay, and **Connection Timeout** as the only retry reason. A connection that never opened never reached the container, so re-sending is safe for every method, and a container restart is exactly the failure it covers. **Response Timeout** and **Origin 5xx** stay off: this zone passes bypassed `/api/` POSTs to Django, Bunny documents no exemption for non-idempotent methods, and a write that reached Django and then exceeded the 60-second response timeout would be submitted twice. Media upload is the one request that can plausibly run that long, and a duplicated upload is worse than a 502.
+
 **Request Coalescing is deliberately off.** Bunny coalesces any uncached request, and bypassed signed-in `__data.json` responses are per-user, so two contributors at one PoP could be served each other's payload.
 
-Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. So every response leaving the container carries an explicit header. The SvelteKit hook ([cache-control.server.ts](../frontend/src/lib/cache-control.server.ts)) stamps everything it sees, with `private, no-store` for anything that is not a successful page or data request; [Caddyfile](../Caddyfile) is the backstop for what the hook never sees, because it is the only layer that sees every response:
+Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. So every response leaving the container carries an explicit header. The SvelteKit hook ([cache-control.server.ts](../frontend/src/lib/cache-control.server.ts)) stamps everything it sees, with `private, no-store` for anything that is not a successful page; [Caddyfile](../Caddyfile) is the backstop for what the hook never sees, because it is the only layer that sees every response:
 
 | Path                                                                  | `Cache-Control`                        | Why                                                                                                       |
 | --------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -176,7 +179,13 @@ Log analytics count a static miss once, at the apex; see [production_logs/README
 
 #### Media edge cache
 
-`media.flipcommons.org` fronts the iDrive e2 media bucket. Respects origin cache headers.
+`media.flipcommons.org` fronts the iDrive e2 media bucket. Respects origin cache headers. POST is blocked at the edge, so every request that reaches the bucket is a GET.
+
+Resilience settings mirror the apex, with one difference that follows from the zone being read-only:
+
+- **Stale Cache** — While Updating and While Origin Offline both on, so an expired image is served immediately and refreshed behind the visitor, and an iDrive outage keeps already-cached images on screen instead of surfacing as broken images.
+- **Cache Error Responses** on — a burst of requests for a missing object becomes one bucket request per 5 seconds instead of one per request.
+- **SafeHop** on with one retry, no delay, and all three reasons ticked: Connection Timeout, Response Timeout and Origin 5xx. The apex keeps the last two off because it carries writes; this zone cannot, so retrying is always safe.
 
 #### Rate limiting
 
