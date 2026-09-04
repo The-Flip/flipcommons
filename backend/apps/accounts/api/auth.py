@@ -23,6 +23,7 @@ from apps.accounts.schemas import AuthStatusSchema
 from apps.accounts.workos_client import get_workos_client
 from apps.core.authz import compute_capability_map, policy_user
 from apps.core.authz.markers import public_mutation
+from apps.core.site_origin import site_host
 
 from .auth_codes import AuthErrorCode, LoginRefusedError
 from .workos_match import _try_match_existing
@@ -66,9 +67,9 @@ def auth_login(request: HttpRequest) -> HttpResponse:
         )
 
     next_url = request.GET.get("next", "/")
-    if not url_has_allowed_host_and_scheme(
-        next_url, allowed_hosts={request.get_host()}
-    ):
+    # Judged against SITE_ORIGIN, not the request host: the CDN sends its own
+    # origin hostname, which no visitor-supplied `next` would ever name.
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={site_host()}):
         next_url = "/"
 
     state = secrets.token_urlsafe(32)

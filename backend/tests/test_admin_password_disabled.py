@@ -54,6 +54,20 @@ def test_get_rejects_open_redirect_via_next():
     _assert_redirects_to_workos(response, "/djadmin/")
 
 
+def test_next_clamp_does_not_depend_on_request_host(settings):
+    """Characterization: the redirect is identical whatever Host the CDN sent.
+
+    The ``/djadmin/`` prefix clamp rejects every absolute URL on its own, so
+    the host allowlist cannot alter the outcome here.
+    """
+    settings.ALLOWED_HOSTS = [*settings.ALLOWED_HOSTS, "cdn-origin.example"]
+    response = Client().get(
+        "/djadmin/login/?next=https://cdn-origin.example/djadmin/accounts/user/",
+        HTTP_HOST="cdn-origin.example",
+    )
+    _assert_redirects_to_workos(response, "/djadmin/")
+
+
 def test_get_rejects_same_host_non_admin_next():
     """Same-host but non-admin ?next= is also clamped to the admin root.
 

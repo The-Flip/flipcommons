@@ -94,6 +94,35 @@ class TestAuthLogin:
         assert len(auth_keys) == 1
         assert session[auth_keys[0]] == "/"
 
+    def test_login_accepts_absolute_next_on_the_site_origin(self, client, settings):
+        settings.SITE_ORIGIN = "https://flipcommons.org"
+        with patch("apps.accounts.api.auth.get_workos_client") as mock:
+            mock.return_value.user_management.get_authorization_url.return_value = (
+                "https://auth.workos.com/authorize?state=abc"
+            )
+            client.get("/api/auth/login/?next=https://flipcommons.org/titles/foo")
+
+        session = client.session
+        auth_keys = [k for k in session.keys() if k.startswith("auth_")]
+        assert session[auth_keys[0]] == "https://flipcommons.org/titles/foo"
+
+    def test_login_rejects_absolute_next_on_the_request_host(self, client, settings):
+        """The request Host is the CDN's origin, not a destination we redirect to."""
+        settings.SITE_ORIGIN = "https://flipcommons.org"
+        settings.ALLOWED_HOSTS = [*settings.ALLOWED_HOSTS, "cdn-origin.example"]
+        with patch("apps.accounts.api.auth.get_workos_client") as mock:
+            mock.return_value.user_management.get_authorization_url.return_value = (
+                "https://auth.workos.com/authorize?state=abc"
+            )
+            client.get(
+                "/api/auth/login/?next=https://cdn-origin.example/titles/foo",
+                HTTP_HOST="cdn-origin.example",
+            )
+
+        session = client.session
+        auth_keys = [k for k in session.keys() if k.startswith("auth_")]
+        assert session[auth_keys[0]] == "/"
+
     def test_login_returns_503_when_not_configured(self, client, settings):
         settings.WORKOS_API_KEY = ""
         settings.WORKOS_CLIENT_ID = ""
