@@ -106,10 +106,18 @@ Bunny fronts `flipcommons.org` for anonymous SSR HTML caching. Configured to:
 - respect origin `Cache-Control`
 - include the URL query string in the cache key
 - bypass `/api/` and `/djadmin/`
-- bypass any request carrying a `sessionid` **cookie**
-- bypass any request carrying a `mode=kiosk` **cookie**
+- bypass **HTML** for any request carrying a `sessionid` **cookie** or a `mode=kiosk` **cookie**, while still caching those visitors' asset requests
+- serve stale content while revalidating and while the origin is offline
+- cache error responses for 5 seconds
 
-The last two bypasses match cookies, not query strings. `mode` is only ever a cookie — set by "Enter Kiosk Mode" and read server-side ([kiosk/config.ts](../frontend/src/lib/kiosk/config.ts)); nothing reads it from the URL. So `/?mode=kiosk` is an ordinary anonymous request and is cached as one, which is correct. Probe a bypass with the cookie, not the query string:
+The bypasses are three separate Edge Rules. "Bypass API" keys on URL alone; "Bypass signed-in HTML" and "Bypass kiosk HTML" each pair their cookie trigger with a **Match none** URL trigger listing `*/_app/*`, `*/fonts/*`, `*/images/*`, `*/apple-touch-icon.png` and `*/site.webmanifest`. The two cookie triggers are different trigger types — Request Header versus Cookie Value — so they cannot share one rule. The Match none carve-out is the whole point: a single cookie-keyed bypass sends a signed-in visitor's roughly 100 asset requests to the origin on every page load. Probe both directions after touching these rules:
+
+```bash
+curl -sSI -H 'Cookie: sessionid=x' https://flipcommons.org/_app/version.json | grep -i cdn-cache   # HIT or MISS, never BYPASS
+curl -sSI -H 'Cookie: sessionid=x' https://flipcommons.org/about | grep -i cdn-cache               # BYPASS
+```
+
+The cookie bypasses match cookies, not query strings. `mode` is only ever a cookie — set by "Enter Kiosk Mode" and read server-side ([kiosk/config.ts](../frontend/src/lib/kiosk/config.ts)); nothing reads it from the URL. So `/?mode=kiosk` is an ordinary anonymous request and is cached as one, which is correct. Probe a bypass with the cookie, not the query string:
 
 ```bash
 curl -sSI 'https://flipcommons.org/?mode=kiosk' | grep -i cdn-cache   # HIT — cookie-less, cached
@@ -118,6 +126,14 @@ curl -sSI -H 'Cookie: mode=kiosk' https://flipcommons.org/ | grep -i cdn-cache  
 
 Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed response, discarding the origin's `private, no-cache` / `private, no-store`. The `Cache-Control` bullet above applies to cached and MISS responses; bypassed ones are re-stamped by the edge.
 
+**Stale Cache** — both While Updating and While Origin Offline are on; neither exposes a duration. While Updating serves the expired copy and refreshes behind it, so an expiry never costs a visitor a full origin round trip. While Origin Offline keeps the last good copy on screen through a Railway restart. Bunny warns that While Updating will **not** refresh an object when the origin's fresh response is non-cacheable, so a URL whose policy changes to `no-store` goes on serving its stale copy until the original TTL runs out — any deploy that changes cache policy must purge.
+
+**Cache Error Responses** is on. Bunny holds 4xx and 5xx for a fixed 5 seconds, not configurable, which absorbs probe bursts for nonexistent asset hashes and collapses Caddy-level 502s while Node restarts.
+
+**Request Coalescing is deliberately off.** Bunny coalesces any uncached request, and bypassed signed-in `__data.json` responses are per-user, so two contributors at one PoP could be served each other's payload.
+
+**Origin Shield is off.** It would add a mid-tier cache so that a miss costs one origin pull rather than one per PoP, but it also adds a hop that can break Bunny's `%{User.IP}` derivation and silently collapse every visitor into one rate-limit bucket — see [Client IP trust](#client-ip-trust). Nothing in production echoes back what Caddy computed for `X-Real-IP`, so that regression cannot currently be observed; do not enable it without a way to check. The location is preset to Chicago (Bunny offers only Chicago or Paris on this zone) so enabling will not begin with a transatlantic pull to the Virginia origin.
+
 Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. SvelteKit leaves `+server.ts` endpoints unstamped, so [Caddyfile](../Caddyfile) sets `Cache-Control: no-store` on `/__health` — otherwise an edge PoP serves uptime probes a cached `ok` for weeks after the origin stops responding.
 
 **Changing a cache header is not retroactive.** Bunny consults the origin header only when it pulls, so a PoP holding an object keeps serving it for the remainder of the TTL it was cached under. After deploying a `Cache-Control` change, [purge](https://docs.bunny.net/cdn/purge-cache) the affected URL from the pull zone — otherwise the old policy survives up to its original expiry, unevenly across PoPs as eviction pressure varies. Confirm with `curl -sSI https://flipcommons.org/__health`: a `cdn-cache: HIT` still reporting the previous `Cache-Control` means the purge hasn't landed.
@@ -125,6 +141,13 @@ Because the zone respects origin `Cache-Control`, any response that reaches Bunn
 The origin-side cache contract is described in [Architecture.md](Architecture.md#edge-caching-of-ssr-html). The client-IP and origin-locking prerequisites for fronting the apex are under [Client IP trust](#client-ip-trust).
 
 The apex resolves to this pull zone through a Bunny [`PZ` record](#dns) rather than to Railway, but the domain stays registered on the Railway service so it still routes by `Host`.
+
+`www.flipcommons.org` is also registered as a hostname on this zone, with SSL not yet enabled, alongside an Edge Rule that 301s `*://www.flipcommons.org/*` to `https://flipcommons.org{{path}}` — `{{path}}` carries the leading slash and the query string. DNS still points `www` at Railway, so the rule is inert; it exists ahead of the DNS change because Bunny's cache key excludes the hostname, and without it a `www` request for an already-cached path would be served the apex page under the `www` host. Reach it before DNS moves by pinning the hostname to a Bunny edge address over plain HTTP:
+
+```bash
+IP=$(dig +short flipcommons.org A | head -1)
+curl -sSI --resolve "www.flipcommons.org:80:$IP" 'http://www.flipcommons.org/titles/funhouse?x=1'
+```
 
 #### Static edge cache
 
@@ -146,12 +169,25 @@ Log analytics count a static miss once, at the apex; see [production_logs/README
 
 Rate limiting is configured in the Bunny dashboard (not in code). The goal is to blunt badly behaved bots; `robots.txt` covers the polite ones.
 
-| Zone                    | Limit                          | Block |
-| ----------------------- | ------------------------------ | ----- |
-| `flipcommons.org`       | 100 requests / 10 seconds / IP | 60 s  |
-| `media.flipcommons.org` | 300 requests / 10 seconds / IP | 60 s  |
+| Zone                    | Rule      | Scope                                        | Limit                           | Block |
+| ----------------------- | --------- | -------------------------------------------- | ------------------------------- | ----- |
+| `flipcommons.org`       | `Default` | everything except immutable assets and fonts | 100 requests / 10 seconds / IP  | 60 s  |
+| `flipcommons.org`       | `Assets`  | `/_app/immutable/` and `/fonts/`             | 1000 requests / 10 seconds / IP | 60 s  |
+| `media.flipcommons.org` | —         | all                                          | 300 requests / 10 seconds / IP  | 60 s  |
 
-Rule shape on both: condition `Request URI` contains `/` (match-all), Counter Key = IP address, Response Action = `RateLimit`. Media's ceiling is higher because one gallery page legitimately fires dozens of image requests in a burst.
+Counter Key = IP address and Response Action = `RateLimit` on all of them. The apex pair are `REQUEST_URI` regex rules with the `LOWERCASE` transformation, written as exact complements — `Default` matches `^/(?!_app/immutable/|fonts/)` and `Assets` matches `^/(_app/immutable/|fonts/)` — so every path is counted by exactly one rule, with no gap and no double-counting.
+
+The split exists because a cold page load fires roughly 100 asset requests, which would trip a single 100/10s counter on real visitors rather than on bots. A cold load makes fewer than 20 immutable requests, so the page tier keeps its strength as a bot throttle, while 1000/10s still bounds asset abuse such as hash-guessing probes at about ten cold page loads per 10 seconds from one address.
+
+**Bunny allows only two rate-limit rules per zone.** A future path tier has to fold into one of these two regexes rather than becoming a third rule.
+
+Changing either regex is worth verifying from the edge logs rather than by a burst test, since a pattern the engine rejects fails silently — the rule stops matching anything and the zone quietly loses its limit. Both directions are visible in one query: blocks should continue on the paths a rule still covers and stop on the paths it now excludes.
+
+```bash
+production_logs/query "SELECT ts::DATE AS day, CASE WHEN path LIKE '/_app/immutable/%' THEN 'immutable' WHEN path LIKE '/fonts/%' THEN 'fonts' ELSE 'other' END AS bucket, count(*) FROM bunny_requests WHERE zone='apex' AND status=429 GROUP BY 1,2 ORDER BY 1,2"
+```
+
+Media's ceiling is higher because one gallery page legitimately fires dozens of image requests in a burst.
 
 This is edge abuse control, separate from the application rate limits under [Client IP trust](#client-ip-trust): Shield counts on Bunny's own view of the connecting IP, so it neither depends on nor affects the `X-Client-IP`/`X-Origin-Auth` chain.
 
