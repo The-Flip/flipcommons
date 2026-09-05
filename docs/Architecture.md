@@ -110,11 +110,15 @@ The layers of caching:
 
 ### Backend data cache
 
-([`catalog/cache.py`](../../../backend/apps/catalog/cache.py)) — pre-serialized JSON + ETag for `/all/` and the no-filter facets payloads, audience-scoped, invalidated on commit.
+([`catalog/cache.py`](../backend/apps/catalog/cache.py)) — pre-serialized JSON + ETag for the bulk export, the no-filter facets and the locations tree, audience-scoped, invalidated on commit.
 
 ### Edge HTML cache
 
 Bunny.net CDN pull zone for anonymous public SSR HTML.
+
+### Edge public API cache
+
+The same pull zone, for `/api/public/`; the policy is [`core/cache_control.py`](../backend/apps/core/cache_control.py).
 
 ### Static asset CDN
 

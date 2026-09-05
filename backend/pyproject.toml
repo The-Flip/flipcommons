@@ -718,7 +718,7 @@ containers = ["apps.core"]
 layers = [
     "api | management",
     "markdown",
-    "wikilinks | middleware",
+    "cache_control | wikilinks | middleware",
     "admin | api_helpers | authz | autocomplete | checks | entity_types | licensing | rate_limits | sitemap | soft_delete",
     "exceptions | models",
     "admin_apps | admin_site | pagination | response_cache | schemas | search | site_origin | types | validators",

@@ -15,6 +15,7 @@ from apps.catalog.cache import invalidate_response_cache
 from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.models import MachineModel
 from apps.citation.test_factories import make_citation_source
+from apps.core.cache_control import PUBLIC_API_EDGE_TTL
 from apps.provenance.test_factories import make_citation_instance, make_claim
 
 from .conftest import SAMPLE_IMAGES
@@ -167,6 +168,23 @@ class TestExportCache:
         after = client.get("/api/public/export/models/")
         row = next(r for r in after.json() if r["public_id"] == machine_model.slug)
         assert row["name"] == "Renamed Madness"
+
+    def test_anonymous_response_is_edge_cacheable(self, client, machine_model):
+        """On a fresh build and on an origin-cache hit alike."""
+        built = client.get("/api/public/export/models/")
+        hit = client.get("/api/public/export/models/")
+        for resp in (built, hit):
+            assert resp.status_code == 200
+            assert (
+                resp["Cache-Control"]
+                == f"public, max-age=0, s-maxage={PUBLIC_API_EDGE_TTL}"
+            )
+
+    def test_kiosk_response_is_never_shared_cached(self, client, machine_model):
+        """A kiosk dump carries show-all content."""
+        resp = client.get("/api/public/export/models/", HTTP_COOKIE="mode=kiosk")
+        assert resp.status_code == 200
+        assert resp["Cache-Control"] == "private, no-store"
 
 
 class TestExportPerf:

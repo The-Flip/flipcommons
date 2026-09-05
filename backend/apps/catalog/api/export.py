@@ -47,6 +47,7 @@ from pydantic import Field as PydanticField
 from pydantic import TypeAdapter, create_model
 
 from apps.catalog.models import CatalogModel, LicenseStatus, RelationshipType
+from apps.core.cache_control import stamp_public_api_cache_control
 from apps.core.entity_types import all_linkable_models, get_linkable_model
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
@@ -956,7 +957,7 @@ def _register(spec: ExportSpec) -> None:
         key = export_key(cache_base)
         cached = get_cached_response(key)
         if cached is not None:
-            return cached
+            return stamp_public_api_cache_control(cached)
         min_rank = get_minimum_display_rank()
         sfl_map = build_source_field_license_map()
         strip_rules = _link_strip_rules()  # once per build, honoring is_enabled toggles
@@ -975,7 +976,7 @@ def _register(spec: ExportSpec) -> None:
             )
             for obj in objs
         ]
-        return set_cached_response(key, adapter, rows)
+        return stamp_public_api_cache_control(set_cached_response(key, adapter, rows))
 
     label_plural = entity_type_plural.replace("-", " ").title()
     _view.__name__ = f"export_{entity_type_plural.replace('-', '_')}"

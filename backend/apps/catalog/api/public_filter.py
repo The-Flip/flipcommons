@@ -34,10 +34,11 @@ Strictness inverts the listing's twice here, both deliberately:
 from __future__ import annotations
 
 from django.conf import settings
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponse
 from ninja import Query, Router, Schema
 from pydantic import Field
 
+from apps.core.cache_control import stamp_public_api_cache_control
 from apps.core.exceptions import StructuredValidationError
 from apps.core.rate_limits import RateLimitSpec, check_and_record_ip
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
@@ -132,7 +133,9 @@ def _reject_unknown_edge_values(values: list[str]) -> None:
     ),
 )
 def filter_models(
-    request: HttpRequest, filters: Query[GameDimensionQuerySchema]
+    request: HttpRequest,
+    response: HttpResponse,
+    filters: Query[GameDimensionQuerySchema],
 ) -> FilterModelsSchema:
     check_and_record_ip(request, _filter_rate_limit_spec())
     _reject_unknown_params(request)
@@ -145,4 +148,5 @@ def filter_models(
         .order_by(id_field)
         .values_list(id_field, flat=True)
     )
+    stamp_public_api_cache_control(response)
     return FilterModelsSchema(count=len(public_ids), public_ids=public_ids)
