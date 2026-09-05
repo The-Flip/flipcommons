@@ -101,6 +101,17 @@ Bunny.net pull zones:
 
 All three zones require TLS 1.2 or higher and verify the origin certificate.
 
+Every zone setting below lives in the Bunny dashboard: unversioned, unreviewed, and invisible to the test suite, which terminates at or below Caddy. [`backend/edge_tests/`](../backend/edge_tests/) is a read-only suite that runs against the live site instead — never part of `make test`:
+
+```bash
+make test-edge                                     # against https://flipcommons.org
+EDGE_BASE_URL=https://example.org make test-edge   # somewhere else
+```
+
+Run it after deploying a change to the Caddyfile, [cache-control.server.ts](../frontend/src/lib/cache-control.server.ts) or Django's middleware stack, and after editing anything in the Bunny dashboard, which no deploy accompanies. It covers liveness, conditional GET, the signed-in and kiosk bypasses, the origin lockdown and the apex pull zone's identity. It only sees what came back to the client; the origin's side of the same request is in [production_logs/](../production_logs/README.md), where a run's rows are marked `is_synthetic`.
+
+The export API's conditional GET is red and stays red until [#781](https://github.com/The-Flip/flipcommons/issues/781) is fixed. Bunny answers conditional requests from its own copy and drops `If-None-Match` for anything it does not hold, so the export gets a `304` only once it is edge-cacheable — which needs both an exemption from the `/api/` bypass rule and a cacheable `Cache-Control` in place of Caddy's `private, no-store` default.
+
 #### Apex edge cache
 
 The Bunny.net apex pull zone, `flipcommons.org`, fronts the Railway web container at `flipcommons-production.up.railway.app`. Configuration:
@@ -113,7 +124,7 @@ The Bunny.net apex pull zone, `flipcommons.org`, fronts the Railway web containe
 - cache error responses for 5 seconds
 - retry an origin request once, but only when the connection never opened
 
-The bypasses are three separate Edge Rules. "Bypass API" keys on URL alone; "Bypass signed-in HTML" and "Bypass kiosk HTML" each pair their cookie trigger with a **Match none** URL trigger listing `*/_app/*`, `*/fonts/*`, `*/images/*`, `*/apple-touch-icon.png` and `*/site.webmanifest`. The two cookie triggers are different trigger types — Request Header versus Cookie Value — so they cannot share one rule. The Match none carve-out is the whole point: a single cookie-keyed bypass sends a signed-in visitor's roughly 100 asset requests to the origin on every page load. Probe both directions after touching these rules:
+The bypasses are three separate Edge Rules. "Bypass API" keys on URL alone; "Bypass signed-in HTML" and "Bypass kiosk HTML" each pair their cookie trigger with a **Match none** URL trigger listing `*/_app/*`, `*/fonts/*`, `*/images/*`, `*/apple-touch-icon.png` and `*/site.webmanifest`. The two cookie triggers are different trigger types — Request Header versus Cookie Value — so they cannot share one rule. The Match none carve-out is the whole point: a single cookie-keyed bypass sends a signed-in visitor's roughly 100 asset requests to the origin on every page load. `make test-edge` asserts both directions; by hand:
 
 ```bash
 curl -sSI -H 'Cookie: sessionid=x' https://flipcommons.org/_app/version.json | grep -i cdn-cache   # HIT or MISS, never BYPASS
@@ -126,6 +137,8 @@ The cookie bypasses match cookies, not query strings. `mode` is only ever a cook
 curl -sSI 'https://flipcommons.org/?mode=kiosk' | grep -i cdn-cache   # HIT — cookie-less, cached
 curl -sSI -H 'Cookie: mode=kiosk' https://flipcommons.org/ | grep -i cdn-cache   # BYPASS
 ```
+
+`make test-edge` asserts both. A kiosk render that gets cached is served to the public as unlicensed content, and nothing else in the system would notice.
 
 Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed response, discarding the origin's `private, no-cache` / `private, no-store`. The `Cache-Control` bullet above applies to cached and MISS responses; bypassed ones are re-stamped by the edge.
 
@@ -221,7 +234,7 @@ Operational caveats:
 
 The apex is a Bunny `PZ` (Pull Zone) record bound to the apex pull zone, not an `A`, `CNAME` or `ALIAS`. Bunny flattens it to `A`/`AAAA` inside its own network at query time, so the edge is chosen for the visitor's resolver and can never be a stale address.
 
-- **The record names a pull zone by id.** Pointing it at a new pull zone yields valid Bunny addresses that pass every DNS check while silently dropping the origin config including **Forward Host Header**, the cache bypasses, the certificate and the `X-Client-IP` / `X-Origin-Auth` Edge Rules that rate limiting depends on (see [Client IP trust](#client-ip-trust)). Verify with `curl -sSI https://flipcommons.org/__health`: `cdn-pullzone` must match the existing apex zone, and the certificate must be the pre-existing one rather than freshly issued.
+- **The record names a pull zone by id.** Pointing it at a new pull zone yields valid Bunny addresses that pass every DNS check while silently dropping the origin config including **Forward Host Header**, the cache bypasses, the certificate and the `X-Client-IP` / `X-Origin-Auth` Edge Rules that rate limiting depends on (see [Client IP trust](#client-ip-trust)). Verify with `curl -sSI https://flipcommons.org/__health`: `cdn-pullzone` must match the existing apex zone, and the certificate must be the pre-existing one rather than freshly issued. `make test-edge` asserts the `cdn-pullzone` half; the certificate still needs an eye.
 - **Bunny sets the TTL, not us.** The record's TTL field is not honored; Bunny serves its own short value. This costs nothing, because the flattened address is anycast — edge failover happens in BGP, not DNS.
 
 Bunny omits `PZ`, `RDR` and `SCR` records from its zone exports, so **a Bunny export is never a complete backup of this zone.**
@@ -363,7 +376,7 @@ The gate fails closed on purpose: the Caddyfile default for an unset variable is
 
 #### Verifying the chain
 
-Nothing in the chain fails loudly: if a hop stops carrying the visitor's address, every visitor shares one rate-limit bucket and no request looks wrong. `GET /api/edge/echo/` (staff-only, gated by `Activity.OBSERVABILITY_DEBUG`) returns what Django received — `x_real_ip`, `x_client_ip`, `x_forwarded_for`, whether `X-Origin-Auth` was present (never its value), `remote_addr` and `host`. Through Bunny, `x_real_ip` and `x_client_ip` must both be your own public address and `x_forwarded_for` must equal `x_real_ip`. Probe it before and after any change to the chain — a new cache tier, moving hosts, adding a CDN hop — and treat a Bunny edge address or a `100.64.0.x` address in `x_real_ip` as a regression to revert.
+Nothing in the chain fails loudly: if a hop stops carrying the visitor's address, every visitor shares one rate-limit bucket and no request looks wrong. `GET /api/edge/echo/` (staff-only, gated by `Activity.OBSERVABILITY_DEBUG`) returns what Django received — `x_real_ip`, `x_client_ip`, `x_forwarded_for`, whether `X-Origin-Auth` was present (never its value), `remote_addr` and `host`. Through Bunny, `x_real_ip` and `x_client_ip` must both be your own public address and `x_forwarded_for` must equal `x_real_ip`. Probe it before and after any change to the chain — a new cache tier, moving hosts, adding a CDN hop — and treat a Bunny edge address or a `100.64.0.x` address in `x_real_ip` as a regression to revert. `make test-edge` covers the gate's negative cases; the echo endpoint stays manual, since reading it needs a staff session.
 
 Required config for this path:
 

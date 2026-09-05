@@ -45,6 +45,14 @@ SELECT table_name AS rel, comment FROM duckdb_tables() WHERE internal = false
 UNION ALL SELECT view_name, comment FROM duckdb_views() WHERE internal = false;
 ```
 
+**This project's own probes are in these logs.** `make test-edge` sends real requests to the real site. `is_synthetic` marks those rows in `bunny_requests` and `railway_requests`, and `bunny_health`, `edge_health`, `railway_health`, `timeline` and `problems` leave them out. The base relations, `coverage` and `summary` keep every row, so filter yourself when reading one directly:
+
+```sql
+SELECT ... FROM bunny_requests WHERE NOT is_synthetic
+```
+
+A probe of your own is excluded the same way if its user-agent starts with `flipcommons-`.
+
 ## Acquire
 
 Every puller takes the same window: `--start <YYYY-MM-DD>` (required) through `--end <YYYY-MM-DD>` (default today), inclusive UTC days. Rows are written verbatim as the vendor hands them down, merged on row identity into one file per UTC day — so a re-pull only ever adds rows, and re-pulling mid-incident is always safe. Each dump directory carries a `manifest.json` recording per-file coverage and whether the file's day was over at pull time; a missing credential aborts before anything is fetched. `pull/all` preflights all three keys and runs the pullers in order of perishability.

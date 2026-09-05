@@ -153,7 +153,50 @@ case_zone_origin_typo() {
     "$(q "$w" 'SELECT cdn_requests FROM edge_health;')"
 }
 
-for c in baseline empty_sentry bunny_bad_json missing_level ssr_json zone_origin_typo; do
+# --- this project's own probes are marked, and kept out of the verdicts -------
+# Probe traffic lands in these logs looking exactly like a visitor's, and no live
+# dump can be relied on to contain a run. The rows below are the ones a naive
+# read gets wrong: a CDN BYPASS, a failed probe, and a direct-to-origin request
+# that reaches Railway without passing Bunny and so exists at one tier only.
+case_synthetic_ua() {
+  w=$1
+  b=$w/dumps/bunny/flipcommons-html.5969801.2026-08-20.ndjson
+  printf '{"bytesSent":100,"cacheStatus":"BYPASS","countryCode":"US","edgeLocation":"TX","host":"flipcommons.org","path":"/about","pullZoneId":5969801,"referer":"-","remoteIp":"1.2.3.0","requestId":"reqSYN","scheme":"https","statusCode":200,"timestamp":"2026-08-20T10:00:06.00+00:00","url":"https://flipcommons.org/about","userAgent":"flipcommons-edge-smoke/1.0"}\n' >> "$b"
+  r=$w/dumps/railway/http.2026-08-20.ndjson
+  printf '{"timestamp":"2026-08-20T10:00:06.00Z","method":"GET","path":"/","httpStatus":301,"totalDuration":2,"upstreamRqDuration":1,"host":"flipcommons-production.up.railway.app","srcIp":"1.2.3.4","clientUa":"flipcommons-edge-smoke/1.0","edgeRegion":"us-east4","rxBytes":10,"txBytes":10,"upstreamAddress":"","upstreamErrors":"","responseDetails":"","requestId":"rwSYN","deploymentId":"dddddddd-1111-2222-3333-444444444444","deploymentInstanceId":"eeeeeeee-1111-2222-3333-444444444444"}\n' >> "$r"
+  # A probe that fails: no probe produces a 5xx today, but one could.
+  printf '{"timestamp":"2026-08-20T10:00:07.00Z","method":"GET","path":"/","httpStatus":502,"totalDuration":2,"upstreamRqDuration":0,"host":"flipcommons-production.up.railway.app","srcIp":"1.2.3.4","clientUa":"flipcommons-edge-smoke/1.0","edgeRegion":"us-east4","rxBytes":10,"txBytes":10,"upstreamAddress":"","upstreamErrors":"","responseDetails":"","requestId":"rwSYN5","deploymentId":"dddddddd-1111-2222-3333-444444444444","deploymentInstanceId":"eeeeeeee-1111-2222-3333-444444444444"}\n' >> "$r"
+  expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
+  expect "no findings"    "0" "$(q "$w" 'SELECT count(*) FROM checks;')"
+  expect "cdn probe marked"     "1" \
+    "$(q "$w" 'SELECT count(*) FROM bunny_requests WHERE is_synthetic;')"
+  expect "origin probes marked" "2" \
+    "$(q "$w" 'SELECT count(*) FROM railway_requests WHERE is_synthetic;')"
+  # The baseline's 4 cdn requests must stay 4 with a probe in the file.
+  expect "bunny_health excludes the probe" "5" \
+    "$(q "$w" 'SELECT sum(requests) FROM bunny_health;')"
+  expect "edge_health excludes the probe" "4" \
+    "$(q "$w" 'SELECT cdn_requests FROM edge_health;')"
+  expect "railway_health excludes the probes" "true" \
+    "$(q "$w" 'SELECT sum(requests) = (SELECT count(*) FROM railway_requests WHERE NOT is_synthetic) FROM railway_health;')"
+  expect "a failed probe is not a problem" "0" \
+    "$(q "$w" "SELECT count(*) FROM problems WHERE tier = 'origin';")"
+  expect "nor on the timeline" "0" \
+    "$(q "$w" "SELECT count(*) FROM timeline WHERE ref IN ('reqSYN', 'rwSYN', 'rwSYN5');")"
+  # Usable in a WHERE with no NULL guard: an absent agent reads as real traffic.
+  expect "never null"           "0" \
+    "$(q "$w" 'SELECT count(*) FROM bunny_requests WHERE is_synthetic IS NULL;')"
+  # A prefix, not a list: the next probe must not need an edit here.
+  expect "matches on prefix, not an exact agent" "true" \
+    "$(q "$w" "SELECT is_synthetic_ua('flipcommons-something-new/9');")"
+  expect "and leaves real traffic alone" "false" \
+    "$(q "$w" "SELECT is_synthetic_ua('Mozilla/5.0 (Macintosh)');")"
+  # Marked, never dropped: the base relations declare one row per request.
+  expect "probe rows are kept, not filtered out" "6" \
+    "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
+}
+
+for c in baseline empty_sentry bunny_bad_json missing_level ssr_json zone_origin_typo synthetic_ua; do
   name=$(echo "$c" | tr '_' '-')
   skip_case "$name" && continue
   printf '  %s\n' "$name"
