@@ -97,9 +97,8 @@ Bunny.net pull zones:
 
 - [`flipcommons.org`](#apex-edge-cache), origin: Railway web container.
 - [`media.flipcommons.org`](#media-edge-cache), origin: [iDrive e2](#idrive-e2).
-- [`static.flipcommons.org`](#static-edge-cache), origin: Railway web via apex zone. DEPRECATED on Sept 4 2026, will be removed later.
 
-All three zones require TLS 1.2 or higher and verify the origin certificate.
+Both zones require TLS 1.2 or higher and verify the origin certificate.
 
 Every zone setting below lives in the Bunny dashboard: unversioned, unreviewed, and invisible to the test suite, which terminates at or below Caddy. [`backend/edge_tests/`](../backend/edge_tests/) is a read-only suite that runs against the live site instead — never part of `make test`:
 
@@ -161,27 +160,13 @@ Because the zone respects origin `Cache-Control`, any response that reaches Bunn
 | `/__health`                                                           | `no-store`                             | uptime probes must see the origin's current state                                                         |
 | the 502 Caddy writes itself when it cannot dial Node or Gunicorn      | `no-store`                             | written outside the deferred header wrappers, so `handle_errors` stamps it separately                     |
 
-Every matcher-bound `Cache-Control` line in the Caddyfile, the gate's 403 and the two redirects included, uses Caddy's deferred `>` form. Two reasons: Caddy's value then replaces a header the hook also set rather than stacking beside it, and a deferred op replaces a plain one that ran earlier, so a plain `no-store` on the 403 would be overwritten by the font policy on a font URL and a PoP that pulled it during a secret rotation would cache the 403 for a year. The cost is that a 404 on one of the unfingerprinted paths is cached for the path's TTL, which only bites during a rename. [test_caddyfile_cache_backstop.py](../backend/tests/test_caddyfile_cache_backstop.py) pins the default, the form and that every file under `frontend/static/` has a policy.
+Every matcher-bound `Cache-Control` line in the Caddyfile, the gate's 403 and the redirect included, uses Caddy's deferred `>` form. Two reasons: Caddy's value then replaces a header the hook also set rather than stacking beside it, and a deferred op replaces a plain one that ran earlier, so a plain `no-store` on the 403 would be overwritten by the font policy on a font URL and a PoP that pulled it during a secret rotation would cache the 403 for a year. The cost is that a 404 on one of the unfingerprinted paths is cached for the path's TTL, which only bites during a rename. [test_caddyfile_cache_backstop.py](../backend/tests/test_caddyfile_cache_backstop.py) pins the default, the form and that every file under `frontend/static/` has a policy.
 
 **Changing a cache header is not retroactive.** Bunny consults the origin header only when it pulls, so a PoP holding an object keeps serving it for the remainder of the TTL it was cached under. After deploying a `Cache-Control` change, [purge](https://docs.bunny.net/cdn/purge-cache) the affected URL from the pull zone — otherwise the old policy survives up to its original expiry, unevenly across PoPs as eviction pressure varies. Confirm with `curl -sSI https://flipcommons.org/__health`: a `cdn-cache: HIT` still reporting the previous `Cache-Control` means the purge hasn't landed.
 
 The origin-side cache contract is described in [Architecture.md](Architecture.md#edge-caching-of-ssr-html). The client-IP and origin-locking prerequisites for fronting the apex are under [Client IP trust](#client-ip-trust).
 
 **www redirect**: `www.flipcommons.org` is a hostname on this zone with an Edge Rule that 301s it to the apex, carrying the path and query string. The rule is what makes the hostname safe to serve: Bunny's cache key excludes the hostname, so without it a `www` request for an already-cached path would be answered with the apex page under the `www` host.
-
-#### Static edge cache
-
-This was DEPRECATED Sept 4 2026: assets are served via the apex now; nothing newly built references this zone.
-
-`static.flipcommons.org` serves the hashed `/_app/immutable/*` assets, `version.json`, the fonts and the favicons under `/images/favicon/` and `/apple-touch-icon.png` — to clients still holding HTML that points at it. Respects origin cache headers. Does not include the query string in the cache key.
-
-Its origin is `https://flipcommons.org`, the apex pull zone, not Railway (Forward Host Header off, Follow Redirects off, no Edge Rules). A static miss is fetched through the apex zone, so it reaches Railway as an apex request — carrying the apex zone's `X-Origin-Auth` header and, since the apex does not forward the visitor's `Host`, the Railway origin hostname. Consequences:
-
-- **Caddy cannot see the static hostname.** Static-origin traffic is indistinguishable from apex traffic at the origin, so anything static-specific has to be an Edge Rule on the static zone in the Bunny dashboard. A `host static.flipcommons.org` matcher in the [Caddyfile](../Caddyfile) would silently never match.
-- **Do not repoint static at Railway without first adding the `X-Origin-Auth` Edge Rule to it.** `@direct_origin` redirects every Railway-host request lacking that header, and with Follow Redirects off the static zone would cache the 301 for every asset, site-wide, until purged. What keeps static's traffic out of that matcher is the `X-Origin-Auth` header the apex stamps on the pull, not the hostname it arrives under.
-- **A purge of an asset path has to hit both zones, apex first.** The apex zone holds a copy of everything static has pulled, so purging static alone re-pulls the same bytes from apex. The hashed `/_app/immutable/*` assets and the fonts never need one, and `version.json` ages out of both zones within two minutes because its 60-second TTL applies at each hop. The unfingerprinted files (favicons, `apple-touch-icon.png`, the manifest) carry a one-day edge TTL from Caddy, so a replacement takes at most two days to age out through both hops without a purge.
-
-Log analytics count a static miss once, at the apex; see [production_logs/README.md](../production_logs/README.md).
 
 #### Media edge cache
 
@@ -239,18 +224,17 @@ Bunny omits `PZ`, `RDR` and `SCR` records from its zone exports, so **a Bunny ex
 
 #### DNS Records
 
-| Name                   |  Type | Purpose                                                          |
-| ---------------------- | ----: | ---------------------------------------------------------------- |
-| `flipcommons.org`      |    PZ | Site — apex pull zone                                            |
-| `flipcommons.org`      |    MX | Mail (`10 mx1`, `20 mx2` at `mailcast.io`)                       |
-| `flipcommons.org`      |   TXT | SPF, plus two Google Search Console proofs                       |
-| `_dmarc`               |   TXT | DMARC                                                            |
-| `mailcast._domainkey`  | CNAME | DKIM key 1                                                       |
-| `mailcast2._domainkey` | CNAME | DKIM key 2 — rotation pair with the above                        |
-| `www`                  | CNAME | Railway (`<token>.up.railway.app`); serves Caddy's apex redirect |
-| `static`               | CNAME | Static asset pull zone                                           |
-| `media`                | CNAME | Media pull zone (iDrive origin)                                  |
-| `auth`                 | CNAME | WorkOS custom auth domain — **login breaks if this is missed**   |
+| Name                   |  Type | Purpose                                                        |
+| ---------------------- | ----: | -------------------------------------------------------------- |
+| `flipcommons.org`      |    PZ | Site — apex pull zone                                          |
+| `flipcommons.org`      |    MX | Mail (`10 mx1`, `20 mx2` at `mailcast.io`)                     |
+| `flipcommons.org`      |   TXT | SPF, plus two Google Search Console proofs                     |
+| `_dmarc`               |   TXT | DMARC                                                          |
+| `mailcast._domainkey`  | CNAME | DKIM key 1                                                     |
+| `mailcast2._domainkey` | CNAME | DKIM key 2 — rotation pair with the above                      |
+| `www`                  | CNAME | Apex pull zone; redirected to the apex by an Edge Rule         |
+| `media`                | CNAME | Media pull zone (iDrive origin)                                |
+| `auth`                 | CNAME | WorkOS custom auth domain — **login breaks if this is missed** |
 
 No wildcard: unknown names must return `NXDOMAIN`. No DNSSEC and no CAA.
 
@@ -468,6 +452,9 @@ A probe that fails with **400** rather than a connection error means it reached 
 
 **Every request through Bunny returns 403 with `Cache-Control: no-store`**:
 The [origin gate](#origin-gate) is rejecting Bunny's traffic, which means `ORIGIN_SHARED_SECRET` on the Railway service and the value the apex zone's `X-Origin-Auth` Edge Rule sends have drifted apart. The Sentry uptime monitor on `/__health` goes red for the same reason, while Railway's own health check stays green because its probe is exempt. Fix whichever side drifted; the 403s carry `no-store`, so nothing needs purging.
+
+**`www.flipcommons.org` fails TLS**:
+Bunny terminates TLS for `www` on the apex zone, so a certificate error there is a zone problem and not a Railway one — `www` no longer reaches Railway at all. The hostname needs its own certificate on the apex zone (Bunny issues a free one, but only while DNS already points `www` at the zone) and Force SSL on, matching the other two hostnames.
 
 **Apex returns `ERR_TOO_MANY_REDIRECTS`**:
 The apex zone's `X-Origin-Auth` Edge Rule is gone. Bunny's pulls wear the Railway origin hostname, so the header's presence is the only thing keeping them out of `@direct_origin`, which sends them back to a host Bunny fronts. Restore the Edge Rule. The 301 carries `no-store`, so nothing was cached and the repair takes effect immediately.

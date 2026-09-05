@@ -62,10 +62,6 @@ export function formatActiveRange(
  * `image`, OG `og:image`, sitemap image entries) that need fully-qualified
  * URLs.
  *
- * `asset()` may return a relative path when `paths.assets` isn't configured
- * (the common dev/local case); the URL constructor resolves it against the
- * current page origin and passes through absolute CDN URLs unchanged.
- *
  * Do NOT use for backend-served images (entity `photo_url`, `primary_image`,
  * etc.) — those are already absolute URLs from the API and don't need
  * transformation.

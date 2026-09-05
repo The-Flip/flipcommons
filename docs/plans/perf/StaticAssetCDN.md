@@ -1,5 +1,7 @@
 # Serve Static Assets from CDN
 
+**Superseded 2026-09: assets are same-origin; see [Hosting.md](../../Hosting.md).** The body below is kept as history.
+
 Goal: serve SvelteKit's content-hashed, immutable build output (`/_app/immutable/*`) through a CDN so first-visit asset latency drops for users far from the Railway origin (Virginia).
 
 ## Status: ✅ Implemented

@@ -62,58 +62,22 @@ const sentry = parseSentryDsn(process.env.PUBLIC_SENTRY_DSN);
 const sentryCspReportUri = sentry?.reportUri ?? null;
 const sentryOrigin = sentry?.origin ?? null;
 
-// Production deploys serve SvelteKit-emitted asset URLs through a CDN
-// pull zone (currently a Bunny zone at https://static.flipcommons.org;
-// CDN_URL accepts any https origin to allow swapping providers or
-// testing against an alternate zone). When set, paths.assets rewrites
-// the references SvelteKit itself emits — entry script and modulepreload
-// tags, bundled CSS links, %sveltekit.assets% placeholders in app.html,
-// the /_app/version.json poll, and url() refs inside hashed CSS that
-// resolve relative to the CSS file's URL. Hand-written URLs in component
-// markup (e.g. `<img src="/images/social_default.png">`) are NOT rewritten — they
-// stay on origin unless threaded through the `assets` helper from
-// $app/paths. Local dev and CI leave CDN_URL unset; Vite's dev server
-// would otherwise emit CDN URLs for chunks that only exist locally. See
-// docs/plans/perf/StaticAssetCDN.md.
-//
-// Three valid states:
-//   - "https://host"  → CDN enabled
-//   - "DISABLED"      → CDN explicitly off (rollback path; also the
-//                       right value for Railway preview deploys that
-//                       inherit RAILWAY_GIT_COMMIT_SHA but shouldn't
-//                       route through production's CDN)
-//   - unset / empty   → CDN off locally; ERROR in Railway builds
-//                       (fail-closed per docs/Reviewing.md, so a
-//                       forgotten env var doesn't silently ship
-//                       same-origin assets)
-const rawCdn = process.env.CDN_URL?.trim() ?? '';
+// Railway stamps RAILWAY_GIT_COMMIT_SHA on real builds. The Dockerfile sets it
+// to the literal "dev" outside Railway, so truthiness alone would read a local
+// Docker build as a deploy; the SITE_ORIGIN guard below and kit.version share
+// this one signal so "is this Railway?" is defined in one place.
 const isRailwayBuild =
   !!process.env.RAILWAY_GIT_COMMIT_SHA && process.env.RAILWAY_GIT_COMMIT_SHA !== 'dev';
-if (isRailwayBuild && !rawCdn) {
-  throw new Error(
-    'CDN_URL is required in Railway builds. Set CDN_URL=https://<host> (production ' +
-      'is https://static.flipcommons.org) to enable the CDN, or CDN_URL=DISABLED to ' +
-      'explicitly opt out (rollback path, or preview deploys). See ' +
-      'docs/plans/perf/StaticAssetCDN.md.',
-  );
-}
-const cdnUrl = rawCdn && rawCdn !== 'DISABLED' ? rawCdn : null;
-if (cdnUrl && !/^https:\/\/[^/]+$/.test(cdnUrl)) {
-  throw new Error(
-    `CDN_URL must be an https:// origin with no path or trailing slash (e.g. ` +
-      `https://static.flipcommons.org). Got: ${JSON.stringify(cdnUrl)}`,
-  );
-}
 
 // SITE_ORIGIN feeds prerender.origin (baked into the canonical href and OG
 // tags on prerendered routes) and — once /sitemap.xml ships — the sitemap
 // URLs and the robots.txt `Sitemap:` line. The svelte.config.js fallback
 // below (`'http://localhost:5173'`) is fine for `make dev`, but a Railway
 // build with the var unset would silently bake localhost URLs into every
-// prerendered HTML file. Fail-closed in Railway builds (same shape as the
-// CDN_URL guard above); the matching deploy-time check
-// (`apps/core/checks.py:check_site_origin`, error ids core.E303 / E304)
-// catches the case where the var drifted between build and deploy.
+// prerendered HTML file. Fail-closed in Railway builds; the matching
+// deploy-time check (`apps/core/checks.py:check_site_origin`, error ids
+// core.E303 / E304) catches the case where the var drifted between build
+// and deploy.
 const rawSiteOrigin = process.env.SITE_ORIGIN?.trim() ?? '';
 if (isRailwayBuild && !rawSiteOrigin) {
   throw new Error(
@@ -122,8 +86,7 @@ if (isRailwayBuild && !rawSiteOrigin) {
       'OG tags, and the sitemap point at the real origin.',
   );
 }
-// Stricter than the CDN_URL regex above ([^/]+ would accept `?` and `#`),
-// because SITE_ORIGIN is string-concatenated with paths to build canonical
+// SITE_ORIGIN is string-concatenated with paths to build canonical
 // URLs and the sitemap Sitemap: line — a stray query or fragment in the
 // origin would produce broken URLs downstream. Stays in lockstep with the
 // deploy-time `_is_valid_site_origin()` check in apps/core/checks.py.
@@ -190,11 +153,6 @@ const appHtmlStyleHash = computeAppHtmlStyleHash();
 //     because the directive is ignored in report-only mode (per spec) and
 //     it's safe to enforce on day one — it just upgrades http:// sub-
 //     resource URLs to https://, which our code already uses everywhere.
-// CDN host appears in script-/style-/font-/connect-src because flipping
-// kit.paths.assets routes the chunk, CSS, @font-face url(), and the
-// hourly /_app/version.json fetch through the CDN origin. img-src is
-// already permissive enough (https:) to cover CDN-hosted images.
-const cdnEntry = cdnUrl ? [cdnUrl] : [];
 const cspReportOnlyDirectives = {
   'default-src': ['self'],
   // jsdelivr/@scalar: the /api-docs page loads the @scalar/api-reference
@@ -202,8 +160,8 @@ const cspReportOnlyDirectives = {
   // the host needs to be in connect-src too. Scoped to the @scalar org
   // path (trailing slash = prefix match) to cover versioned chunks while
   // excluding the rest of the CDN.
-  'script-src': ['self', ...cdnEntry, 'https://cdn.jsdelivr.net/npm/@scalar/'],
-  'style-src': ['self', appHtmlStyleHash, ...cdnEntry],
+  'script-src': ['self', 'https://cdn.jsdelivr.net/npm/@scalar/'],
+  'style-src': ['self', appHtmlStyleHash],
   // Svelte's `style:` directive (and any hand-written `style="..."`
   // attribute) compiles to an inline style attribute, which CSP gates
   // separately under style-src-attr. Without this entry the browser
@@ -218,10 +176,9 @@ const cspReportOnlyDirectives = {
   // fonts.scalar.com: the @scalar/api-reference widget on /api-docs loads
   // its own Inter webfonts (incl. inter-greek.woff2) from there, even
   // though we override --scalar-font. Allow it so the fetch isn't reported.
-  'font-src': ['self', ...cdnEntry, 'https://fonts.scalar.com'],
+  'font-src': ['self', 'https://fonts.scalar.com'],
   'connect-src': [
     'self',
-    ...cdnEntry,
     ...(sentryOrigin ? [sentryOrigin] : []),
     'https://us.i.posthog.com',
     'https://cdn.jsdelivr.net/npm/@scalar/',
@@ -253,11 +210,6 @@ const config = {
   preprocess: [injectCustomMedia, vitePreprocess()],
   kit: {
     adapter: adapter(),
-    // CDN-fronted asset URLs (production only). paths.relative MUST be
-    // false when paths.assets is set; SvelteKit then emits absolute URLs
-    // for every asset reference in SSR'd HTML. Dropped entirely when
-    // CDN_URL is unset so local dev keeps same-origin asset loading.
-    ...(cdnUrl ? { paths: { assets: cdnUrl, relative: false } } : {}),
     // Initial CSP rollout is report-only for the fetch directives:
     // browsers send violation reports to Sentry but nothing is blocked.
     // `upgrade-insecure-requests` is enforced from day one (see comment
@@ -304,11 +256,7 @@ const config = {
     version: {
       name: isRailwayBuild ? process.env.RAILWAY_GIT_COMMIT_SHA : 'dev',
       // Only poll when a real SHA is stamped (production builds). In dev the
-      // version stays 'dev' forever, so polling would just be noise. The
-      // Dockerfile sets RAILWAY_GIT_COMMIT_SHA to the literal "dev" outside
-      // Railway, so checking truthiness alone would (wrongly) enable polling
-      // for local Docker builds — share the isRailwayBuild signal with the
-      // CDN_URL guard above to keep "is this Railway?" defined in one place.
+      // version stays 'dev' forever, so polling would just be noise.
       pollInterval: isRailwayBuild ? 60 * 60 * 1000 : 0,
     },
     prerender: {

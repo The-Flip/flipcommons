@@ -55,15 +55,6 @@ ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN \
 ARG PUBLIC_SENTRY_DSN=""
 ENV PUBLIC_SENTRY_DSN=$PUBLIC_SENTRY_DSN
 
-# CDN_URL flips SvelteKit kit.paths.assets so chunks, CSS, fonts, and
-# /_app/version.json load from the Bunny pull zone at static.flipcommons.org.
-# Same Railway-build-arg rule applies as above: without an explicit ARG
-# declaration the variable never reaches `pnpm build` and the production
-# build silently falls back to same-origin assets. Empty (the default)
-# means same-origin, so local/CI Docker builds without the var still work.
-ARG CDN_URL=""
-ENV CDN_URL=$CDN_URL
-
 # SITE_ORIGIN is baked into prerendered canonical URLs and OG tags at
 # build time via svelte.config.js prerender.origin, and is read at
 # runtime by /sitemap.xml and /robots.txt. Same Railway-build-arg rule
