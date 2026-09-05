@@ -96,7 +96,7 @@ SELECT 'railway', 'http', 'origin', ts, 'error',
        method || ' ' || path || ' -> ' || status
          || coalesce(' (' || upstream_error || ')', ''),
        request_id, 'json', false
-FROM railway_requests WHERE is_server_error
+FROM railway_requests WHERE is_server_error AND NOT is_synthetic
 UNION ALL
 -- The same rule one tier out. This duplicates the branch above for any request
 -- that reached Railway, and earns its place because a failure the edge produced
@@ -105,7 +105,7 @@ UNION ALL
 SELECT 'bunny', zone, 'cdn', ts, 'error',
        path || ' -> ' || status || ' (' || cache_status || ')',
        request_id, 'json', false
-FROM bunny_requests WHERE is_server_error
+FROM bunny_requests WHERE is_server_error AND NOT is_synthetic
 UNION ALL
 SELECT 'sentry', 'errors', 'sentry', ts, level, coalesce(nullif(message, ''), title), issue_short_id, 'sentry', false
 FROM sentry_errors

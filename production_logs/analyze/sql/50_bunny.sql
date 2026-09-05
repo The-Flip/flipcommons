@@ -56,6 +56,7 @@ SELECT
   r.asn AS client_asn,
   r.asnOrganization AS client_asn_org,
   nullif(r.userAgent, '-') AS client_ua,
+  is_synthetic_ua(nullif(r.userAgent, '-')) AS is_synthetic,
   nullif(r.countryCode, '-') AS country,
   -- Bunny's PoP code (TX, UK, DE...): where the request was served. `country`
   -- is where the client was.
@@ -73,7 +74,7 @@ FROM read_json('../../dumps/bunny/*.ndjson',
     'asn': 'BIGINT', 'asnOrganization': 'VARCHAR'}) r
 LEFT JOIN bunny_pull_zones z ON z.pull_zone = r.pullZoneId;
 
-COMMENT ON TABLE bunny_requests IS 'GRAIN: one row per HTTP request at the Bunny CDN edge, merged by the puller on Bunny''s request id. The OUTERMOST tier -- the only relation that sees cache hits, which never reach Railway. Do NOT union with railway_requests: a cache miss appears in both. No method and no latency; Bunny logs neither.';
+COMMENT ON TABLE bunny_requests IS 'GRAIN: one row per HTTP request at the Bunny CDN edge, merged by the puller on Bunny''s request id. The OUTERMOST tier -- the only relation that sees cache hits, which never reach Railway. Do NOT union with railway_requests: a cache miss appears in both. No method and no latency; Bunny logs neither. `is_synthetic` marks this project''s own probes; bunny_health, edge_health and timeline exclude them, this relation does not.';
 
 -- Per-minute health at the CDN edge: what users got, including what the edge
 -- answered itself.
@@ -87,6 +88,7 @@ SELECT
   round(100.0 * count(*) FILTER (is_server_error) / count(*), 1) AS pct_5xx,
   round(100.0 * count(*) FILTER (is_cache_hit) / count(*), 1) AS pct_cache_hit
 FROM bunny_requests
+WHERE NOT is_synthetic
 GROUP BY 1, 2 ORDER BY 1, 2;
 
 COMMENT ON VIEW bunny_health IS 'GRAIN: one row per minute per pull zone with requests present. What users actually got, including the requests the edge answered itself. Minutes with no traffic are absent rather than zero.';
@@ -120,6 +122,7 @@ WITH cdn AS (
     round(100.0 * count(*) FILTER (is_cache_hit) / count(*), 1) AS pct_cache_hit
   FROM bunny_requests
   WHERE zone IN (SELECT zone FROM railway_facing_zones)
+    AND NOT is_synthetic
   GROUP BY 1
 )
 SELECT

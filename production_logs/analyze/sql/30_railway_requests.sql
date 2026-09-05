@@ -34,6 +34,8 @@ SELECT
   host,
   srcIp        AS src_ip,
   clientUa     AS client_ua,
+  -- Probes aimed straight at the Railway hostname appear here and never at the CDN.
+  is_synthetic_ua(clientUa) AS is_synthetic,
   edgeRegion   AS edge_region,
   rxBytes      AS rx_bytes,
   txBytes      AS tx_bytes,
@@ -55,7 +57,7 @@ FROM read_json('../../dumps/railway/http.*.ndjson',
     'requestId': 'VARCHAR', 'deploymentId': 'VARCHAR',
     'deploymentInstanceId': 'VARCHAR'});
 
-COMMENT ON TABLE railway_requests IS 'GRAIN: one row per HTTP request seen by Railway''s edge, merged by the puller on requestId. Shows outages as users met them -- a 502 never reaches the app and so leaves no container log line.';
+COMMENT ON TABLE railway_requests IS 'GRAIN: one row per HTTP request seen by Railway''s edge, merged by the puller on requestId. Shows outages as users met them -- a 502 never reaches the app and so leaves no container log line. `is_synthetic` marks this project''s own probes; railway_health and timeline exclude them, this relation does not.';
 
 -- Per-minute health, the shape an outage actually has.
 CREATE OR REPLACE VIEW railway_health AS
@@ -67,6 +69,7 @@ SELECT
   round(100.0 * count(*) FILTER (is_server_error) / count(*), 1) AS pct_5xx,
   round(median(total_ms) FILTER (status = 200), 1) AS median_ok_ms
 FROM railway_requests
+WHERE NOT is_synthetic
 GROUP BY 1 ORDER BY 1;
 
 COMMENT ON VIEW railway_health IS 'GRAIN: one row per minute with requests present. Minutes with no traffic are absent rather than zero -- a gap is silence, which during an outage may be the point.';

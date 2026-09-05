@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev test lint quality agent-docs codegen ingest-patches pull-patches mypy mypy-warm mypy-restart mypy-status
+.PHONY: bootstrap dev test test-edge lint quality agent-docs codegen ingest-patches pull-patches mypy mypy-warm mypy-restart mypy-status
 
 bootstrap:
 	./scripts/bootstrap
@@ -8,6 +8,10 @@ dev:
 
 test:
 	./scripts/test
+
+# Read-only smoke tests against the LIVE site; never part of `make test`.
+test-edge:
+	./scripts/test-edge
 
 lint:
 	./scripts/lint

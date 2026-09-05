@@ -27,6 +27,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "django-stubs-ext>=6.0.3",
+    "httpx>=0.28",
     "django-stubs[compatible-mypy]>=6.0.3",
     "import-linter>=2.11",
     "libcst>=1.8.6",
@@ -88,6 +89,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "*/tests/*.py" = ["S101", "S106", "S603", "S607"]  # asserts, hardcoded test passwords, subprocess in tests
 "conftest.py" = ["S101"]
+"edge_tests/*.py" = ["S101"]
 "manage.py" = ["T20"]
 "apps/*/management/commands/*.py" = ["T20", "S603", "S607", "B904"]  # print, subprocess, raise-from in commands
 "scripts/*.py" = ["T201"]

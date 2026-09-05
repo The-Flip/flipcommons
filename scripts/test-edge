@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Read-only smoke tests against the DEPLOYED site (backend/edge_tests/). When to
+# run them and what they cover: docs/Hosting.md, under CDN.
+#
+#   EDGE_BASE_URL=https://staging.example.org ./scripts/test-edge
+set -eu
+cd "$(dirname "$0")/../backend"
+
+echo "==> Edge smoke tests against ${EDGE_BASE_URL:-https://flipcommons.org}..."
+exec uv run pytest edge_tests "$@"

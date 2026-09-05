@@ -63,6 +63,7 @@ dependencies = [
 dev = [
     { name = "django-stubs", extra = ["compatible-mypy"] },
     { name = "django-stubs-ext" },
+    { name = "httpx" },
     { name = "import-linter" },
     { name = "libcst" },
     { name = "mypy" },
@@ -97,6 +98,7 @@ requires-dist = [
 dev = [
     { name = "django-stubs", extras = ["compatible-mypy"], specifier = ">=6.0.3" },
     { name = "django-stubs-ext", specifier = ">=6.0.3" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "import-linter", specifier = ">=2.11" },
     { name = "libcst", specifier = ">=1.8.6" },
     { name = "mypy", specifier = ">=1.20.2" },
