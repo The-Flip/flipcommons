@@ -106,6 +106,8 @@ Because Joker resolves the pull-zone name once and re-serves the result, Bunny's
 
 Identical across `8.8.8.8`, `1.1.1.1`, `9.9.9.9` and `208.67.222.222`.
 
+The `static.flipcommons.org` control was retired in September 2026 when assets moved to the apex; the measurement below stands, but reproducing it needs a different CNAME on the zone.
+
 **The IPv4 cost is measured.** From this vantage, connecting to the edge Joker hands out averages **76.3ms**; connecting to the edge Bunny picks for the same client averages **9.6ms**. An 8× penalty, ~67ms added to every connection, paid unconditionally today.
 
 **The IPv6 answer is in a different RIR's space.** Joker serves the apex an address in `2400::/12` (APNIC), while Bunny's own answer for `static` is in `2a00::/12` (RIPE). Bunny anycast may well announce both globally, so this is a lead rather than a finding — but it is the most specific available explanation for a connect that fails in 16ms. If US checkers prefer IPv6 and that address is not reachable from North America, the observed `connection_error` class follows directly, and the `dns_error` class is the same defect when the flattener returns nothing at all. **This vantage has no IPv6 and could not test it.**

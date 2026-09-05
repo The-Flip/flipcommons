@@ -66,10 +66,9 @@ CREATE OR REPLACE MACRO is_synthetic_ua(ua) AS
 -- to 'zone:<id>' rather than NULL, and `unknown_bunny_pull_zone` names them.
 --
 -- `origin` is what the zone pulls from, when that leads to Railway: either the
--- Railway host itself or the hostname of another zone here. Zones chain -- static
--- pulls from the apex zone, so a static miss is fetched through apex and reaches
--- Railway as ONE apex request. NULL where nothing behind the zone is Railway,
--- which is the point -- a media request has no downstream row to correlate with.
+-- Railway host itself or the hostname of another zone here. NULL where nothing
+-- behind the zone is Railway, which is the point -- a media request has no
+-- downstream row to correlate with.
 --
 -- `zone` is the short tier label used everywhere, and what appears as a stream in
 -- coverage and timeline; `bunny_name` is what Bunny calls the zone, and the slug
@@ -85,7 +84,7 @@ INSERT INTO bunny_pull_zones VALUES
    'Anonymous SSR HTML; bypasses /api/, /djadmin/ and session or kiosk cookies'),
   (5915890, 'static', 'flipcommons-static', 'static.flipcommons.org',
    'flipcommons.org',
-   'The build assets SvelteKit serves off the CDN; see docs/Hosting.md for the inventory'),
+   'Held the build assets until they moved to the apex zone in September 2026; being wound down, and still serving crawlers meanwhile'),
   (5782405, 'media', 'flipcommons-media', 'media.flipcommons.org', NULL,
    'iDrive e2 media bucket. NULL origin: nothing behind it is Railway, so a media row has no downstream row to correlate with');
 

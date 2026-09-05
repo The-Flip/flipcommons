@@ -140,35 +140,14 @@ def test_the_rejection_is_not_cacheable() -> None:
     )
 
 
-def test_www_redirect_is_not_cacheable() -> None:
-    match = re.search(
-        r'^header\s+@www\s+>Cache-Control\s+"([^"]+)"\s*$', _caddyfile(), re.MULTILINE
-    )
-    assert match, (
-        "Caddyfile must set Cache-Control on the @www matcher in the deferred `>` "
-        "form, or a redirect on an asset path leaves with the asset's TTL"
-    )
-    assert "no-store" in match.group(1), (
-        "an origin-served www redirect reaching Bunny must not inherit the "
-        f"30-day zone default, got {match.group(1)!r}"
-    )
-
-
 def test_handles_run_in_the_documented_order() -> None:
-    www = _handle_position("@www")
     direct = _handle_position("@direct_origin")
     gate = _handle_position("@unauthenticated")
-    preflight = _handle_position("@version_preflight")
     django = _handle_position("@django")
-    assert www < direct < gate, (
-        "handle @www and handle @direct_origin must precede handle "
-        "@unauthenticated: both answer callers that legitimately lack the "
-        "secret (a www visitor before the DNS move, a crawler on the Railway "
-        "hostname) and Caddy runs only the first matching handle"
-    )
-    assert gate < preflight, (
-        "handle @unauthenticated must precede handle @version_preflight, or a "
-        "direct OPTIONS probe is answered on the origin's behalf"
+    assert direct < gate, (
+        "handle @direct_origin must precede handle @unauthenticated: a crawler "
+        "on the Railway hostname legitimately lacks the secret, and Caddy runs "
+        "only the first matching handle"
     )
     assert gate < django, (
         "handle @unauthenticated must precede handle @django, or the gate is "

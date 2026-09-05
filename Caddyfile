@@ -4,16 +4,6 @@
 # enter on 127.0.0.1 and are routed to Django by the @django handle below. Any
 # directive added at site level therefore applies to internal SSR traffic too.
 
-# Bunny inherits the pull zone's 30-day default TTL for any response that
-# arrives without Cache-Control, so a redirect that ever reached it unstamped
-# could be served long after the condition that produced it was fixed. The
-# `>` form matters: see the note above `header ?Cache-Control` below.
-@www host www.flipcommons.org
-header @www >Cache-Control "no-store"
-handle @www {
-	redir https://flipcommons.org{uri} permanent
-}
-
 # Send anything that reaches the Railway origin hostname without passing
 # through Bunny to the public origin instead. Crawlers found that hostname on
 # their own and were indexing it as a second copy of the site; direct traffic
@@ -161,34 +151,9 @@ header @fonts >Cache-Control "public, max-age=31536000, immutable"
 # SHA to this path and the client polls it hourly (svelte.config.js
 # kit.version.pollInterval) to detect deploys. Without an explicit
 # header, Bunny applies its 30-day zone default and open tabs would
-# miss new deploys until the cache expires. The static zone pulls this
-# through the apex zone, so the TTL applies at each hop and a tab can
-# see a deploy up to two TTLs late.
-#
-# CORS headers are required because the poll runs cross-origin once
-# kit.paths.assets points at the CDN — see node_modules/@sveltejs/kit
-# runtime/client/utils.js, which fetches `${assets}/_app/version.json`
-# with `pragma` and `cache-control` request headers. Both are non-
-# safelisted, which forces a browser preflight; without ACAO + an
-# Allow-Headers entry covering them, the preflight fails and version
-# polling silently breaks in every tab. Bunny passes preflights through
-# to Caddy verbatim, so handling them here is sufficient — the
-# dedicated handle below short-circuits OPTIONS to a 204 rather than
-# letting SvelteKit serve the full body on a preflight.
+# miss new deploys until the cache expires.
 @version path /_app/version.json
 header @version >Cache-Control "public, max-age=60"
-header @version {
-	Access-Control-Allow-Origin "*"
-	Access-Control-Allow-Headers "Cache-Control, Pragma"
-	Access-Control-Max-Age "7200"
-}
-@version_preflight {
-	method OPTIONS
-	path /_app/version.json
-}
-handle @version_preflight {
-	respond 204
-}
 
 # Never cache the liveness probe. Uptime monitoring has to observe the
 # origin's current state, and an edge PoP answering probes from cache

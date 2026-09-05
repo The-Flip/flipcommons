@@ -34,7 +34,6 @@ Bunny CDN fronts every request.
 ```text
 Browser
    ├─ flipcommons.org        → Bunny CDN (apex)   → Railway /*
-   ├─ static.flipcommons.org → Bunny CDN (static) → Bunny CDN (apex) → Railway  (retiring; only pre-cutover clients)
    └─ media.flipcommons.org  → Bunny CDN (media)  → iDrive e2 private bucket
 
 Railway (single Caddy service)
@@ -119,10 +118,6 @@ Bunny.net CDN pull zone for anonymous public SSR HTML.
 ### Edge public API cache
 
 The same pull zone, for `/api/public/`; the policy is [`core/cache_control.py`](../backend/apps/core/cache_control.py).
-
-### Static asset CDN
-
-Bunny.net CDN pull zone for the build's assets. It pulls through the apex zone rather than from Railway; [Hosting.md](Hosting.md#static-edge-cache) has the inventory and what the chain constrains.
 
 ## Provenance
 

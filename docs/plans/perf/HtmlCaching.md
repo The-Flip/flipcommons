@@ -1,5 +1,7 @@
 # Cache SSR HTML
 
+**Superseded 2026-09: assets are same-origin; see [Hosting.md](../../Hosting.md).** The body below is kept as history.
+
 Goal: a shared cache to absorb anonymous traffic to the public SSR pages (listings, detail pages), so the Railway origin renders each page once per invalidation window instead of once per visitor — without ever showing contributors a stale copy of their own edits.
 
 ## Status: ✅ Implemented

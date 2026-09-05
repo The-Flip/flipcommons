@@ -68,7 +68,7 @@ Every puller takes the same window: `--start <YYYY-MM-DD>` (required) through `-
 Diagnosis is reconstructing a sequence, and sequence is the one axis you cannot filter away. Slicing by service and severity first is how these logs are browsed and how the vendor UIs are laid out, but it is the wrong way in: during a real outage here, 402 requests failed at Railway's edge while the application logged 36 lines, 10 of them at `error`, and Sentry recorded nothing.
 
 1. **`FROM coverage`** — what can you see? Every later claim is bounded by it.
-2. **`FROM edge_health`** — the shape, before reading any line. Onset and recovery timestamps come from here, and the CDN column is the only one reflecting what users actually got. Read across a row, never down two. It is the apex zone against Railway; the static zone pulls through apex and is not in it, so a fault in asset delivery alone shows in `bunny_health`, not here.
+2. **`FROM edge_health`** — the shape, before reading any line. Onset and recovery timestamps come from here, and the CDN column is the only one reflecting what users actually got. Read across a row, never down two. It is the apex zone against Railway.
 3. **Correlate the onset** against `sentry_releases` and deployments. Most incidents are a change.
 4. **Read the edge unfiltered** — `FROM timeline` over minutes, not hours, around onset, all sources and severities, ordered by `ts`. Causes routinely log at `info`, or are the last line before silence.
 5. **Then slice** by service, status, path, text — to quantify a hypothesis, not to find one.
@@ -76,7 +76,7 @@ Diagnosis is reconstructing a sequence, and sequence is the one axis you cannot 
 
 Habits to keep. Prefer **rates to counts**, because a window rarely covers every source equally — read `coverage` before quoting one. Treat **severity as a ranking, not a filter**: Railway invents a level for every line that is not JSON, so count `summary` and rank `timeline` on `level_confidence` rather than filtering on `level`.
 
-A trap: `static` pulls through the `apex` zone, not from Railway, so a static miss is also an apex request and only apex misses reach Railway. Compare `apex` alone against a Railway relation; adding `static` counts each of its misses twice at the CDN. The origin can still legitimately exceed the apex by around a tenth, because Railway also logs requests that never passed Bunny. `host` no longer tells them apart, and neither does status, since `@direct_origin` and the site's own canonical redirects both answer 301. `upstream_ms` does: it is time inside the container, so a direct hit Caddy answers itself lands near 1ms while a redirect the app rendered was proxied to Node and lands above 60ms.
+A trap in any window whose `static` rows are misses rather than 301s: the zone pulled through the `apex` zone rather than from Railway, so a static miss is also an apex request and only apex misses reach Railway. Compare `apex` alone against a Railway relation; adding `static` counts each of its misses twice at the CDN. The origin can still legitimately exceed the apex by around a tenth, because Railway also logs requests that never passed Bunny. `host` no longer tells them apart, and neither does status, since `@direct_origin` and the site's own canonical redirects both answer 301. `upstream_ms` does: it is time inside the container, so a direct hit Caddy answers itself lands near 1ms while a redirect the app rendered was proxied to Node and lands above 60ms.
 
 ## Editing the analytics
 
