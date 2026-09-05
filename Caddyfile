@@ -113,11 +113,12 @@ header {
 # because Bunny gives anything without one its 30-day zone default. The
 # SvelteKit hook (frontend/src/lib/cache-control.server.ts) stamps what it
 # sees, but it never sees prerendered pages, files under frontend/static/ or
-# /_app/env.js; only Caddy sees every response. The default is `private,
-# no-store` so a prerendered page such as /privacy is re-served by Node
-# rather than frozen in Bunny for 30 days after its text changes. The 502
-# Caddy writes itself when it cannot dial an upstream is the one response
-# these lines never reach; handle_errors at the bottom covers it.
+# /_app/env.js, and Django stamps only the public API and the sitemap; only
+# Caddy sees every response. The default is `private, no-store` so a
+# prerendered page such as /privacy is re-served by Node rather than frozen
+# in Bunny for 30 days after its text changes. The 502 Caddy writes itself
+# when it cannot dial an upstream is the one response these lines never
+# reach; handle_errors at the bottom covers it.
 header ?Cache-Control "private, no-store"
 
 # Every matcher-bound Cache-Control in this file uses the deferred `>` form,

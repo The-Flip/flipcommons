@@ -15,6 +15,7 @@ from apps.catalog.api.public_filter import filter_rate_limit_summary, filter_rou
 from apps.catalog.engine.entity_api.field_constraints import FieldConstraintSchema
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
+from apps.core.cache_control import public_api_freshness_summary
 from apps.core.exceptions import StructuredApiError, StructuredValidationError
 from apps.provenance.models import IngestRun
 
@@ -52,7 +53,12 @@ public_api = NinjaAPI(
         # Limits derived from the live config so the published numbers never go stale.
         f"exports to {export_rate_limit_summary()}, filtering to "
         f"{filter_rate_limit_summary()}; a 429 with a Retry-After header "
-        "means you've exceeded a limit."
+        "means you've exceeded a limit.\n\n"
+        "Responses are cached for up to "
+        f"{public_api_freshness_summary()} and each URL expires individually, "
+        "so each response reflects the catalog at a different moment: "
+        "a record referenced in one may be missing from another. Dangling "
+        "references will resolve as fresher responses arrive."
     ),
     urls_namespace="public",
 )

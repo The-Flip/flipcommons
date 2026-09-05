@@ -15,6 +15,7 @@ from typing import Any
 
 from apps.catalog.models import RelationshipType
 from apps.catalog.tests.game_builders import _edge, _model, _theme, _title
+from apps.core.cache_control import PUBLIC_API_EDGE_TTL
 
 URL = "/api/public/filter/models/"
 
@@ -223,3 +224,23 @@ class TestRateLimit:
         assert limited["Retry-After"]
         assert limited.json()["detail"]["kind"] == "rate_limit"
         assert client.get("/api/public/export/models/").status_code == 200
+
+
+class TestEdgeCacheControl:
+    def test_anonymous_response_is_edge_cacheable(self, client, db):
+        resp = client.get(f"{URL}?year_min=1990")
+        assert resp.status_code == 200
+        assert (
+            resp["Cache-Control"]
+            == f"public, max-age=0, s-maxage={PUBLIC_API_EDGE_TTL}"
+        )
+
+    def test_kiosk_response_is_never_shared_cached(self, client, db):
+        resp = client.get(URL, HTTP_COOKIE="mode=kiosk")
+        assert resp.status_code == 200
+        assert resp["Cache-Control"] == "private, no-store"
+
+    def test_errors_are_not_edge_cacheable(self, client, db):
+        resp = client.get(f"{URL}?bogus=1")
+        assert resp.status_code == 422
+        assert "s-maxage" not in resp.get("Cache-Control", "")

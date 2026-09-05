@@ -12,19 +12,32 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from edge_tests.probe import cdn_cache
+
 # One entity is enough. Every export route is registered from a single closure
 # in apps/catalog/api/export.py, so the others exercise identical code.
 EXPORT_PATH = "/api/public/export/models/"
 
 
 def test_export_conditional_get_returns_304(edge: httpx.Client) -> None:
-    """Red until #781: Bunny never holds a copy of the export.
+    """Holding the export takes a cacheable ``Cache-Control`` from the origin
+    and an exemption from the "Bypass API" Edge Rule in the Bunny dashboard.
+    The first two assertions say which half is missing.
 
-    Streamed and never read: this is the largest response the site serves, and
-    only the headers matter here.
+    Streamed and never read: only the headers matter, and this is the largest
+    response the site serves.
     """
     with edge.stream("GET", EXPORT_PATH) as first:
         assert first.status_code == 200
+        assert "s-maxage" in first.headers.get("Cache-Control", ""), (
+            f"Cache-Control is {first.headers.get('Cache-Control')!r}; the origin "
+            "is not marking the export edge-cacheable, so Bunny may never hold a "
+            "copy whatever its rules say"
+        )
+        assert cdn_cache(first) != "BYPASS", (
+            "the export is still bypassing the edge; the Match none URL trigger "
+            "for */api/public/* on the Bypass API rule is missing or has drifted"
+        )
         etag = first.headers.get("ETag")
         assert etag, (
             "no ETag on the bulk export; apps.core.response_cache sets one on "

@@ -16,6 +16,30 @@ from edge_tests.probe import cdn_cache
 APEX_PULL_ZONE_ID = "5969801"
 
 
+class TestApiBypass:
+    """The public API is the only `/api/` path the edge may hold."""
+
+    def test_internal_api_bypasses(self, edge: httpx.Client) -> None:
+        response = edge.get("/api/health")
+        assert cdn_cache(response) == "BYPASS", (
+            "an internal API response was cached at the edge; the Match none "
+            "carve-out on the Bypass API rule is wider than */api/public/*"
+        )
+
+    def test_kiosk_public_api_bypasses(self, edge: httpx.Client) -> None:
+        """A kiosk dump carries show-all content. The kiosk rule keys on the
+        cookie and an asset list, not the path, so the cheap filter query
+        proves the carve-out without a cold export build at the origin."""
+        response = edge.get(
+            "/api/public/filter/models/?year_min=1990",
+            headers={"Cookie": "mode=kiosk"},
+        )
+        assert cdn_cache(response) == "BYPASS", (
+            "a kiosk public API response was served from the shared edge cache; "
+            "the kiosk rule's Match none list has grown past assets"
+        )
+
+
 class TestSignedInBypass:
     """A `sessionid` cookie must bypass HTML, but must NOT bypass assets."""
 

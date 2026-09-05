@@ -108,15 +108,13 @@ make test-edge                                     # against https://flipcommons
 EDGE_BASE_URL=https://example.org make test-edge   # somewhere else
 ```
 
-Run it after deploying a change to the Caddyfile, [cache-control.server.ts](../frontend/src/lib/cache-control.server.ts) or Django's middleware stack, and after editing anything in the Bunny dashboard, which no deploy accompanies. It covers liveness, conditional GET, the signed-in and kiosk bypasses, the origin lockdown and the apex pull zone's identity. It only sees what came back to the client; the origin's side of the same request is in [production_logs/](../production_logs/README.md), where a run's rows are marked `is_synthetic`.
-
-The export API's conditional GET is red and stays red until [#781](https://github.com/The-Flip/flipcommons/issues/781) is fixed. Bunny answers conditional requests from its own copy and drops `If-None-Match` for anything it does not hold, so the export gets a `304` only once it is edge-cacheable — which needs both an exemption from the `/api/` bypass rule and a cacheable `Cache-Control` in place of Caddy's `private, no-store` default.
+Run it after deploying a change to the Caddyfile, [cache-control.server.ts](../frontend/src/lib/cache-control.server.ts) or Django's middleware stack, and after editing anything in the Bunny dashboard, which no deploy accompanies. It covers liveness, conditional GET, the three bypass rules, the origin lockdown and the apex pull zone's identity. It only sees what came back to the client; the origin's side of the same request is in [production_logs/](../production_logs/README.md), where a run's rows are marked `is_synthetic`.
 
 #### Apex edge cache
 
 The Bunny.net apex pull zone, `flipcommons.org`, fronts the Railway web container at `flipcommons-production.up.railway.app`. Configuration:
 
-- **API and admin bypass**: bypass `/api/` and `/djadmin/`
+- **API and admin bypass**: bypass `/api/` and `/djadmin/`, except `/api/public/`
 - **authenticated bypass**: for any authenticated request (carrying a `sessionid` **cookie**) or a request from a museum kiosk (`mode=kiosk` **cookie**), bypass everything but static assets, such as HTML
 - respect origin `Cache-Control`
 - include URL query string in cache key
@@ -124,7 +122,7 @@ The Bunny.net apex pull zone, `flipcommons.org`, fronts the Railway web containe
 - cache error responses for 5 seconds
 - retry an origin request once, but only when the connection never opened
 
-The bypasses are three separate Edge Rules. "Bypass API" keys on URL alone; "Bypass signed-in HTML" and "Bypass kiosk HTML" each pair their cookie trigger with a **Match none** URL trigger listing `*/_app/*`, `*/fonts/*`, `*/images/*`, `*/apple-touch-icon.png` and `*/site.webmanifest`. The two cookie triggers are different trigger types — Request Header versus Cookie Value — so they cannot share one rule. The Match none carve-out is the whole point: a single cookie-keyed bypass sends a signed-in visitor's roughly 100 asset requests to the origin on every page load. `make test-edge` asserts both directions; by hand:
+The bypasses are three separate Edge Rules. "Bypass API" keys on URL alone: a **Match any** URL trigger for `*/api/*` and `*/djadmin/*` and a **Match none** URL trigger for `*/api/public/*`, with trigger matching set to **Match all**. "Bypass signed-in HTML" and "Bypass kiosk HTML" each pair their cookie trigger with a **Match none** URL trigger listing `*/_app/*`, `*/fonts/*`, `*/images/*`, `*/apple-touch-icon.png` and `*/site.webmanifest`. The two cookie triggers are different trigger types — Request Header versus Cookie Value — so they cannot share one rule. The Match none carve-out is the whole point: a single cookie-keyed bypass sends a signed-in visitor's roughly 100 asset requests to the origin on every page load. `make test-edge` asserts both directions; by hand:
 
 ```bash
 curl -sSI -H 'Cookie: sessionid=x' https://flipcommons.org/_app/version.json | grep -i cdn-cache   # HIT or MISS, never BYPASS
@@ -144,13 +142,13 @@ Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed res
 
 **Stale Cache** — both While Updating and While Origin Offline are on; neither exposes a duration. While Updating serves the expired copy and refreshes behind it, so an expiry never costs a visitor a full origin round trip. While Origin Offline keeps the last good copy on screen through a Railway restart. Bunny warns that While Updating will **not** refresh an object when the origin's fresh response is non-cacheable, so a URL whose policy changes to `no-store` goes on serving its stale copy until the original TTL runs out — any deploy that changes cache policy must purge.
 
-**Cache Error Responses** is on. Bunny holds 4xx and 5xx for a fixed 5 seconds, not configurable, which absorbs probe bursts for nonexistent asset hashes and collapses Caddy-level 502s while Node restarts.
+**Cache Error Responses** is on. Bunny holds 4xx and 5xx for a fixed 5 seconds, not configurable, which absorbs probe bursts for nonexistent asset hashes and collapses Caddy-level 502s while Node restarts. It also holds the public API's per-IP `429`, so one caller's verdict can be served to others at the same PoP for those 5 seconds.
 
 **SafeHop** is on with one retry, no delay, and **Connection Timeout** as the only retry reason. A connection that never opened never reached the container, so re-sending is safe for every method, and a container restart is exactly the failure it covers. **Response Timeout** and **Origin 5xx** stay off: this zone passes bypassed `/api/` POSTs to Django, Bunny documents no exemption for non-idempotent methods, and a write that reached Django and then exceeded the 60-second response timeout would be submitted twice. Media upload is the one request that can plausibly run that long, and a duplicated upload is worse than a 502.
 
 **Request Coalescing is deliberately off.** Bunny coalesces any uncached request, and bypassed signed-in `__data.json` responses are per-user, so two contributors at one PoP could be served each other's payload.
 
-Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. So every response leaving the container carries an explicit header. The SvelteKit hook ([cache-control.server.ts](../frontend/src/lib/cache-control.server.ts)) stamps everything it sees, with `private, no-store` for anything that is not a successful page or a permanent redirect; [Caddyfile](../Caddyfile) is the backstop for what the hook never sees, because it is the only layer that sees every response:
+Because the zone respects origin `Cache-Control`, any response that reaches Bunny without one inherits the pull zone's 30-day default. So every response leaving the container carries an explicit header. The SvelteKit hook ([cache-control.server.ts](../frontend/src/lib/cache-control.server.ts)) stamps everything it sees, with `private, no-store` for anything that is not a successful page or a permanent redirect. Django stamps `/api/public/` ([cache_control.py](../backend/apps/core/cache_control.py)) and the sitemap; every other Django response falls through to Caddy's default. [Caddyfile](../Caddyfile) is the backstop for what neither stamps, because it is the only layer that sees every response:
 
 | Path                                                                  | `Cache-Control`                        | Why                                                                                                       |
 | --------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
