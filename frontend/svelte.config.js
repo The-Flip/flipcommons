@@ -25,14 +25,14 @@ const injectCustomMedia = {
 // would NOT match (the CSP host wildcard only spans the one label).
 //
 // Returns null when the DSN is unset (dev, CI, preview); in that case
-// the reportOnly block is skipped entirely below — SvelteKit refuses to
-// emit a report-only CSP header without a report destination — and the
+// the report-uri directive is omitted below — the policy is still
+// enforced, there is just nowhere to report violations — and the
 // Sentry connect-src entry is omitted (the runtime SDK is also inert
 // without a DSN, so no traffic to allowlist).
 //
 // When the DSN IS set but malformed, we throw rather than return null.
-// Silent fallback would downgrade prod from "report-only CSP" to "no
-// CSP at all" with no log line; failing the config load surfaces the
+// Silent fallback would leave prod enforcing a policy whose violations
+// go nowhere, with no log line; failing the config load surfaces the
 // typo at deploy time instead.
 //
 // DSN:    https://<key>@<host>/<project>
@@ -128,7 +128,8 @@ const appHtmlStyleHash = computeAppHtmlStyleHash();
 //     nonce machinery only covers styles it injects itself; hand-written
 //     <style> in the app.html template is invisible to it, so the hash
 //     has to be added by hand. SvelteKit hashes its own injected inline
-//     styles in prerendered pages and nonces them in SSR'd pages.
+//     styles in prerendered pages and nonces them in SSR'd pages. This
+//     strict form is report-only — see cspStyleReportOnlyDirectives.
 //   - `img-src 'self' https: data:` is intentionally permissive. Catalog
 //     images come from img.opdb.org, media.flipcommons.org, and other
 //     hosts surfaced by ingest pipelines; locking img-src to a fixed list
@@ -149,11 +150,12 @@ const appHtmlStyleHash = computeAppHtmlStyleHash();
 //     anything ourselves.
 //   - report-uri (not report-to) because Sentry's documented CSP endpoint
 //     uses the older format and browser support for report-to is uneven.
-//   - `upgrade-insecure-requests` is split into the enforced block below
-//     because the directive is ignored in report-only mode (per spec) and
-//     it's safe to enforce on day one — it just upgrades http:// sub-
-//     resource URLs to https://, which our code already uses everywhere.
-const cspReportOnlyDirectives = {
+//   - `upgrade-insecure-requests` is added in the enforced block below
+//     rather than here, because it is a navigation directive rather than
+//     a fetch directive and only applies to production builds — it
+//     upgrades http:// subresource URLs to https://, which our code
+//     already uses everywhere, but breaks plain-HTTP localhost.
+const cspFetchDirectives = {
   'default-src': ['self'],
   // jsdelivr/@scalar: the /api-docs page loads the @scalar/api-reference
   // bundle from jsdelivr; it also dynamically imports further chunks, so
@@ -161,13 +163,16 @@ const cspReportOnlyDirectives = {
   // path (trailing slash = prefix match) to cover versioned chunks while
   // excluding the rest of the CDN.
   'script-src': ['self', 'https://cdn.jsdelivr.net/npm/@scalar/'],
-  'style-src': ['self', appHtmlStyleHash],
+  // style-src is deliberately permissive in the ENFORCED policy and
+  // strict in the report-only one below. It cannot simply be omitted:
+  // `default-src 'self'` would then act as its fallback and enforce it.
+  'style-src': ['self', 'unsafe-inline'],
   // Svelte's `style:` directive (and any hand-written `style="..."`
   // attribute) compiles to an inline style attribute, which CSP gates
   // separately under style-src-attr. Without this entry the browser
   // falls back to style-src — which doesn't permit attribute styles
   // even with hashes — and every page with e.g. SiteHeader's dynamic
-  // SVG-filter id reports a violation. style-src-attr is much lower
+  // SVG-filter id breaks. style-src-attr is much lower
   // risk than style-src-elem (an attacker can restyle but can't load
   // a remote stylesheet or inject a <style> block), so 'unsafe-inline'
   // here is the standard compromise for Svelte/React apps.
@@ -175,13 +180,18 @@ const cspReportOnlyDirectives = {
   'img-src': ['self', 'https:', 'data:'],
   // fonts.scalar.com: the @scalar/api-reference widget on /api-docs loads
   // its own Inter webfonts (incl. inter-greek.woff2) from there, even
-  // though we override --scalar-font. Allow it so the fetch isn't reported.
+  // though we override --scalar-font. Allow it so the fetch isn't blocked.
   'font-src': ['self', 'https://fonts.scalar.com'],
+  // api.scalar.com: the @scalar/api-reference widget queries its own API
+  // registry (/vector/registry/curated and /search) on the /api-docs page.
+  // Nothing we serve depends on it, but blocking it logs console errors
+  // for every visitor to that page.
   'connect-src': [
     'self',
     ...(sentryOrigin ? [sentryOrigin] : []),
     'https://us.i.posthog.com',
     'https://cdn.jsdelivr.net/npm/@scalar/',
+    'https://api.scalar.com',
   ],
   'frame-ancestors': ['none'],
   'frame-src': ['none'],
@@ -191,16 +201,43 @@ const cspReportOnlyDirectives = {
   ...(sentryCspReportUri ? { 'report-uri': [sentryCspReportUri] } : {}),
 };
 
-// `upgrade-insecure-requests` rewrites every http:// request to https://.
-// In production that's correct — the site is HTTPS-only. But the dev
-// server (and `vite preview`) run plain HTTP on localhost, and browsers
-// that honor the directive (Safari, Chromium) upgrade the top-level
-// navigation to https://localhost:5173, where nothing is listening, and
-// fail with "can't establish a secure connection." Firefox exempts
-// localhost so it slips through. Emit the directive for production builds
-// only; dev gets no enforced CSP (matching pre-CSP behavior locally).
+// style-src is the one directive still in report-only, in its own policy
+// alongside the enforced one above. Enforcing `style-src 'self' <hash>`
+// breaks /api-docs: the @scalar/api-reference widget injects <style>
+// elements at runtime whose contents vary by widget version (one of them
+// is even empty), so no build-time hash can cover them and the page
+// renders unstyled. Keeping the strict version report-only means Sentry
+// still shows what a strict style-src would have blocked, without
+// shipping a broken docs page. Promoting it means moving these two
+// entries into cspFetchDirectives, replacing the permissive style-src
+// there, and re-checking /api-docs.
+//
+// Only attached when a Sentry report destination is configured:
+// SvelteKit throws at request time if a report-only header is set with
+// no report-to/report-uri directive, so in dev/CI/preview (no DSN) the
+// block is dropped — there is nowhere to send reports anyway. The policy
+// deliberately omits default-src, so it checks style-src and nothing else.
+const cspStyleReportOnlyDirectives = {
+  'style-src': ['self', appHtmlStyleHash],
+  'style-src-attr': ['unsafe-inline'],
+  'report-uri': [sentryCspReportUri],
+};
+
+// The policy is enforced in production builds only. Two reasons dev is
+// exempt. `upgrade-insecure-requests` rewrites every http:// request to
+// https://, which is correct for the HTTPS-only site but breaks the dev
+// server and `vite preview` — both run plain HTTP on localhost, and
+// browsers that honor the directive (Safari, Chromium) upgrade the
+// top-level navigation to https://localhost:5173, where nothing is
+// listening, and fail with "can't establish a secure connection."
+// (Firefox exempts localhost so it slips through.) And Vite's dev-time
+// HMR client injects inline scripts and styles that the production
+// hashes and nonces don't cover. Dev gets no CSP at all, matching
+// pre-CSP behavior locally; `make build` is what exercises the policy.
 const isProductionBuild = process.env.NODE_ENV === 'production';
-const cspEnforcedDirectives = isProductionBuild ? { 'upgrade-insecure-requests': true } : {};
+const cspEnforcedDirectives = isProductionBuild
+  ? { ...cspFetchDirectives, 'upgrade-insecure-requests': true }
+  : {};
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -210,41 +247,27 @@ const config = {
   preprocess: [injectCustomMedia, vitePreprocess()],
   kit: {
     adapter: adapter(),
-    // Initial CSP rollout is report-only for the fetch directives:
-    // browsers send violation reports to Sentry but nothing is blocked.
-    // `upgrade-insecure-requests` is enforced from day one (see comment
-    // on cspEnforcedDirectives). Once Sentry shows zero reports from
-    // real traffic for ~a week, fold cspReportOnlyDirectives into
-    // `directives` to enforce. Tracked in issue #448. mode:'auto' uses
-    // hashes for prerendered pages and nonces for SSR'd ones, both of
-    // which cover SvelteKit's hydration script and the inline <style>
-    // in app.html.
+    // Two policies ship: the enforced one, and a report-only one
+    // carrying the strict style-src that /api-docs can't satisfy yet.
+    // mode:'auto' uses hashes for prerendered pages and nonces for SSR'd
+    // ones, both of which cover SvelteKit's hydration script and the
+    // inline <style> in app.html; the hand-written app.html <style> also
+    // needs the explicit sha256 above, which SvelteKit's hasher can't see.
     //
-    // KNOWN GAP — report-only does NOT cover prerendered routes.
-    // SvelteKit can only deliver Content-Security-Policy-Report-Only as
-    // an HTTP response header (see csp.js / render.js), and prerendered
-    // routes are served as static HTML files where the CSP is baked
-    // into a <meta http-equiv> tag — and the CSP spec disallows the
-    // Report-Only variant in meta. So routes with `export const
-    // prerender = true` (currently /systems, /series, /reward-types,
-    // /gameplay-features, /people, /api-docs, /(legal)/terms,
-    // /(legal)/privacy, /(legal)/licensing) will produce zero reports
-    // regardless of violations. (/search was here but is now SSR, so it
-    // gets report-only CSP coverage like the other SSR routes.) Before
-    // flipping to enforce, build with
-    // the report-only directives moved to `directives` and smoke-test
-    // those prerendered routes locally. The week-of-clean-reports gate
-    // applies to SSR'd routes only.
-    //
-    // `reportOnly` is only attached when a Sentry report destination is
-    // configured. SvelteKit throws at request time if a report-only
-    // header is set without a report-to/report-uri directive, so in dev/
-    // CI/preview (no DSN) we drop the block entirely — there's nowhere
-    // for the browser to send reports anyway.
+    // Violations report via `report-uri`, in both policies, whenever a
+    // Sentry DSN is configured. Two caveats on what that catches.
+    // Prerendered routes (`export const prerender = true`: /api-docs and
+    // the three /(legal)/* pages) carry their CSP in a <meta http-equiv>
+    // tag rather than a response header, and browsers both ignore
+    // report-uri in meta and reject the Report-Only variant there — so
+    // those four routes enforce the policy but report nothing, and never
+    // see the strict style-src at all. And extensions inject into pages
+    // constantly, so a violation whose `source_file` is not the document
+    // itself is client-side noise, not a fault in this policy.
     csp: {
       mode: 'auto',
       directives: cspEnforcedDirectives,
-      ...(sentryCspReportUri ? { reportOnly: cspReportOnlyDirectives } : {}),
+      ...(sentryCspReportUri ? { reportOnly: cspStyleReportOnlyDirectives } : {}),
     },
     experimental: {
       // Required by @sentry/sveltekit >= 10.8.0: SvelteKit loads
