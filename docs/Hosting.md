@@ -143,7 +143,13 @@ Bunny rewrites `Cache-Control` to `public, max-age=0` on every rule-bypassed res
 
 **Cache Error Responses** is on. Bunny holds 4xx and 5xx for a fixed 5 seconds, not configurable, which absorbs probe bursts for nonexistent asset hashes and collapses Caddy-level 502s while Node restarts. It also holds the public API's per-IP `429`, so one caller's verdict can be served to others at the same PoP for those 5 seconds.
 
-**SafeHop** is on with one retry, no delay, and **Connection Timeout** as the only retry reason. A connection that never opened never reached the container, so re-sending is safe for every method, and a container restart is exactly the failure it covers. **Response Timeout** and **Origin 5xx** stay off: this zone passes bypassed `/api/` POSTs to Django, Bunny documents no exemption for non-idempotent methods, and a write that reached Django and then exceeded the 60-second response timeout would be submitted twice. Media upload is the one request that can plausibly run that long, and a duplicated upload is worse than a 502.
+**SafeHop is on** with one retry, no delay, and **Connection Timeout** as the only retry reason. A connection that never opened never reached the container, so re-sending is safe for every method, and a container restart is exactly the failure it covers. **Response Timeout** and **Origin 5xx** stay off: this zone passes bypassed `/api/` POSTs to Django, Bunny documents no exemption for non-idempotent methods, and a write that reached Django and then exceeded the 60-second response timeout would be submitted twice. Media upload is the one request that can plausibly run that long, and a duplicated upload is worse than a 502.
+
+**Bunny's origin shield is deliberately off.** Nine days of edge logs measured its offload at 2.7% of apex HTML origin pulls — long-tail crawling under a 60 s TTL rarely misses the same page at two PoPs in one minute — which does not pay for the downsides:
+
+- A long hop on every miss: Bunny's US origin is in Chicago while the Railway server is in Virginia.
+- A risk to the `%{User.IP}` derivation that nothing in production can observe.
+- A second tier every purge must clear.
 
 **Request Coalescing is deliberately off.** Bunny coalesces any uncached request, and bypassed signed-in `__data.json` responses are per-user, so two contributors at one PoP could be served each other's payload.
 
