@@ -41,6 +41,7 @@ from typing import Any, Iterator, NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pull_common import (  # noqa: E402
+    USER_AGENT,
     Row,
     add_window_args,
     log,
@@ -88,7 +89,8 @@ class Sentry:
     def _get(self, url: str) -> Page:
         for attempt in range(6):
             request = urllib.request.Request(
-                url, headers={"Authorization": f"Bearer {self._token}"}
+                url,
+                headers={"Authorization": f"Bearer {self._token}", "User-Agent": USER_AGENT},
             )
             try:
                 with urllib.request.urlopen(request, timeout=90) as response:

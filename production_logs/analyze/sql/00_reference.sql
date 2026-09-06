@@ -56,10 +56,12 @@ CREATE OR REPLACE MACRO norm_level(raw) AS
 -- manufactured failures. The base relations carry the mark as `is_synthetic`;
 -- the health views, `timeline` and `problems` leave marked rows out.
 --
--- A prefix, so a probe added later is excluded with no edit here. coalesce,
--- because a request with no agent is real traffic until shown otherwise.
+-- A prefix, so a probe added later is excluded with no edit here. Case-blind,
+-- so a capitalized probe agent cannot silently land in the health metrics.
+-- coalesce, because a request with no agent is real traffic until shown
+-- otherwise. See docs/UserAgent.md.
 CREATE OR REPLACE MACRO is_synthetic_ua(ua) AS
-  coalesce(ua LIKE 'flipcommons-%', false);
+  coalesce(ua ILIKE 'flipcommons-%', false);
 
 -- Bunny pull zones. A CDN log line names its zone only by a bare number, and
 -- which site that number fronts is nowhere in the file. Unknown ids fall through

@@ -20,6 +20,7 @@ from django.core.cache import cache
 
 from apps.citation.citation_types import CitationSourceTypeValue, citation_source_type
 from apps.citation.isbn import isbn_checksum_ok, normalize_isbn
+from apps.core.user_agent import USER_AGENT
 
 __all__ = [
     "ClassifiedInput",
@@ -155,7 +156,6 @@ def classify_input(raw: str) -> ClassifiedInput | None:
 _OL_TIMEOUT = 4  # seconds for edition request
 _WALL_CLOCK = 5  # total budget for all requests
 _CACHE_TTL = 60 * 60 * 24 * 7  # 7 days
-_USER_AGENT = "Flipcommons/1.0 (citation metadata lookup)"
 
 
 def _parse_year(publish_date: str) -> int | None:
@@ -199,7 +199,7 @@ def extract_isbn(isbn: str) -> ExtractionResult:
     if urlparse(edition_url).scheme != "https":
         return ExtractionResult(error="api_error")
     try:
-        req = Request(edition_url, headers={"User-Agent": _USER_AGENT})  # noqa: S310 — scheme checked above
+        req = Request(edition_url, headers={"User-Agent": USER_AGENT})  # noqa: S310 — scheme checked above
         with urlopen(req, timeout=_OL_TIMEOUT) as resp:  # noqa: S310 — scheme checked above
             edition = json.loads(resp.read())
     except HTTPError as exc:
@@ -226,7 +226,7 @@ def extract_isbn(isbn: str) -> ExtractionResult:
         author_url = f"https://openlibrary.org{author_key}.json" if author_key else ""
         if author_url and urlparse(author_url).scheme == "https":
             try:
-                req = Request(author_url, headers={"User-Agent": _USER_AGENT})  # noqa: S310 — scheme checked above
+                req = Request(author_url, headers={"User-Agent": USER_AGENT})  # noqa: S310 — scheme checked above
                 with urlopen(req, timeout=author_timeout) as resp:  # noqa: S310 — scheme checked above
                     author_data = json.loads(resp.read())
                 author = author_data.get("name", "")

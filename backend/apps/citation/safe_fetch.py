@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from typing import NamedTuple
 from urllib.parse import urljoin, urlparse
 
+from apps.core.user_agent import USER_AGENT
+
 # ---------------------------------------------------------------------------
 # Public types
 # ---------------------------------------------------------------------------
@@ -51,7 +53,6 @@ class _FetchOneResult(NamedTuple):
 # ---------------------------------------------------------------------------
 
 _MAX_REDIRECTS = 5
-_USER_AGENT = "Flipcommons/1.0 (citation metadata lookup)"
 
 
 def _is_blocked(addr: str) -> bool:
@@ -110,7 +111,7 @@ def _fetch_one(
 
     headers_out = {
         "Host": hostname,
-        "User-Agent": _USER_AGENT,
+        "User-Agent": USER_AGENT,
         "Accept-Encoding": "identity",
         "Connection": "close",
     }
