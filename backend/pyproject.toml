@@ -721,7 +721,7 @@ layers = [
     "cache_control | wikilinks | middleware",
     "admin | api_helpers | authz | autocomplete | checks | entity_types | licensing | rate_limits | sitemap | soft_delete",
     "exceptions | models",
-    "admin_apps | admin_site | pagination | response_cache | schemas | search | site_origin | types | validators",
+    "admin_apps | admin_site | pagination | response_cache | schemas | search | site_origin | types | user_agent | validators",
 ]
 
 # ----- media -----

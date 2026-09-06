@@ -30,6 +30,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 Row = dict[str, Any]
 
+# Must not start with `flipcommons-`, which analyze/ reads as probe traffic.
+# See docs/UserAgent.md.
+USER_AGENT = "Flipcommons/1.0 (+https://flipcommons.org/about)"
+
 
 def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
@@ -133,8 +137,9 @@ def http_request(
             url,
             data=body,
             # urllib's default agent is blocked outright by some vendor WAFs
-            # (Railway's answers it with a bare 403), so always send our own.
-            headers={"Accept-Encoding": "gzip", "User-Agent": "flipcommons-pull", **headers},
+            # (Railway's answers it with a bare 403), so always send our own, and
+            # spread the caller's headers first so nothing can replace it.
+            headers={**headers, "Accept-Encoding": "gzip", "User-Agent": USER_AGENT},
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:

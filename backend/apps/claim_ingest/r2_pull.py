@@ -20,6 +20,8 @@ from collections.abc import Callable, Collection
 from typing import Any, NamedTuple, cast
 from urllib.error import HTTPError
 
+from apps.core.user_agent import USER_AGENT
+
 # Default local download directory, shared by the pull commands.
 DEFAULT_DEST = os.path.join(tempfile.gettempdir(), "ingest_sources")
 
@@ -52,7 +54,7 @@ socket.getaddrinfo = _ipv4_only_getaddrinfo
 _TIMEOUT_SECONDS = 30
 
 _OPENER = urllib.request.build_opener()
-_OPENER.addheaders = [("User-Agent", "flipcommons/1.0")]
+_OPENER.addheaders = [("User-Agent", USER_AGENT)]
 
 
 class PullCounts(NamedTuple):

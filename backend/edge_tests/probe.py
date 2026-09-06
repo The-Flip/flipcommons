@@ -13,7 +13,9 @@ import httpx
 
 # Marks probe traffic in the Bunny and Railway access logs. `production_logs/`
 # excludes any `flipcommons-` agent from its health views, so the prefix has to
-# survive a rename of the value.
+# survive a rename of the value. A machine key read only by our own pipeline,
+# so it carries no contact URL: `http` in an agent also re-buckets its Sentry
+# errors as `bot`. See docs/UserAgent.md.
 USER_AGENT: Final = "flipcommons-edge-smoke/1.0"
 
 # Generous read timeout: the bulk export is the largest response the site

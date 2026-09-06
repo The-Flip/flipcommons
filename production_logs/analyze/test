@@ -162,13 +162,15 @@ case_synthetic_ua() {
   w=$1
   b=$w/dumps/bunny/flipcommons-html.5969801.2026-08-20.ndjson
   printf '{"bytesSent":100,"cacheStatus":"BYPASS","countryCode":"US","edgeLocation":"TX","host":"flipcommons.org","path":"/about","pullZoneId":5969801,"referer":"-","remoteIp":"1.2.3.0","requestId":"reqSYN","scheme":"https","statusCode":200,"timestamp":"2026-08-20T10:00:06.00+00:00","url":"https://flipcommons.org/about","userAgent":"flipcommons-edge-smoke/1.0"}\n' >> "$b"
+  # A probe whose agent someone capitalized: the macro is case-blind, so it stays a probe.
+  printf '{"bytesSent":100,"cacheStatus":"BYPASS","countryCode":"US","edgeLocation":"TX","host":"flipcommons.org","path":"/about","pullZoneId":5969801,"referer":"-","remoteIp":"1.2.3.0","requestId":"reqSYN2","scheme":"https","statusCode":200,"timestamp":"2026-08-20T10:00:06.50+00:00","url":"https://flipcommons.org/about","userAgent":"Flipcommons-edge-smoke/1.0"}\n' >> "$b"
   r=$w/dumps/railway/http.2026-08-20.ndjson
   printf '{"timestamp":"2026-08-20T10:00:06.00Z","method":"GET","path":"/","httpStatus":301,"totalDuration":2,"upstreamRqDuration":1,"host":"flipcommons-production.up.railway.app","srcIp":"1.2.3.4","clientUa":"flipcommons-edge-smoke/1.0","edgeRegion":"us-east4","rxBytes":10,"txBytes":10,"upstreamAddress":"","upstreamErrors":"","responseDetails":"","requestId":"rwSYN","deploymentId":"dddddddd-1111-2222-3333-444444444444","deploymentInstanceId":"eeeeeeee-1111-2222-3333-444444444444"}\n' >> "$r"
   # A probe that fails: no probe produces a 5xx today, but one could.
   printf '{"timestamp":"2026-08-20T10:00:07.00Z","method":"GET","path":"/","httpStatus":502,"totalDuration":2,"upstreamRqDuration":0,"host":"flipcommons-production.up.railway.app","srcIp":"1.2.3.4","clientUa":"flipcommons-edge-smoke/1.0","edgeRegion":"us-east4","rxBytes":10,"txBytes":10,"upstreamAddress":"","upstreamErrors":"","responseDetails":"","requestId":"rwSYN5","deploymentId":"dddddddd-1111-2222-3333-444444444444","deploymentInstanceId":"eeeeeeee-1111-2222-3333-444444444444"}\n' >> "$r"
   expect "build succeeds" "0" "$(build "$w" && echo 0 || echo 1)"
   expect "no findings"    "0" "$(q "$w" 'SELECT count(*) FROM checks;')"
-  expect "cdn probe marked"     "1" \
+  expect "cdn probes marked"    "2" \
     "$(q "$w" 'SELECT count(*) FROM bunny_requests WHERE is_synthetic;')"
   expect "origin probes marked" "2" \
     "$(q "$w" 'SELECT count(*) FROM railway_requests WHERE is_synthetic;')"
@@ -182,7 +184,7 @@ case_synthetic_ua() {
   expect "a failed probe is not a problem" "0" \
     "$(q "$w" "SELECT count(*) FROM problems WHERE tier = 'origin';")"
   expect "nor on the timeline" "0" \
-    "$(q "$w" "SELECT count(*) FROM timeline WHERE ref IN ('reqSYN', 'rwSYN', 'rwSYN5');")"
+    "$(q "$w" "SELECT count(*) FROM timeline WHERE ref IN ('reqSYN', 'reqSYN2', 'rwSYN', 'rwSYN5');")"
   # Usable in a WHERE with no NULL guard: an absent agent reads as real traffic.
   expect "never null"           "0" \
     "$(q "$w" 'SELECT count(*) FROM bunny_requests WHERE is_synthetic IS NULL;')"
@@ -191,8 +193,11 @@ case_synthetic_ua() {
     "$(q "$w" "SELECT is_synthetic_ua('flipcommons-something-new/9');")"
   expect "and leaves real traffic alone" "false" \
     "$(q "$w" "SELECT is_synthetic_ua('Mozilla/5.0 (Macintosh)');")"
+  # A slash, not a hyphen: the outward agent is real traffic.
+  expect "the outward agent is not a probe" "false" \
+    "$(q "$w" "SELECT is_synthetic_ua('Flipcommons/1.0 (+https://flipcommons.org/about)');")"
   # Marked, never dropped: the base relations declare one row per request.
-  expect "probe rows are kept, not filtered out" "6" \
+  expect "probe rows are kept, not filtered out" "7" \
     "$(q "$w" 'SELECT count(*) FROM bunny_requests;')"
 }
 
