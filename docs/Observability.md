@@ -1,44 +1,56 @@
 # Observability
 
-We use **[Sentry.io](https://sentry.io)** to learn when production has problems before a user has to tell us. Error capture and alerting — nothing else. No tracing, no profiling, no session replay, no analytics.
+We use:
+
+- [Sentry.io](#sentry): error reporting
+- [Log analytics](#log-analytics): production log analysis
+- [Discord](#product-events): product notifications like user signups
+
+## Sentry
+
+We use [Sentry](https://sentry.io) for error capture and alerting and nothing else: no tracing, no profiling, no session replay, no analytics.
+
+### Sentry config
+
+For the Sentry-side configuration (env vars, scrubbing rules, alert rules), see [Hosting.md § Sentry](Hosting.md#sentry).
+
+### Sentry projects
 
 In Sentry, we have two projects:
 
 - `flipcommons-backend`: Python/Django
 - `flipcommons-frontend`: JavaScript/SvelteKit — both SSR and browser report here
 
-## Sentry config
-
-For the Sentry-side configuration (env vars, scrubbing rules, alert rules), see [Hosting.md § Sentry](Hosting.md#sentry).
-
-## The master switch: DSN presence
+### The master switch: DSN presence
 
 A **DSN** (Data Source Name) is Sentry's name for the per-project URL to posts events to. It identifies the project and authenticates the write — it's a public write-only key by design, not a secret. Each of our two projects has its own DSN.
 
 Each runtime's SDK init runs only when its own DSN env var is non-empty: the backend gates on `SENTRY_DSN`, the frontend (SSR + browser) gates on `PUBLIC_SENTRY_DSN`. Local, CI, and test environments leave both unset and the init blocks no-op. There is no per-environment matrix and no runtime kill switch — disabling Sentry in prod means removing the DSN and redeploying.
 
-## What we capture
+### What we capture
 
 - Unhandled backend exceptions (via `DjangoIntegration`).
 - Unhandled SSR and browser exceptions (via `@sentry/sveltekit`).
 - Explicit `sentry_sdk.capture_*` calls for swallowed-but-noteworthy cases.
 
-## Things we don't capture
+### What we don't capture
 
 Some of the things we explicitly don't capture:
 
 - **Backend**: validation errors, expected permission denials, expected 404s, structured 4xx errors (rate limits, etc.).
 - **Frontend**: `ResizeObserver` notifications, navigation aborts, `ChunkLoadError`, non-Error throws.
 
-## Logs ≠ alerts
+### Logs don't go to Sentry
 
 `logger.info/warning/error` flows to the container's log stream and stays there. To send to Sentry, code must call the Sentry SDK's `capture_*` API explicitly. On the backend, `LoggingIntegration(level=INFO, event_level=None)` attaches log records as breadcrumbs on real events but never promotes them to standalone Sentry events. This keeps authz denials, validation errors, and rate-limit hits out of the alert stream by construction.
 
-## Working with production logs
+## Logs
 
-[production_logs/](../production_logs/README.md) pulls these logs out of Railway and Sentry and builds a queryable database over them. Use it for incidents rather than reading the raw exports: it encodes the classification caveats below as data, so `severity` is not taken at face value, and it records what each export actually covers.
+### Log analytics
 
-## Structured logs in Railway
+[production_logs/](../production_logs/README.md) pulls logs from our production systems -- Railway, Bunny.net and Sentry -- and builds a DuckDB over them. Use the DuckDB rather than reading the raw exports: it encodes the classification caveats below as data, so `severity` is not taken at face value, and it records what each export actually covers.
+
+### Structured logs in Railway
 
 Railway derives the `severity` you filter on in the log explorer from the line itself: a JSON line's `level` field wins, and a plain-text line is classified by the stream it arrived on — stdout becomes `info`, stderr becomes `error`. Python's `StreamHandler` writes to stderr, so unformatted output arrives tagged as an error whatever its real level, and `severity:error` stops meaning anything.
 
@@ -62,6 +74,18 @@ Four sources still classify by stream, all of them expected:
 - **Container start and the predeploy step.** Railway narrates its own lifecycle (`Starting Container`), and the predeploy script's `manage.py check` and `migrate` run before gunicorn and write to stdout, where `self.stdout.write` never touches `logging`.
 
 Whether the Python formatter is running is answered by whether Python lines appear **at all**. They carry `pid`, which nothing else emits — the SSR logger deliberately omits it, since SSR is one process and the field would carry no information there. That absence is also what tells the two structured emitters apart: an SSR line carries `logger` without `pid`, which is how `railway_lines.emitter` classifies it.
+
+## Product events
+
+We have a private Discord channel to which we send product events an Admin wants to hear about — a new account today, first edits and destructive editorial actions later.
+
+These go through `notify_admins()` in `backend/apps/core/admin_notifications.py`. For enablement see [Hosting.md § Discord](Hosting.md#discord).
+
+The payload lands in a channel with no scrubbing and no retention policy, so it carries only data that is already public on the site: usernames, entity names, links. Never emails, IPs or tokens — the same line drawn for `extra=` under [Structured logs in Railway](#structured-logs-in-railway).
+
+Delivery is best-effort, not guaranteed.
+
+Sentry would be the wrong home for these: it groups `capture_message` events by message and its alert rules fire on _new_ issues and regressions, so a recurring product event would alert once and then stay silent forever.
 
 ## Privacy
 

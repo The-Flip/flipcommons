@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 
 from django.conf import settings
 from django.contrib.auth import login
@@ -36,6 +37,7 @@ from apps.accounts.schemas import (
 from apps.accounts.types import Username
 from apps.accounts.usernames import UsernameFormatRejectReason, validate_username_format
 from apps.accounts.workos_client import get_workos_client
+from apps.core.admin_notifications import notify_admins
 from apps.core.authz.markers import public_mutation
 from apps.core.rate_limits import (
     RateLimitSpec,
@@ -220,6 +222,15 @@ def signup_submit(
                 last_name=pending["last_name"],
                 workos_user_id=pending["workos_user_id"],
                 email_verified=pending["email_verified"],
+            )
+            # On commit, so a signup that loses the race below announces
+            # nothing. No email: the channel has no scrubbing.
+            transaction.on_commit(
+                partial(
+                    notify_admins,
+                    "account.created",
+                    f"New account: {username}\n{absolute_site_url(f'/users/{username}')}",
+                )
             )
     except IntegrityError:
         # Disambiguate by re-query, not by inspecting the exception:
