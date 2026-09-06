@@ -98,11 +98,13 @@ class TestBuildDisplayValue:
             qualifiers=[],
         )
 
-    def test_corrupt_pk_type_degrades_to_missing_without_crashing(self):
+    def test_corrupt_pk_type_degrades_to_missing_without_crashing(
+        self, sentry_recording
+    ):
         # Validation rule 5 rejects wrong-type FK values at write time, so
         # this shape shouldn't exist. If a stale row / bypassed ingest
         # source slips one through, the display engine must not 500 the
-        # whole page — log, emit state="missing", carry on.
+        # whole page — report to Sentry, emit state="missing", carry on.
         value = {"person": "not-an-int", "role": 7, "exists": True}
         ctx = _ctx(FieldValue("credit", value, _MODEL))
         result = build_display_value(_MODEL, "credit", value, ctx)
@@ -111,6 +113,13 @@ class TestBuildDisplayValue:
         person_part = next(p for p in result.identity if p.key == "person")
         assert person_part.state == "missing"
         assert person_part.label is None
+        assert [
+            (
+                e["exception"]["values"][-1]["type"],
+                e["exception"]["values"][-1]["value"],
+            )
+            for e in sentry_recording.events
+        ] == [("_DisplayInvariantError", "non-int pk for an identity key")]
 
     def test_model_relationship_machine_rung_skips_absent_target_slots(self):
         # Absent xor-group slots (null FK, empty label) are absence by
@@ -254,7 +263,7 @@ class TestBuildDisplayValue:
         # shape to reach build_display_value. If it ever does — e.g. a
         # stale row, a fixture, or an ingest source that skipped validation
         # — surface ``state="missing"`` so the frontend can render a
-        # placeholder, and log loudly so the integrity issue is observable.
+        # placeholder, and report the breach so the integrity issue is observable.
         ctx = _ctx()
         assert build_display_value(_MODEL, "credit", {"exists": False}, ctx) == (
             ClaimDisplayValueSchema(

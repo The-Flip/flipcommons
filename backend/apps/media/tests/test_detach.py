@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
@@ -188,7 +190,7 @@ class TestDetachEndpoint:
             )
         ]
 
-    def test_detach_storage_failure_does_not_rollback_db(
+    def test_detach_storage_leak_reaches_sentry(
         self,
         auth_client,
         machine_model,
@@ -197,16 +199,13 @@ class TestDetachEndpoint:
         attached,
         monkeypatch,
         django_capture_on_commit_callbacks,
+        sentry_recording,
     ):
-        delete_attempts = []
-
-        def raise_storage_failure(storage_keys):
-            delete_attempts.append(sorted(storage_keys))
-            raise RuntimeError("storage delete failed")
-
+        """Rows are gone but blobs remain: a leak nobody would otherwise notice."""
+        broken_storage = MagicMock()
+        broken_storage.delete.side_effect = OSError("bucket unreachable")
         monkeypatch.setattr(
-            "apps.media.api.delete_from_storage",
-            raise_storage_failure,
+            "apps.media.storage.get_media_storage", lambda: broken_storage
         )
 
         with django_capture_on_commit_callbacks(execute=True):
@@ -221,12 +220,50 @@ class TestDetachEndpoint:
             )
 
         assert resp.status_code == 204
-        assert delete_attempts == [
-            sorted(
-                build_storage_key(asset.uuid, rendition_type)
-                for rendition_type, _label in MediaRendition.RenditionType.choices
+        assert [
+            e["exception"]["values"][-1]["type"] for e in sentry_recording.events
+        ] == ["MediaStorageLeakError"]
+        # The per-key warning rides on the event as a breadcrumb.
+        crumbs = sentry_recording.events[0]["breadcrumbs"]["values"]
+        assert any(
+            build_storage_key(asset.uuid, "thumb") in crumb["message"]
+            for crumb in crumbs
+        )
+
+    def test_detach_storage_failure_does_not_rollback_db(
+        self,
+        auth_client,
+        machine_model,
+        asset,
+        renditions,
+        attached,
+        monkeypatch,
+        django_capture_on_commit_callbacks,
+    ):
+        broken_storage = MagicMock()
+        broken_storage.delete.side_effect = RuntimeError("storage delete failed")
+        monkeypatch.setattr(
+            "apps.media.storage.get_media_storage", lambda: broken_storage
+        )
+
+        with django_capture_on_commit_callbacks(execute=True):
+            resp = auth_client.post(
+                "/api/media/detach/",
+                data={
+                    "entity_type": "model",
+                    "public_id": machine_model.public_id,
+                    "asset_uuid": str(asset.uuid),
+                },
+                content_type="application/json",
             )
-        ]
+
+        assert resp.status_code == 204
+        assert sorted(
+            call.args[0] for call in broken_storage.delete.call_args_list
+        ) == sorted(
+            build_storage_key(asset.uuid, rendition_type)
+            for rendition_type, _label in MediaRendition.RenditionType.choices
+        )
         assert not EntityMedia.objects.filter(asset=asset).exists()
         assert not MediaAsset.objects.filter(pk=asset.pk).exists()
         assert not MediaRendition.objects.filter(asset_id=asset.pk).exists()

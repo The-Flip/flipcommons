@@ -1,9 +1,7 @@
 """Sentry options assembled outside ``settings.py`` for testability.
 
-The ``ignore_errors`` list is the in-code half of
-ObservabilityArchitecture.md § Capture scope's "don't capture"
-contract. Pulling it out of ``settings.py`` lets tests import the
-same list rather than redeclare it (which would silently drift).
+Pulling the ``ignore_errors`` list out of ``settings.py`` lets tests import
+the same list rather than redeclare it (which would silently drift).
 
 These imports are cheap — every name here is already loaded by the
 Django app at startup. The reason ``settings.py`` gates Sentry
@@ -12,6 +10,8 @@ module touches it.
 """
 
 from __future__ import annotations
+
+from typing import Final
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404
@@ -38,3 +38,9 @@ IGNORE_ERRORS: list[type[BaseException]] = [
     Http404,
     StructuredApiError,
 ]
+
+# Frame locals ride along with every traceback and the scrubber matches them
+# by key name only, so an upload's bytes, an OAuth code or a pending signup's
+# identity would reach Sentry through whichever view had them in scope. The
+# stack, message and breadcrumbs remain.
+INCLUDE_LOCAL_VARIABLES: Final = False

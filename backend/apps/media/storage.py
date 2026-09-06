@@ -104,11 +104,14 @@ def sniff_image_content_type(data: bytes) -> str | None:
     return None
 
 
-def delete_from_storage(storage_keys: list[str]) -> None:
-    """Best-effort deletion of storage objects (for cleanup on failure)."""
+def delete_from_storage(storage_keys: list[str]) -> list[str]:
+    """Best-effort deletion of storage objects; returns the keys still in storage."""
     storage = get_media_storage()
+    leaked: list[str] = []
     for key in storage_keys:
         try:
             storage.delete(key)
         except Exception:
             logger.warning("Failed to delete storage key %s", key, exc_info=True)
+            leaked.append(key)
+    return leaked

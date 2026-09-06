@@ -1,7 +1,7 @@
 """Tests for ``/api/sentry_test`` — the staff-gated exception trigger.
 
-The route exists to verify the Sentry pipeline end-to-end (see
-ObservabilityArchitecture.md § First-event verification). These tests
+The route exists to verify the Sentry pipeline end-to-end after a
+deploy. These tests
 pin both the authz gate and the actual capture behavior so a future
 change that breaks either is a CI failure, not a silent regression
 discovered the next time someone runs the verification step.

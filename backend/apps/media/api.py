@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 import uuid as uuid_lib
 from functools import partial
 from pathlib import PurePosixPath
 from typing import cast
 
+import sentry_sdk
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -62,8 +62,6 @@ from apps.media.storage import (
 )
 from apps.provenance.models import ChangeSetAction
 
-logger = logging.getLogger(__name__)
-
 media_router = Router()
 
 
@@ -104,12 +102,23 @@ _CODEC_EXTENSIONS: dict[str, str] = {
 }
 
 
-def _delete_media_storage_after_commit(storage_keys: list[str]) -> None:
-    """Delete storage files after a successful DB commit."""
-    try:
-        delete_from_storage(storage_keys)
-    except Exception:
-        logger.exception("Storage cleanup failed for %d keys", len(storage_keys))
+class MediaStorageLeakError(Exception):
+    """Storage objects outlived the rows that referenced them."""
+
+
+def _cleanup_storage(storage_keys: list[str]) -> None:
+    """Delete storage files whose rows are gone, reporting any that remain.
+
+    Reported rather than raised: the callers are an ``on_commit`` callback,
+    where a raise would propagate into the request that just committed, and
+    failure paths that are already raising something else. The per-key
+    warning from ``delete_from_storage`` reaches the event as a breadcrumb.
+    """
+    leaked = delete_from_storage(storage_keys)
+    if leaked:
+        sentry_sdk.capture_exception(
+            MediaStorageLeakError("storage objects outlived their rows")
+        )
 
 
 def _check_rate_limit(user_id: UserId) -> None:
@@ -259,11 +268,8 @@ def upload_media(
             upload_to_storage(key, processed.data, processed.mime_type)
             uploaded_keys.append(key)
     except Exception:
-        logger.exception(
-            "Storage upload failed, cleaning up %d keys", len(uploaded_keys)
-        )
-        delete_from_storage(uploaded_keys)
-        raise HttpError(500, "Storage upload failed.") from None
+        _cleanup_storage(uploaded_keys)
+        raise
 
     # --- Create DB rows ---
     try:
@@ -309,12 +315,11 @@ def upload_media(
         # A client-fault claim failure (constraint/validation) — clean up the
         # blobs uploaded before the atomic block, then re-raise so Ninja's
         # handler maps it to a 422, matching the other media endpoints.
-        delete_from_storage(uploaded_keys)
+        _cleanup_storage(uploaded_keys)
         raise
     except Exception:
-        logger.exception("DB transaction failed, cleaning up storage keys")
-        delete_from_storage(uploaded_keys)
-        raise HttpError(500, "Failed to save media records.") from None
+        _cleanup_storage(uploaded_keys)
+        raise
 
     _incr_rate_limit(user.id)
 
@@ -377,9 +382,7 @@ def detach_media(request: HttpRequest, body: MediaAssetInputSchema) -> Status[No
         )
         asset.delete()
         if storage_keys:
-            transaction.on_commit(
-                partial(_delete_media_storage_after_commit, storage_keys)
-            )
+            transaction.on_commit(partial(_cleanup_storage, storage_keys))
 
     return Status(204, None)
 

@@ -29,6 +29,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
 
+import sentry_sdk
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import ForeignKey, Model
 
@@ -115,6 +116,21 @@ class LabelLookup:
         return self._labels.get(ref)
 
 
+class _DisplayInvariantError(Exception):
+    """A claim value reached display in a shape write-time validation forbids."""
+
+
+def _report_invariant_breach(kind: str, detail: str) -> None:
+    """Log the breach and send it to Sentry, degrading the slot instead of raising.
+
+    The exception is never raised, so Sentry groups it on ``kind`` alone; a
+    single corrupt ingest must not open one issue per claim. ``detail`` goes to
+    the log line, which reaches the event as a breadcrumb.
+    """
+    logger.error("display: %s: %s", kind, detail)
+    sentry_sdk.capture_exception(_DisplayInvariantError(kind))
+
+
 def _fk_label(
     value: RelationshipClaimValue,
     schema: RelationshipSchema,
@@ -142,34 +158,22 @@ def _fk_label(
     )
     pk = value.get(spec.name)
     if pk is None:
-        # Invariant violation: validation rule 4 (required identity keys)
-        # should prevent this. If we got here, something bypassed the
-        # write-time validator — pre-validation data, an ingest source
-        # that skipped validation, or a future bug. Log loudly so it's
-        # observable in monitoring; emit state="missing" so the frontend
-        # can render a placeholder without crashing the page.
-        logger.error(
-            "display: missing identity key %r in namespace %r — validation "
-            "rule 4 should prevent this; value=%r",
-            spec.name,
-            schema.namespace,
-            dict(value),
+        # Write-time validation forbids this shape, so something bypassed it.
+        # Degrade the one slot rather than 500 the whole page.
+        _report_invariant_breach(
+            "missing identity key",
+            f"{spec.name!r} in namespace {schema.namespace!r} — validation "
+            f"rule 4 should prevent this; value={dict(value)!r}",
         )
         return _LabelResult(label=None, state="missing")
     # ``type(pk) is int`` (not ``isinstance``): ``isinstance(True, int)`` is
-    # ``True`` and would let a stray bool slip through as a pk. Schema
-    # validation rule 5 rejects wrong-type values at write time, so reaching
-    # here means the same kind of integrity breach as ``pk is None``: log
-    # and degrade, don't 500 the whole edit-history page.
+    # ``True`` and would let a stray bool slip through as a pk.
     if type(pk) is not int:
-        logger.error(
-            "display: non-int pk %r (%s) for identity key %r in namespace %r — "
-            "validation rule 5 should prevent this; value=%r",
-            pk,
-            type(pk).__name__,
-            spec.name,
-            schema.namespace,
-            dict(value),
+        _report_invariant_breach(
+            "non-int pk for an identity key",
+            f"{pk!r} ({type(pk).__name__}) for {spec.name!r} in namespace "
+            f"{schema.namespace!r} — validation rule 5 should prevent this; "
+            f"value={dict(value)!r}",
         )
         return _LabelResult(label=None, state="missing")
     label = labels.get(FkRef(spec.fk_target.model, pk))
@@ -189,7 +193,7 @@ def resolve_member_label(
     Composes :func:`get_display_override` (declarative display_key
     substitution) with :func:`_fk_label` (FK pk → label) and the canonical
     scalar fallback. The override and resolved-scalar paths always return
-    ``state="resolved"``; missing-key paths log and return
+    ``state="resolved"``; missing-key paths report the breach and return
     ``state="missing"``.
     """
     override = get_display_override(value, spec)
@@ -197,18 +201,14 @@ def resolve_member_label(
         return _LabelResult(label=override, state="resolved")
     if spec.fk_target is not None:
         return _fk_label(value, schema, spec, labels)
-    # Canonical scalar fallback. ``is not None`` (not truthy) so a
-    # deliberately empty identity renders as the empty string rather than
-    # state="missing" — matches the prior abbreviation behavior.
-    # Absent key (invariant violation) → state="missing" + loud log.
+    # ``is not None`` (not truthy) so a deliberately empty identity renders
+    # as the empty string rather than state="missing".
     raw = value.get(spec.name)
     if raw is None:
-        logger.error(
-            "display: missing scalar identity key %r in namespace %r — "
-            "validation rule 4 should prevent this; value=%r",
-            spec.name,
-            schema.namespace,
-            dict(value),
+        _report_invariant_breach(
+            "missing scalar identity key",
+            f"{spec.name!r} in namespace {schema.namespace!r} — validation "
+            f"rule 4 should prevent this; value={dict(value)!r}",
         )
         return _LabelResult(label=None, state="missing")
     return _LabelResult(label=str(raw), state="resolved")

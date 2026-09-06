@@ -3,9 +3,12 @@ import { getLogger } from '$lib/log';
 
 // SvelteKit's `handleError` hook is called for every unexpected error
 // during a request, including the SvelteKitError(404) thrown by prerender's
-// link-discovery crawl over `/api/*` preload hints. We pass these handlers
-// to Sentry.handleErrorWithSentry(...) so Sentry's defaultErrorHandler
-// (which dumps a full stack for every error, 4xx included) is never used.
+// link-discovery crawl over `/api/*` preload hints. It is not called for
+// errors thrown via `error()`: SvelteKit serializes that HttpError straight
+// to the client, so a fault thrown that way is never logged or captured.
+// We pass these handlers to Sentry.handleErrorWithSentry(...) so Sentry's
+// defaultErrorHandler (which dumps a full stack for every error, 4xx
+// included) is never used.
 //
 // 4xx: log a single line at info level. A 4xx is an expected request
 //      outcome (the server correctly said "not here" / "not allowed"),

@@ -17,6 +17,7 @@ A forced mint failure pins both behaviors.
 from __future__ import annotations
 
 from io import BytesIO
+from unittest.mock import MagicMock
 
 import pytest
 from django.db import IntegrityError
@@ -178,3 +179,33 @@ class TestUploadSurfaces422:
         # The dedicated except still cleaned up the blobs uploaded before the failure.
         assert deleted, "delete_from_storage was not called on failure"
         assert deleted[-1], "uploaded storage keys were not cleaned up"
+
+
+class TestUploadCleanupLeak:
+    def test_leak_after_422_reaches_sentry(
+        self, client, machine_model, monkeypatch, sentry_recording
+    ):
+        """The 422's parent exception is filtered from Sentry, so a leak here
+        would otherwise never be reported."""
+        broken_storage = MagicMock()
+        broken_storage.save.side_effect = lambda key, content: key
+        broken_storage.delete.side_effect = OSError("bucket unreachable")
+        monkeypatch.setattr(
+            "apps.media.storage.get_media_storage", lambda: broken_storage
+        )
+        _break_mint(monkeypatch)
+
+        resp = client.post(
+            UPLOAD_URL,
+            data={
+                "file": _image(),
+                "entity_type": "model",
+                "public_id": machine_model.public_id,
+                "category": "backglass",
+            },
+        )
+
+        assert resp.status_code == 422, resp.content
+        assert [
+            e["exception"]["values"][-1]["type"] for e in sentry_recording.events
+        ] == ["MediaStorageLeakError"]

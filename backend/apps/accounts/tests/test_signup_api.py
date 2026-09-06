@@ -440,7 +440,7 @@ class TestSignupCancel:
         assert captured["return_to"] == "https://elsewhere.test/bye"
 
     def test_workos_logout_failure_falls_back_to_local_return(
-        self, client, settings, monkeypatch
+        self, client, settings, monkeypatch, sentry_recording
     ):
         settings.WORKOS_API_KEY = "sk_test"  # pragma: allowlist secret
         settings.WORKOS_CLIENT_ID = "client_x"
@@ -460,3 +460,6 @@ class TestSignupCancel:
         resp = self._cancel(client)
         assert resp.status_code == 200
         assert resp.json() == {"logout_url": "/"}
+        assert [
+            e["exception"]["values"][-1]["type"] for e in sentry_recording.events
+        ] == ["RuntimeError"]

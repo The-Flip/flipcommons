@@ -382,10 +382,9 @@ CONSTANCE_CONFIG_FIELDSETS = (("Content Display", ("CONTENT_DISPLAY_POLICY",)),)
 # ---------------------------------------------------------------------------
 # Sentry (error tracking)
 # ---------------------------------------------------------------------------
-# DSN presence is the master switch — see ObservabilityArchitecture.md §
-# Environment separation. Local, CI, and test environments leave SENTRY_DSN
-# unset; production sets it via Railway. There is no per-environment matrix
-# and no runtime kill switch.
+# DSN presence is the master switch. Local, CI, and test environments leave
+# SENTRY_DSN unset; production sets it via Railway. There is no
+# per-environment matrix and no runtime kill switch.
 SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
 if SENTRY_DSN:
     # Imports gated on the DSN so local dev, CI, and tests pay no
@@ -400,7 +399,7 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.logging import LoggingIntegration
     from sentry_sdk.scrubber import EventScrubber
 
-    from config.sentry_options import IGNORE_ERRORS
+    from config.sentry_options import IGNORE_ERRORS, INCLUDE_LOCAL_VARIABLES
 
     sentry_sdk.init(
         dsn=SENTRY_DSN,
@@ -411,11 +410,11 @@ if SENTRY_DSN:
         # not extract POST/PATCH payloads at all, replacing them with
         # an over-size-limit marker.
         max_request_body_size="never",
+        include_local_variables=INCLUDE_LOCAL_VARIABLES,
         traces_sample_rate=0.0,
         profiles_sample_rate=0.0,
-        # Implements ObservabilityArchitecture.md § Capture scope's
-        # "don't capture" list. ``DjangoIntegration`` hooks
-        # ``got_request_exception``, which fires for these classes
+        # ``DjangoIntegration`` hooks ``got_request_exception``, which
+        # fires for these classes
         # before Django's resolve_exception_handler maps them to 4xx
         # responses — without this filter they'd flood the issue
         # stream. ``StructuredApiError`` covers rate-limit denials
@@ -444,7 +443,7 @@ if SENTRY_DSN:
         #
         # Email / IP pattern masking and ``request.query_string`` drop
         # are handled by server-side Advanced Data Scrubbing rules
-        # (see ObservabilityArchitecture.md § Privacy enforcement).
+        # (docs/Hosting.md § Sentry).
         event_scrubber=EventScrubber(recursive=True, send_default_pii=False),
     )
 

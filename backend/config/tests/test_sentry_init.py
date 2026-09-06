@@ -24,7 +24,6 @@ def test_sentry_is_inactive_without_dsn() -> None:
     client = sentry_sdk.get_client()
     assert not client.is_active(), (
         "Sentry SDK has an active client even though SENTRY_DSN is unset. "
-        "The empty-DSN guard in config/settings.py is the master switch "
-        "(see ObservabilityArchitecture.md § Environment separation); a "
+        "The empty-DSN guard in config/settings.py is the master switch; a "
         "weakened guard would emit events from local dev, CI, and tests."
     )
