@@ -299,6 +299,10 @@ Each maintainer is an org member with their own destination (email or chat). Add
 
 Product analytics — pageviews only. Enabled in prod by setting `PUBLIC_POSTHOG_KEY`; an empty key is off (same master-switch pattern as Sentry). Surface area and privacy posture are in [Analytics.md](Analytics.md).
 
+### Discord
+
+A private Discord channel receives admin notifications — product events such as a new account — through a channel webhook. Enabled in prod by setting `ADMIN_NOTIFICATION_WEBHOOK_URL` to the webhook URL (Discord: channel settings → Integrations → Webhooks); an empty value is off. The URL is a credential: anyone holding it can post to the channel.
+
 ## Geography
 
 The Flip pinball museum and many editors and end users are in Chicago. Hosting reflects that:

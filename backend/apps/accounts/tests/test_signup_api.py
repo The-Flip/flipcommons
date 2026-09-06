@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 from django.core.cache import cache
@@ -192,6 +193,44 @@ class TestSignupSubmit:
         # Session is authenticated.
         assert client.session.get("_auth_user_id") == str(user.pk)
 
+    def test_success_notifies_admins_without_the_email(
+        self, client, settings, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        settings.SITE_ORIGIN = "https://flipcommons.example"
+        notify = MagicMock()
+        monkeypatch.setattr("apps.accounts.api.signup.notify_admins", notify)
+        _stash_pending(client, email="alice@example.com")
+
+        with django_capture_on_commit_callbacks(execute=True):
+            resp = self._submit(client, "alice")
+        assert resp.status_code == 200
+
+        notify.assert_called_once()
+        code, message = notify.call_args.args
+        assert code == "account.created"
+        assert "alice" in message
+        assert "https://flipcommons.example/users/alice" in message
+        # The channel has no scrubbing; the address must never reach it.
+        assert "alice@example.com" not in message
+        assert "@" not in message
+
+    def test_failing_webhook_does_not_break_signup(
+        self, client, settings, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        settings.ADMIN_NOTIFICATION_WEBHOOK_URL = "https://discord.example.test/hook"
+        monkeypatch.setattr(
+            "apps.core.admin_notifications.urlopen",
+            MagicMock(side_effect=OSError("unreachable")),
+        )
+        _stash_pending(client, next_url="/dashboard")
+
+        with django_capture_on_commit_callbacks(execute=True):
+            resp = self._submit(client, "alice")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"redirect_url": "/dashboard"}
+        assert User.objects.filter(username="alice").exists()
+
     def test_username_race_returns_409_taken(self, client):
         make_user(username="claimed")
         _stash_pending(client)
@@ -200,6 +239,18 @@ class TestSignupSubmit:
         assert resp.json()["detail"]["kind"] == "username_taken"
         # Pending stays intact so the user can pick another.
         assert PENDING_SESSION_KEY in client.session
+
+    def test_username_race_notifies_nothing(
+        self, client, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        notify = MagicMock()
+        monkeypatch.setattr("apps.accounts.api.signup.notify_admins", notify)
+        make_user(username="claimed")
+        _stash_pending(client)
+        with django_capture_on_commit_callbacks(execute=True):
+            resp = self._submit(client, "claimed")
+        assert resp.status_code == 409
+        notify.assert_not_called()
 
     def test_workos_user_id_race_logs_loser_in_as_winner(self, client):
         """Sibling tab won the workos_user_id race; loser is signed in as winner."""

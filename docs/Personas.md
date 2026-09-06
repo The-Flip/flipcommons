@@ -4,7 +4,7 @@ This doc names the kinds of people who use the system.
 
 These are not roles in the authorizations; instead, auth uses [Activities](Authz.md).
 
-The core user is someone driven by curiosity and love of the subject, not by a transactional need. They're not here to price a machine or manage a route — they're here because pinball history is interesting and they want to go deeper. The tagline of The Flip museum is "Preserving the love of pinball for future generations" and this project is a plank of that.
+The core user is someone driven by curiosity and love of the subject, not by a transactional need like pricing a machine or managing a route — they're here because pinball history is interesting and they want to go deeper. The tagline of The Flip museum is "Preserving the love of pinball for future generations" and this project is a plank of that.
 
 ## The Personas
 
@@ -22,9 +22,17 @@ People who add to and improve the site. They write descriptions and essays, uplo
 
 See [below](#contributor-profile) for their motivational picture.
 
+### Admin
+
+A person that is more trusted than a contributor, something close to a staff member. Probably would get Django Admin access. They operate the site, respond to incidents, review activity, shape the data.
+
 ### Maintainer
 
-A member of the [small team](SmallTeam.md) running the project. They operate the site, respond to incidents, review activity, and shape the data and the product.
+A member of the [small team](SmallTeam.md) running the project. They have access to source control and production hosting systems, shape the product.
+
+### Co-founder
+
+The co-founders / principals, Moses and William.
 
 ## Aliases
 
@@ -34,14 +42,14 @@ Other docs predate this one and use varying terms:
 | ----------- | ----------------------------------- |
 | Reader      | Visitor, "casual fan", "the public" |
 | Contributor | Editor, Writer, "logged-in user"    |
-| Maintainer  | Admin, Staff, Superuser             |
+| Admin       | Staff, Superuser                    |
+| Maintainer  | Developer                           |
 
 ## Future Personas
 
 Potential personas in the future:
 
 - **Moderator** — a Contributor with elevated privileges and responsibilities, that might police less-privileged contributors.
-- **Admin** - some sort of more-trusted person, something close to a staff member. Probably would get Django Admin access. Different than a maintainer because I think of that as the people who maintain the source code, who currently also happen to be the co-founders / principals. The correct relationships will become clearer over time. Maybe Admin will always === Maintainer.
 
 ## Reader Profile
 

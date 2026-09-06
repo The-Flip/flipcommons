@@ -447,3 +447,19 @@ if SENTRY_DSN:
         # (see ObservabilityArchitecture.md § Privacy enforcement).
         event_scrubber=EventScrubber(recursive=True, send_default_pii=False),
     )
+
+# ---------------------------------------------------------------------------
+# Admin notifications (Discord webhook)
+# ---------------------------------------------------------------------------
+# Presence is the master switch, like SENTRY_DSN above. The value is a
+# credential: anyone holding it can post to the channel.
+ADMIN_NOTIFICATION_WEBHOOK_URL = os.environ.get(
+    "ADMIN_NOTIFICATION_WEBHOOK_URL", ""
+).strip()
+if ADMIN_NOTIFICATION_WEBHOOK_URL and not ADMIN_NOTIFICATION_WEBHOOK_URL.startswith(
+    "https://"
+):
+    # What lets the delivery call in admin_notifications.py trust the scheme.
+    raise ImproperlyConfigured(
+        "ADMIN_NOTIFICATION_WEBHOOK_URL must start with https://"
+    )

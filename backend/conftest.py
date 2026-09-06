@@ -1,9 +1,11 @@
+import logging
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import pytest
 import sentry_sdk
 from sentry_sdk.envelope import Envelope
+from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.transport import Transport
 
 from apps.accounts.models import User
@@ -184,7 +186,13 @@ def sentry_recording() -> Iterator[SentryRecordingTransport]:
     """
     _reset_sentry_scope_state()
     transport = SentryRecordingTransport()
-    sentry_sdk.init(dsn="https://public@example.test/1", transport=transport)
+    sentry_sdk.init(
+        dsn="https://public@example.test/1",
+        transport=transport,
+        # As in production: log records become breadcrumbs, never events. The
+        # SDK default promotes every ERROR log line to an event of its own.
+        integrations=[LoggingIntegration(level=logging.INFO, event_level=None)],
+    )
     try:
         yield transport
     finally:
