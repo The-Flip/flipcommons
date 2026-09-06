@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import secrets
 
+import sentry_sdk
 from django.conf import settings
 from django.contrib.auth import login, logout
 from django.contrib.auth.models import AnonymousUser
@@ -75,19 +76,12 @@ def auth_login(request: HttpRequest) -> HttpResponse:
     state = secrets.token_urlsafe(32)
     request.session[f"auth_{state}"] = next_url
 
-    try:
-        client = get_workos_client()
-        authorization_url = client.user_management.get_authorization_url(
-            provider="authkit",
-            redirect_uri=settings.WORKOS_REDIRECT_URI,
-            state=state,
-        )
-    except Exception:
-        log.exception("Failed to generate WorkOS authorization URL")
-        return HttpResponse(
-            "Sign-in is temporarily unavailable. Please try again later.",
-            status=503,
-        )
+    client = get_workos_client()
+    authorization_url = client.user_management.get_authorization_url(
+        provider="authkit",
+        redirect_uri=settings.WORKOS_REDIRECT_URI,
+        state=state,
+    )
     return HttpResponseRedirect(authorization_url)
 
 
@@ -132,7 +126,11 @@ def auth_callback(request: HttpRequest) -> HttpResponse:
             code=code,
         )
     except Exception:
+        # Swallowed so the visitor lands on the styled error page. Replays can't
+        # make this noisy: the state was popped above, so a reused callback URL
+        # is refused before this runs.
         log.exception("WorkOS code exchange failed (reason=code_exchange_failed)")
+        sentry_sdk.capture_exception()
         return HttpResponseRedirect("/auth/error?reason=code_exchange_failed")
 
     try:

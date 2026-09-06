@@ -385,6 +385,7 @@ class TestUploadAtomicity:
                 raise OSError("Simulated S3 failure")
             return real_upload(key, data, content_type)
 
+        client.raise_request_exception = False
         with patch("apps.media.api.upload_to_storage", side_effect=failing_upload):
             file = _create_test_image()
             resp = _post_upload(client, machine_model, file=file)
@@ -393,10 +394,39 @@ class TestUploadAtomicity:
         assert MediaAsset.objects.count() == 0
         assert MediaRendition.objects.count() == 0
 
+    def test_storage_failure_reaches_sentry(
+        self, client, machine_model, sentry_recording
+    ):
+        """A storage fault propagates: Sentry gets the event, the client a 500."""
+        client.raise_request_exception = False
+        with (
+            patch(
+                "apps.media.api.upload_to_storage",
+                side_effect=OSError("Simulated S3 failure"),
+            ),
+            patch("apps.media.api.delete_from_storage", return_value=[]),
+        ):
+            resp = _post_upload(client, machine_model)
+
+        assert resp.status_code == 500
+        assert [
+            e["exception"]["values"][-1]["type"] for e in sentry_recording.events
+        ] == ["OSError"]
+        # The view's locals hold the raw upload; no frame may carry them.
+        frames = [
+            frame
+            for event in sentry_recording.events
+            for value in event["exception"]["values"]
+            for frame in value["stacktrace"]["frames"]
+        ]
+        assert frames
+        assert all("vars" not in frame for frame in frames)
+
     def test_db_failure_cleans_storage(self, client, machine_model):
         """If DB transaction fails after S3 upload, storage should be cleaned."""
+        client.raise_request_exception = False
         with (
-            patch("apps.media.api.delete_from_storage") as mock_delete,
+            patch("apps.media.api.delete_from_storage", return_value=[]) as mock_delete,
             patch(
                 "apps.media.api.MediaAsset.objects.create",
                 side_effect=Exception("Simulated DB failure"),

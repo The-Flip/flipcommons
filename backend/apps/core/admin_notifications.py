@@ -54,9 +54,8 @@ def notify_admins(code: str, message: str) -> None:
         with urlopen(req, timeout=_TIMEOUT_SECONDS):  # noqa: S310 — settings validation guarantees https://
             pass
     except Exception as exc:
-        # No traceback in the log or the Sentry report: Sentry records frame
-        # locals with every traceback, and the frames on this path hold the
-        # webhook URL, a credential the scrubber does not know by name.
+        # Wrapped so the issue is titled by what failed, a notification,
+        # rather than by whatever urllib raised; the cause stays in the value.
         error = f"{type(exc).__name__}: {exc}"
         logger.error("admin_notification.failed", extra={"code": code, "error": error})
         sentry_sdk.capture_exception(AdminNotificationError(error))

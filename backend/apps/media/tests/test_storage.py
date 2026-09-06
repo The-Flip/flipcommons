@@ -8,7 +8,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import override_settings
 
-from apps.media.storage import build_public_url, build_storage_key, upload_to_storage
+from apps.media.storage import (
+    build_public_url,
+    build_storage_key,
+    delete_from_storage,
+    upload_to_storage,
+)
 
 
 class TestBuildStorageKey:
@@ -77,3 +82,22 @@ class TestUploadToStorage:
             upload_to_storage("media/abc/thumb", b"data", "image/webp")
 
         mock_storage.delete.assert_not_called()
+
+
+class TestDeleteFromStorage:
+    def test_returns_the_keys_it_could_not_delete(self):
+        mock_storage = MagicMock()
+
+        def delete(key):
+            if key == "media/abc/thumb":
+                raise OSError("bucket unreachable")
+
+        mock_storage.delete.side_effect = delete
+
+        with patch("apps.media.storage.get_media_storage", return_value=mock_storage):
+            leaked = delete_from_storage(
+                ["media/abc/original", "media/abc/thumb", "media/abc/display"]
+            )
+
+        assert leaked == ["media/abc/thumb"]
+        assert mock_storage.delete.call_count == 3

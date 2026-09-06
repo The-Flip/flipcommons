@@ -129,6 +129,20 @@ class TestAuthLogin:
         resp = client.get("/api/auth/login/")
         assert resp.status_code == 503
 
+    def test_login_url_failure_reaches_sentry(self, client, sentry_recording):
+        """WorkOS is the only login surface: this failing means nobody can sign in."""
+        client.raise_request_exception = False
+        with patch("apps.accounts.api.auth.get_workos_client") as mock:
+            mock.return_value.user_management.get_authorization_url.side_effect = (
+                RuntimeError("bad client config")
+            )
+            resp = client.get("/api/auth/login/")
+
+        assert resp.status_code == 500
+        assert [
+            e["exception"]["values"][-1]["type"] for e in sentry_recording.events
+        ] == ["RuntimeError"]
+
 
 @pytest.mark.django_db
 class TestAuthCallback:
@@ -427,7 +441,7 @@ class TestAuthCallback:
         assert resp.status_code == 302
         assert resp["Location"] == "/auth/error?reason=state_invalid"
 
-    def test_callback_handles_code_exchange_failure(self, client):
+    def test_callback_handles_code_exchange_failure(self, client, sentry_recording):
         with patch("apps.accounts.api.auth.get_workos_client") as mock:
             mock_client = mock.return_value
             mock_client.user_management.get_authorization_url.side_effect = (
@@ -443,6 +457,20 @@ class TestAuthCallback:
 
         assert resp.status_code == 302
         assert resp["Location"] == "/auth/error?reason=code_exchange_failed"
+        # Swallowed on purpose (the styled error page beats a stack page), so
+        # the fault must be reported explicitly.
+        assert [
+            e["exception"]["values"][-1]["type"] for e in sentry_recording.events
+        ] == ["Exception"]
+        # ``code`` is a local in the view; no frame may carry locals.
+        frames = [
+            frame
+            for event in sentry_recording.events
+            for value in event["exception"]["values"]
+            for frame in value["stacktrace"]["frames"]
+        ]
+        assert frames
+        assert all("vars" not in frame for frame in frames)
 
 
 @pytest.mark.django_db

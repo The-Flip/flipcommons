@@ -9,8 +9,6 @@ the SDK changes its filter semantics fails this test.
 
 Also pins the ``StructuredApiError`` subclass invariant — see
 ``test_all_structured_api_error_subclasses_are_4xx`` below.
-
-See ObservabilityArchitecture.md § Capture scope.
 """
 
 from __future__ import annotations

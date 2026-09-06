@@ -44,6 +44,13 @@ Some of the things we explicitly don't capture:
 
 `logger.info/warning/error` flows to the container's log stream and stays there. To send to Sentry, code must call the Sentry SDK's `capture_*` API explicitly. On the backend, `LoggingIntegration(level=INFO, event_level=None)` attaches log records as breadcrumbs on real events but never promotes them to standalone Sentry events. This keeps authz denials, validation errors, and rate-limit hits out of the alert stream by construction.
 
+So a fault reaches Sentry only by propagating uncaught or through an explicit `capture_*` call. Propagating is the default and the cheapest: Django logs the traceback at ERROR and fires `got_request_exception` in the same step, so the log line and the event pair for free. Converting a fault into a status-coded response breaks that pairing in both frameworks:
+
+- Backend: never `raise HttpError(5xx, ...)` for a fault; let it propagate. `test_no_5xx_http_error.py` enforces this and explains the mechanism.
+- Frontend: a loader that hits an upstream fault throws a plain `Error` or lets the fetch rejection propagate. SvelteKit's `error()` is for expected 4xx outcomes only; `handle-error.ts` explains why.
+
+Where a swallow is deliberate — an `on_commit` callback, a login path that must land on a styled error page — the code that swallows it must also call `sentry_sdk.capture_exception()`.
+
 ## Logs
 
 ### Log analytics
@@ -89,7 +96,7 @@ Sentry would be the wrong home for these: it groups `capture_message` events by 
 
 ## Privacy
 
-Sentry **does not store**: emails, IPs, request bodies, cookies, session tokens. (Some never leave the app — the SDK is configured not to extract them. The rest are stripped server-side at ingest by Sentry's Advanced Data Scrubbing rules before storage.)
+Sentry **does not store**: emails, IPs, request bodies, cookies, session tokens, local variable values in tracebacks. (Some never leave the app — the SDK is configured not to extract them. The rest are stripped server-side at ingest by Sentry's Advanced Data Scrubbing rules before storage.)
 
 Sentry **does store**: route name, HTTP method, status code, exception type/message/stack trace, release SHA, environment, user id and username (authenticated requests only), `auth_state` tag (`"auth"`/`"anon"`), full User-Agent (plus `ua_family` tag for filtering).
 

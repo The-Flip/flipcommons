@@ -12,6 +12,7 @@ from apps.accounts.models import User
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import CreditRole, Person
 from apps.provenance.models import Source
+from config.sentry_options import IGNORE_ERRORS, INCLUDE_LOCAL_VARIABLES
 
 if TYPE_CHECKING:
     from sentry_sdk._types import Event
@@ -189,9 +190,12 @@ def sentry_recording() -> Iterator[SentryRecordingTransport]:
     sentry_sdk.init(
         dsn="https://public@example.test/1",
         transport=transport,
-        # As in production: log records become breadcrumbs, never events. The
-        # SDK default promotes every ERROR log line to an event of its own.
+        # As in production: log records become breadcrumbs, never events (the
+        # SDK default promotes every ERROR log line to an event of its own),
+        # expected 4xx exceptions are dropped, and tracebacks carry no locals.
         integrations=[LoggingIntegration(level=logging.INFO, event_level=None)],
+        ignore_errors=IGNORE_ERRORS,
+        include_local_variables=INCLUDE_LOCAL_VARIABLES,
     )
     try:
         yield transport

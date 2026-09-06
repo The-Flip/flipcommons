@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from functools import partial
 
+import sentry_sdk
 from django.conf import settings
 from django.contrib.auth import login
 from django.core.exceptions import ValidationError
@@ -294,5 +295,8 @@ def signup_cancel(request: HttpRequest) -> SignupCancelResponseSchema:
             )
             return SignupCancelResponseSchema(logout_url=logout_url)
         except Exception:
+            # The local redirect still ends the session here, so the fault is
+            # swallowed for the visitor and reported explicitly for us.
             log.exception("Failed to build WorkOS logout URL; falling back")
+            sentry_sdk.capture_exception()
     return SignupCancelResponseSchema(logout_url=return_to)
