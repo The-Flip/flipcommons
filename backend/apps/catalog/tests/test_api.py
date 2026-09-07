@@ -3,6 +3,7 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.catalog.models import System, Title
 from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.test_factories import make_ingest_source
 
 
 class TestStatsAPI:
@@ -35,11 +36,16 @@ class TestStatsAPI:
 
 class TestSourcesAPI:
     def test_list_sources(self, client, source):
+        make_ingest_source(
+            name="The Flip Museum",
+            slug="flip-museum",
+            source_type="editorial",
+            priority=10000,
+        )
         resp = client.get("/api/sources/")
         assert resp.status_code == 200
         data = resp.json()
         slugs = {s["slug"] for s in data}
-        # The IPDB fixture plus the seeded patch-attribution source.
         assert "ipdb" in slugs
         assert "flip-museum" in slugs
 

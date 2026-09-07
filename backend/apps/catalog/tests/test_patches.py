@@ -85,9 +85,9 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture(autouse=True)
 def _seed_flipcommons_catalog(flipcommons_catalog):
-    """Patches here attribute to ``flipcommons-catalog`` by default, so seed it for
-    every test. Unlike ``flip-museum`` (migration-seeded), the catalog source is
-    created by the pindata ingest in prod, not a migration."""
+    """Patches here attribute to ``flipcommons-catalog`` by default, so create it
+    for every test. It exists in prod as a baseline row (like ``flip-museum``),
+    but the test database starts empty."""
 
 
 def _apply(text: str, *, patch_id: str = "0001-test") -> RunReport:

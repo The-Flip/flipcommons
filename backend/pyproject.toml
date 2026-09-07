@@ -536,7 +536,7 @@ forbidden_modules = ["apps.claim_ingest.apply"]
 name = "Provenance app internal stack"
 type = "layers"
 exhaustive = true # so new submodule left unplaced fails build
-exhaustive_ignores = ["apps", "migrations", "tests", "test_factories", "test_migration_state"]
+exhaustive_ignores = ["apps", "migrations", "tests", "test_factories"]
 containers = ["apps.provenance"]
 layers = [
     "api | admin",
@@ -548,10 +548,7 @@ layers = [
     "changeset_writer",
     "validation | schemas | claim_ranking_in_db | licensing | resolution | rate_limits",
     "attribution",
-    # note_quote_backfill is migration support (provenance/0023-0024): it walks
-    # historical models through the apps registry, so its only static import is
-    # the pure recognizer below.
-    "models | claim_presence | constants | parked_fields | entity_links | pagination | authz | note_quote_backfill",
+    "models | claim_presence | constants | parked_fields | entity_links | pagination | authz",
     # The abstract claim-control bases every claim-controlled model inherits.
     # Pinned to the bottom so it can't reach UP into the provenance domain
     # (Claim, ChangeSet, Source). Its core-only-leaf guarantee — no cross-app
@@ -559,9 +556,7 @@ layers = [
     # since the global tiers would otherwise let it import down into citation /
     # accounts. Together they keep the package lift-out-ready (below citation).
     "model_bases",
-    # note_quotes is the pure quote recognizer (byte-identical twin of
-    # flippatch's) — imports nothing, so it lives at the bottom beside types.
-    "types | note_quotes",
+    "types",
 ]
 
 [[tool.importlinter.contracts]]
