@@ -12,10 +12,7 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        (
-            "catalog",
-            "0004_remove_machinemodel_catalog_machinemodel_pinside_id_min_and_more",
-        ),
+        ("catalog", "0001_initial"),
     ]
 
     operations = [

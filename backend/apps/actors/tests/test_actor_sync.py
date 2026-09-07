@@ -29,8 +29,8 @@ def test_editing_source_resyncs_actor():
         name="IPDB", slug="ipdb", source_type="database", priority=5
     )
     actor_id = source.actor_id
-    # Seed sources (provenance/0004) already minted actors, so assert on a
-    # before/after delta rather than an absolute count.
+    # A before/after delta, not an absolute count: the point is that an update
+    # does not mint another Actor, whatever else the database holds.
     actor_count = Actor.objects.count()
 
     source.priority = 99
