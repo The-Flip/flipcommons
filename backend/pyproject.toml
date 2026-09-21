@@ -21,7 +21,7 @@ dependencies = [
     "sentry-sdk[django]>=2.68.1",
     "pyyaml>=6.0.3",
     # Exact pin: the version *is* a Public Suffix List snapshot.
-    "publicsuffixlist==1.0.2.20260910",
+    "publicsuffixlist==1.0.2.20260918",
 ]
 
 [dependency-groups]
