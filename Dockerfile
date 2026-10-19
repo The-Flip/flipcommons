@@ -83,7 +83,7 @@ RUN pnpm prune --prod
 # ── Stage 2: Runtime dependencies for Caddy + Node ────────────────
 FROM node:24-slim AS node-runtime
 
-FROM caddy:2.11.6 AS caddy-runtime
+FROM caddy:2.11.7 AS caddy-runtime
 
 # ── Stage 3: Django + SSR application ──────────────────────────────
 FROM python:3.14-slim AS base
