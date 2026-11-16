@@ -86,7 +86,7 @@ FROM node:24-slim AS node-runtime
 FROM caddy:2.11.9 AS caddy-runtime
 
 # ── Stage 3: Django + SSR application ──────────────────────────────
-FROM python:3.14-slim AS base
+FROM python:3.15-slim AS base
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
